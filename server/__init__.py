@@ -1,0 +1,1 @@
+"""Manjéo local application server."""

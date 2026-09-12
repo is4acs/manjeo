@@ -37,7 +37,7 @@ yarn-error.log*
 # typescript
 next-env.d.ts
 *.tsbuildinfo
-/dist/
+/dist
 /.wrangler/
 # Checkout-local execution profile and tool state; never publish them.
 /.sites-runtime/
@@ -45,3 +45,17 @@ next-env.d.ts
 /.codex/
 /outputs/
 /work/
+
+# Local database, sessions, test data and backups
+/.data/
+/.data-backup-*/
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+*.sqlite-journal
+*.sqlite3-journal
+__pycache__/
+*.py[cod]

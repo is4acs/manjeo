@@ -4,6 +4,11 @@ import { fileURLToPath, URL } from "node:url";
 export default defineConfig({
   plugins: [react()],
   resolve: { alias: { "@": fileURLToPath(new URL(".", import.meta.url)) } },
-  server: { host: "127.0.0.1", port: 5173, strictPort: true },
+  server: {
+    host: "127.0.0.1",
+    port: 5173,
+    strictPort: true,
+    proxy: { "/api": "http://127.0.0.1:5174" },
+  },
   build: { outDir: "dist", emptyOutDir: true },
 });

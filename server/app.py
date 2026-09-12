@@ -1,0 +1,463 @@
+"""Local Manjéo demo API and static website; Python standard library only."""
+import argparse
+import hashlib
+import hmac
+import json
+import mimetypes
+import os
+import re
+import secrets
+import sqlite3
+import time
+import uuid
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from http.cookies import SimpleCookie
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import unquote, urlsplit
+
+ROOT = Path(__file__).resolve().parent.parent
+COOKIE_NAME = "manjeo_session"
+SESSION_SECONDS = 8 * 60 * 60
+PASSWORD_ITERATIONS = 240_000
+CITIES = {"Cayenne", "Rémire-Montjoly", "Matoury"}
+TRANSITIONS = {
+    "pending": {"accepted", "cancelled"},
+    "accepted": {"preparing", "cancelled"},
+    "preparing": {"ready"},
+    "ready": {"delivered"},
+    "delivered": set(),
+    "cancelled": set(),
+}
+
+
+def now_iso():
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def password_digest(password, salt):
+    return hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), PASSWORD_ITERATIONS).hex()
+
+
+def public_user(row):
+    return {"id": row["id"], "email": row["email"], "name": row["name"], "role": row["role"], "restaurantId": row["restaurant_id"]}
+
+
+class APIError(Exception):
+    def __init__(self, status, message):
+        self.status = status
+        self.message = message
+
+
+def text_field(data, field, minimum=0, maximum=500):
+    value = data.get(field, "")
+    if not isinstance(value, str) or not minimum <= len(value.strip()) <= maximum:
+        raise APIError(400, "Le champ « %s » est invalide." % field)
+    return value.strip()
+
+
+class Database:
+    def __init__(self, path, catalog_path=None):
+        self.path = str(path)
+        Path(self.path).parent.mkdir(parents=True, exist_ok=True)
+        self.catalog_path = Path(catalog_path or ROOT / "lib/catalog.json")
+        self.initialize()
+
+    @contextmanager
+    def connect(self):
+        connection = sqlite3.connect(self.path, timeout=10)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        try:
+            yield connection
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def initialize(self):
+        with self.connect() as db:
+            db.execute("PRAGMA journal_mode = WAL")
+            db.executescript("""
+                CREATE TABLE IF NOT EXISTS restaurants (
+                    id TEXT PRIMARY KEY, data TEXT NOT NULL,
+                    accepting_orders INTEGER NOT NULL DEFAULT 1 CHECK (accepting_orders IN (0,1))
+                );
+                CREATE TABLE IF NOT EXISTS products (
+                    id TEXT PRIMARY KEY, restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
+                    data TEXT NOT NULL, available INTEGER NOT NULL DEFAULT 1 CHECK (available IN (0,1))
+                );
+                CREATE TABLE IF NOT EXISTS users (
+                    id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                    name TEXT NOT NULL, role TEXT NOT NULL CHECK (role IN ('client','restaurant','admin')),
+                    restaurant_id TEXT REFERENCES restaurants(id),
+                    password_salt TEXT NOT NULL, password_hash TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS sessions (
+                    token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
+                    expires_at INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS orders (
+                    id TEXT PRIMARY KEY, customer_id TEXT NOT NULL REFERENCES users(id),
+                    restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
+                    request_id TEXT NOT NULL, request_hash TEXT NOT NULL,
+                    created_at TEXT NOT NULL, data TEXT NOT NULL,
+                    UNIQUE(customer_id, request_id)
+                );
+                CREATE INDEX IF NOT EXISTS orders_customer ON orders(customer_id, created_at);
+                CREATE INDEX IF NOT EXISTS orders_restaurant ON orders(restaurant_id, created_at);
+            """)
+            for source in json.loads(self.catalog_path.read_text()):
+                restaurant = {key: value for key, value in source.items() if key not in ("products", "acceptingOrders")}
+                db.execute("INSERT OR IGNORE INTO restaurants(id, data) VALUES (?, ?)", (restaurant["id"], json.dumps(restaurant, ensure_ascii=False)))
+                for item in source["products"]:
+                    product = {key: value for key, value in item.items() if key != "available"}
+                    db.execute("INSERT OR IGNORE INTO products(id, restaurant_id, data) VALUES (?, ?, ?)", (product["id"], restaurant["id"], json.dumps(product, ensure_ascii=False)))
+            for user_id, email, name, role, restaurant_id in [
+                ("demo-client", "client@manjeo.test", "Camille Test", "client", None),
+                ("demo-restaurant", "restaurant@manjeo.test", "Ti Kaz Kréol", "restaurant", "ti-kreol"),
+                ("demo-admin", "admin@manjeo.test", "Admin Manjéo", "admin", None),
+            ]:
+                if db.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone():
+                    continue
+                salt = secrets.token_hex(16)
+                db.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?, ?, ?)", (user_id, email, name, role, restaurant_id, salt, password_digest("ManjeoDemo2026!", salt)))
+            db.execute("DELETE FROM sessions WHERE expires_at <= ?", (int(time.time()),))
+
+    @staticmethod
+    def product(row):
+        return {**json.loads(row["data"]), "available": bool(row["available"])}
+
+    def restaurant(self, db, row):
+        return {
+            **json.loads(row["data"]),
+            "acceptingOrders": bool(row["accepting_orders"]),
+            "products": [self.product(item) for item in db.execute("SELECT * FROM products WHERE restaurant_id = ? ORDER BY rowid", (row["id"],))],
+        }
+
+
+class ManjeoServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def __init__(self, address, database, static_dir=None):
+        self.database = database
+        self.static_dir = Path(static_dir or ROOT / "dist").resolve()
+        self.login_failures = {}
+        super().__init__(address, Handler)
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "ManjeoLocal/1.0"
+
+    def log_message(self, format, *args):
+        # The URL contains no credentials or customer details.
+        super().log_message(format, *args)
+
+    def json_response(self, status, payload, cookie=None):
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        if cookie:
+            self.send_header("Set-Cookie", cookie)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def read_json(self):
+        if self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":
+            raise APIError(415, "Une requête JSON est requise.")
+        if self.headers.get("Transfer-Encoding"):
+            raise APIError(400, "Format de requête non pris en charge.")
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            raise APIError(400, "Requête invalide.")
+        if not 0 < length <= 64_000:
+            raise APIError(413 if length > 64_000 else 400, "Taille de requête invalide.")
+        try:
+            data = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            raise APIError(400, "Le JSON est invalide.")
+        if not isinstance(data, dict):
+            raise APIError(400, "Un objet JSON est requis.")
+        return data
+
+    def check_origin(self):
+        host = self.headers.get("Host", "")
+        try:
+            hostname = urlsplit("http://" + host).hostname
+        except ValueError:
+            hostname = None
+        if hostname not in ("127.0.0.1", "localhost", "::1") or any(char in host for char in ("/", "@", "\\")):
+            raise APIError(403, "Cette démonstration est accessible en local uniquement.")
+        origin = self.headers.get("Origin")
+        if origin and origin != "http://" + host:
+            raise APIError(403, "Origine de la requête refusée.")
+        if self.headers.get("Sec-Fetch-Site") == "cross-site":
+            raise APIError(403, "Origine de la requête refusée.")
+
+    def session_hash(self):
+        cookie = SimpleCookie()
+        try:
+            cookie.load(self.headers.get("Cookie", ""))
+        except Exception:
+            return None
+        item = cookie.get(COOKIE_NAME)
+        return hashlib.sha256(item.value.encode()).hexdigest() if item else None
+
+    def user(self, db, roles=None):
+        user = db.execute("SELECT users.* FROM users JOIN sessions ON sessions.user_id = users.id WHERE sessions.token_hash = ? AND sessions.expires_at > ?", (self.session_hash(), int(time.time()))).fetchone()
+        if not user:
+            if roles is not None:
+                raise APIError(401, "Connectez-vous pour continuer.")
+            return None
+        if roles is not None and user["role"] not in roles:
+            raise APIError(403, "Votre compte ne permet pas cette action.")
+        return user
+
+    def managed_restaurant(self, db, restaurant_id):
+        user = self.user(db, {"restaurant", "admin"})
+        if user["role"] == "restaurant" and user["restaurant_id"] != restaurant_id:
+            raise APIError(403, "Vous ne pouvez gérer que votre restaurant.")
+        row = db.execute("SELECT * FROM restaurants WHERE id = ?", (restaurant_id,)).fetchone()
+        if not row:
+            raise APIError(404, "Restaurant introuvable.")
+        return row
+
+    def do_GET(self):
+        self.handle_request()
+
+    def do_POST(self):
+        self.handle_request()
+
+    def do_PATCH(self):
+        self.handle_request()
+
+    def do_OPTIONS(self):
+        self.json_response(403, {"error": "Les requêtes depuis une autre origine sont refusées."})
+
+    def handle_request(self):
+        try:
+            self.check_origin()
+            path = urlsplit(self.path).path
+            if not path.startswith("/api/"):
+                if self.command != "GET":
+                    raise APIError(405, "Méthode non autorisée.")
+                return self.serve_static(path)
+            data = self.read_json() if self.command in {"POST", "PATCH"} else None
+            with self.server.database.connect() as db:
+                if data is not None:
+                    db.execute("BEGIN IMMEDIATE")
+                status, response, cookie = self.api(db, path, data)
+            self.json_response(status, response, cookie)
+        except APIError as error:
+            self.json_response(error.status, {"error": error.message})
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            self.json_response(500, {"error": "Le serveur a rencontré une erreur. Réessayez."})
+
+    def api(self, db, path, data):
+        method = self.command
+        if method == "GET" and path == "/api/session":
+            user = self.user(db)
+            return 200, {"user": public_user(user) if user else None}, None
+        if method == "POST" and path == "/api/login":
+            key = self.client_address[0]
+            failures = [stamp for stamp in self.server.login_failures.get(key, []) if stamp > time.time() - 300]
+            self.server.login_failures[key] = failures
+            if len(failures) >= 20:
+                raise APIError(429, "Trop de tentatives. Réessayez dans cinq minutes.")
+            email = text_field(data, "email", 3, 254).lower()
+            password = text_field(data, "password", 1, 200)
+            row = db.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+            # An unknown email still incurs the password hashing cost.
+            salt = row["password_salt"] if row else "00" * 16
+            digest = password_digest(password, salt)
+            if not row or not hmac.compare_digest(digest, row["password_hash"]):
+                failures.append(time.time())
+                raise APIError(401, "Adresse e-mail ou mot de passe incorrect.")
+            self.server.login_failures.pop(key, None)
+            token = secrets.token_urlsafe(32)
+            db.execute("DELETE FROM sessions WHERE token_hash = ? OR expires_at <= ?", (self.session_hash(), int(time.time())))
+            db.execute("INSERT INTO sessions VALUES (?, ?, ?)", (hashlib.sha256(token.encode()).hexdigest(), row["id"], int(time.time()) + SESSION_SECONDS))
+            return 200, {"user": public_user(row)}, "%s=%s; HttpOnly; SameSite=Strict; Path=/; Max-Age=%s" % (COOKIE_NAME, token, SESSION_SECONDS)
+        if method == "POST" and path == "/api/logout":
+            db.execute("DELETE FROM sessions WHERE token_hash = ?", (self.session_hash(),))
+            return 200, {"ok": True}, COOKIE_NAME + "=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"
+        if method == "GET" and path == "/api/restaurants":
+            rows = db.execute("SELECT * FROM restaurants ORDER BY rowid").fetchall()
+            return 200, {"restaurants": [self.server.database.restaurant(db, row) for row in rows]}, None
+        if method == "GET" and path == "/api/users":
+            self.user(db, {"admin"})
+            return 200, {"users": [public_user(row) for row in db.execute("SELECT * FROM users ORDER BY rowid")]}, None
+        if method == "GET" and path == "/api/orders":
+            user = self.user(db, {"client", "restaurant", "admin"})
+            clause, args = (" WHERE customer_id = ?", (user["id"],)) if user["role"] == "client" else ((" WHERE restaurant_id = ?", (user["restaurant_id"],)) if user["role"] == "restaurant" else ("", ()))
+            rows = db.execute("SELECT data FROM orders" + clause + " ORDER BY created_at DESC, rowid DESC", args)
+            return 200, {"orders": [json.loads(row["data"]) for row in rows]}, None
+        if method == "POST" and path == "/api/orders":
+            return self.create_order(db, data)
+        match = re.fullmatch(r"/api/orders/([A-Za-z0-9-]+)", path)
+        if method == "PATCH" and match:
+            user = self.user(db, {"restaurant", "admin"})
+            row = db.execute("SELECT * FROM orders WHERE id = ?", (match[1],)).fetchone()
+            if not row:
+                raise APIError(404, "Commande introuvable.")
+            if user["role"] == "restaurant" and user["restaurant_id"] != row["restaurant_id"]:
+                raise APIError(403, "Vous ne pouvez traiter que les commandes de votre restaurant.")
+            order = json.loads(row["data"])
+            status = data.get("status")
+            if not isinstance(status, str) or status not in TRANSITIONS[order["status"]]:
+                raise APIError(409, "Ce changement de statut n’est pas autorisé.")
+            order["status"] = status
+            order["updatedAt"] = now_iso()
+            order["history"].append({"status": status, "date": order["updatedAt"]})
+            db.execute("UPDATE orders SET data = ? WHERE id = ?", (json.dumps(order, ensure_ascii=False), order["id"]))
+            return 200, {"order": order}, None
+        match = re.fullmatch(r"/api/restaurants/([A-Za-z0-9-]+)(?:/products/([A-Za-z0-9-]+))?", path)
+        if method == "PATCH" and match:
+            restaurant = self.managed_restaurant(db, match[1])
+            if match[2]:
+                if type(data.get("available")) is not bool:
+                    raise APIError(400, "La disponibilité doit être vraie ou fausse.")
+                row = db.execute("SELECT * FROM products WHERE id = ? AND restaurant_id = ?", (match[2], match[1])).fetchone()
+                if not row:
+                    raise APIError(404, "Produit introuvable dans ce restaurant.")
+                db.execute("UPDATE products SET available = ? WHERE id = ?", (int(data["available"]), match[2]))
+                return 200, {"product": {**self.server.database.product(row), "available": data["available"]}}, None
+            if type(data.get("acceptingOrders")) is not bool:
+                raise APIError(400, "L’ouverture des commandes doit être vraie ou fausse.")
+            db.execute("UPDATE restaurants SET accepting_orders = ? WHERE id = ?", (int(data["acceptingOrders"]), match[1]))
+            result = self.server.database.restaurant(db, restaurant)
+            result["acceptingOrders"] = data["acceptingOrders"]
+            return 200, {"restaurant": result}, None
+        raise APIError(404, "Cette ressource API n’existe pas.")
+
+    def create_order(self, db, data):
+        user = self.user(db, {"client"})
+        request_id = text_field(data, "requestId", 36, 36)
+        try:
+            if str(uuid.UUID(request_id)) != request_id.lower():
+                raise ValueError()
+        except ValueError:
+            raise APIError(400, "L’identifiant de commande est invalide.")
+        request_hash = hashlib.sha256(json.dumps({key: value for key, value in data.items() if key != "requestId"}, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+        existing = db.execute("SELECT * FROM orders WHERE customer_id = ? AND request_id = ?", (user["id"], request_id)).fetchone()
+        if existing:
+            if existing["request_hash"] != request_hash:
+                raise APIError(409, "Cet identifiant correspond déjà à une autre commande.")
+            return 200, {"order": json.loads(existing["data"])}, None
+        restaurant_id = text_field(data, "restaurantId", 1, 80)
+        row = db.execute("SELECT * FROM restaurants WHERE id = ?", (restaurant_id,)).fetchone()
+        if not row:
+            raise APIError(404, "Restaurant introuvable.")
+        if not row["accepting_orders"]:
+            raise APIError(409, "Ce restaurant n’accepte pas de commandes pour le moment.")
+        restaurant = json.loads(row["data"])
+        customer_name = text_field(data, "customerName", 2, 100)
+        phone = text_field(data, "phone", 10, 30)
+        if not re.fullmatch(r"\+?\d{10,15}", re.sub(r"[\s().-]", "", phone)):
+            raise APIError(400, "Le numéro de téléphone est invalide.")
+        address = text_field(data, "address", 5, 250)
+        city = text_field(data, "city", 1, 50)
+        if city not in CITIES:
+            raise APIError(400, "Cette ville n’est pas desservie dans la démo.")
+        details = text_field(data, "details", 0, 300)
+        notes = text_field(data, "notes", 0, 500)
+        raw_items = data.get("items")
+        if not isinstance(raw_items, list) or not 1 <= len(raw_items) <= 50:
+            raise APIError(400, "Le panier doit contenir entre 1 et 50 lignes.")
+        items, seen = [], set()
+        for item in raw_items:
+            if not isinstance(item, dict):
+                raise APIError(400, "Une ligne de panier est invalide.")
+            product_id = text_field(item, "productId", 1, 100)
+            product_row = db.execute("SELECT * FROM products WHERE id = ? AND restaurant_id = ?", (product_id, restaurant_id)).fetchone()
+            if not product_row:
+                raise APIError(400, "Un produit n’appartient pas à ce restaurant.")
+            if not product_row["available"]:
+                raise APIError(409, "Un produit de votre panier est indisponible.")
+            product = json.loads(product_row["data"])
+            quantity = item.get("quantity")
+            if type(quantity) is not int or not 1 <= quantity <= 20:
+                raise APIError(400, "La quantité doit être comprise entre 1 et 20.")
+            portion = item.get("portion")
+            sauce = item.get("sauce")
+            if portion not in ("Classique", "Gros appétit") or sauce not in ("Sans piment", "Piment à part", "Bien relevé"):
+                raise APIError(400, "Une option de produit est invalide.")
+            if not product.get("large") and (portion != "Classique" or sauce != "Sans piment"):
+                raise APIError(400, "Ce produit ne propose pas ces options.")
+            item_key = (product_id, portion, sauce)
+            if item_key in seen:
+                raise APIError(400, "Regroupez les quantités des produits identiques.")
+            seen.add(item_key)
+            items.append({"productId": product_id, "name": product["name"], "option": portion + " · " + sauce, "price": product["price"] + (200 if portion == "Gros appétit" else 0), "quantity": quantity})
+        count = sum(item["quantity"] for item in items)
+        if count > 100:
+            raise APIError(400, "Le panier est limité à 100 articles pour cette démonstration.")
+        subtotal = sum(item["price"] * item["quantity"] for item in items)
+        delivery = restaurant["delivery"] + (0 if city == "Cayenne" else 100)
+        stamp = now_iso()
+        order = {
+            "id": "MJ-" + uuid.uuid4().hex[:12].upper(),
+            "restaurantId": restaurant_id, "restaurant": restaurant["name"],
+            "customerId": user["id"], "customerName": customer_name,
+            "phone": phone, "address": address, "city": city, "details": details, "notes": notes,
+            "status": "pending", "subtotal": subtotal, "delivery": delivery, "total": subtotal + delivery,
+            "count": count, "date": stamp, "updatedAt": stamp, "items": items,
+            "history": [{"status": "pending", "date": stamp}],
+        }
+        db.execute("INSERT INTO orders VALUES (?, ?, ?, ?, ?, ?, ?)", (order["id"], user["id"], restaurant_id, request_id, request_hash, stamp, json.dumps(order, ensure_ascii=False)))
+        return 201, {"order": order}, None
+
+    def serve_static(self, path):
+        decoded = unquote(path)
+        target = (self.server.static_dir / decoded.lstrip("/")).resolve()
+        try:
+            target.relative_to(self.server.static_dir)
+        except ValueError:
+            raise APIError(404, "Fichier introuvable.")
+        if target.is_dir():
+            target = target / "index.html"
+        if not target.is_file() and not Path(decoded).suffix:
+            target = self.server.static_dir / "index.html"
+        if not target.is_file():
+            raise APIError(404, "Interface introuvable. Exécutez npm run build avant de démarrer le serveur.")
+        body = target.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", mimetypes.guess_type(str(target))[0] or "application/octet-stream")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "same-origin")
+        self.end_headers()
+        self.wfile.write(body)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Serveur de démonstration local Manjéo")
+    parser.add_argument("--port", type=int, default=5173)
+    args = parser.parse_args()
+    path = os.environ.get("MANJEO_DB", str(ROOT / ".data/manjeo.sqlite3"))
+    database = Database(path)
+    server = ManjeoServer(("127.0.0.1", args.port), database)
+    print("Manjéo : http://127.0.0.1:%d/" % args.port, flush=True)
+    print("Base SQLite : %s" % Path(path).resolve(), flush=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+
+
+if __name__ == "__main__":
+    main()
