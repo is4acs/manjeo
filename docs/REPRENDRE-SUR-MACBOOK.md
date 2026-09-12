@@ -15,6 +15,34 @@ Mot de passe commun : **`ManjeoDemo2026!`**
 | Livreur | `livreur@manjeo.test` |
 | Administration | `admin@manjeo.test` |
 
+## Activer Codex Cloud
+
+L’option **Cloud** du menu « Continuer dans » utilise un environnement Codex associé au dépôt GitHub. Cet environnement est distinct de Vercel, qui héberge le site. La préparation du dépôt ne suffit pas à activer l’option : la connexion du compte et la création de l’environnement doivent aboutir dans Codex Web.
+
+1. Ouvrir [Codex Cloud](https://chatgpt.com/codex/cloud) avec le même compte ChatGPT que dans l’application du MacBook.
+2. Si Codex demande un second facteur, activer la MFA soi-même. Ne transmettre aucun code de vérification ou de récupération à l’agent.
+3. Connecter GitHub avec le compte **is4acs** et sélectionner le dépôt **is4acs/manjeo**. Limiter la sélection à ce dépôt pour cette configuration.
+4. Dans les paramètres des environnements, créer ou sélectionner **manjeo**, avec `main` comme branche de référence. Choisir Node 22 (au minimum 22.13) et Python 3.12.
+5. Pour le script d’installation et le script de maintenance, utiliser :
+
+```sh
+bash scripts/codex-setup.sh
+```
+
+6. Tester l’environnement avec :
+
+```sh
+bash scripts/codex-check.sh
+```
+
+Aucun secret Neon ou Vercel n’est nécessaire pour installer, compiler et tester le projet. Les tests autonomes exécutent 34 cas Python et 7 cas panier ; 30 tests PostgreSQL restent ignorés sans une base de test dédiée. `AGENTS.md` donne les règles de reprise à l’agent Cloud.
+
+Une fois l’environnement associé au dépôt, revenir dans l’application et rouvrir « Continuer dans » pour sélectionner Cloud et l’environnement Manjéo. Si la liste n’est pas à jour, rouvrir le projet. Depuis le MacBook, retrouver l’environnement dans Codex Cloud avec le même compte ; les changements de code passent ensuite par GitHub et une branche `codex/…`.
+
+Une tâche locale et son historique ne sont pas transférés par un simple clone Git. Pour reprendre une tâche Cloud, l’ouvrir dans Codex Cloud ; pour reprendre un travail local, utiliser le clone et les documents du dépôt décrits ci-dessous.
+
+Les scripts d’installation et de maintenance sont exécutés séparément des commandes de l’agent : le script de vérification sélectionne donc explicitement le Python de `.venv`. [Documentation officielle des environnements Codex](https://learn.chatgpt.com/docs/environments/cloud-environment).
+
 ## Continuer le développement dans Codex
 
 La version de référence se trouve sur la branche **`main`** du dépôt [is4acs/manjeo](https://github.com/is4acs/manjeo/tree/main). Vercel publie automatiquement cette branche en Production. Les modifications se préparent sur des branches `codex/…`, avec une Preview pour les tester avant publication.
