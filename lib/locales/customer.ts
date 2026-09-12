@@ -1,4 +1,11 @@
 export const customerTranslations: Record<string, [string, string]> = {
+ 'Confirmation à reprendre':['Konfimasyon pou reprann','Confirmação a retomar'],
+ 'Commande précédente':['Kòmann anvan an','Pedido anterior'],
+ 'La réponse de votre dernière demande est incertaine. Reprenez sa confirmation avant de commander à nouveau.':['Repons dènye demann ou an pa sèten. Reprann konfimasyon li anvan ou fè yon lòt kòmann.','A resposta da sua última solicitação é incerta. Retome a confirmação antes de fazer outro pedido.'],
+ 'Reprenez la confirmation précédente avant de passer une nouvelle commande.':['Reprann konfimasyon anvan an anvan ou fè yon nouvo kòmann.','Retome a confirmação anterior antes de fazer um novo pedido.'],
+ 'Reprendre cette confirmation':['Reprann konfimasyon sa a','Retomar esta confirmação'],
+ 'La même demande sera vérifiée avec ses coordonnées, ses articles et son montant d’origine.':['N ap verifye menm demann lan ak kowòdone li yo, atik li yo ak montan orijinal li.','A mesma solicitação será verificada com os dados, os itens e o valor originais.'],
+ 'Paiement Stripe de test':['Peman tès Stripe','Pagamento de teste Stripe'],
  'Une modification du compte est déjà en cours. Réessayez.':['Yon modifikasyon kont lan deja an kou. Eseye ankò.','Uma alteração da conta já está em andamento. Tente novamente.'],
  'Le compte connecté a changé. Réessayez.':['Kont ki konekte a chanje. Eseye ankò.','A conta conectada mudou. Tente novamente.'],
  'Aucun point trouvé. Précisez le numéro et le nom de la rue.':['Nou pa jwenn okenn pwen. Presize nimewo a ak non lari a.','Nenhum ponto encontrado. Informe o número e o nome da rua.'],

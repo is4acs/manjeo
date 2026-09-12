@@ -27,6 +27,8 @@ function harness({language = 'fr', explicitChoice = false} = {}) {
     return hooks[index];
   };
   const react = {
+    lazy: () => components.Staff,
+    Suspense: function Suspense() {},
     useState(initial) {
       const hook = slot('state', () => ({value: typeof initial === 'function' ? initial() : initial}));
       return [hook.value, value => {

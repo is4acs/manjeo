@@ -147,6 +147,79 @@ class MarketplaceContracts:
         winner = next(body["menu"] for code, body in results if code == 200)
         self.assertEqual(self.menu(), winner)
 
+    def test_menu_limit_counts_archives_implicitly_kept_from_previous_publication(self):
+        menu = self.menu()
+        example = menu["products"][0]
+        while len(menu["products"]) < 100:
+            menu["products"].append({**copy.deepcopy(example), "id": str(uuid.uuid4())})
+        original = self.publish(menu)["menu"]
+        # Omitting a product archives it; replacing it must not produce 101 rows
+        # that the full-menu editor can no longer submit for its next change.
+        replacement = copy.deepcopy(original)
+        replacement["products"][0]["id"] = str(uuid.uuid4())
+        replacement["products"][1]["name"] = "Ne doit pas être enregistré"
+        self.publish(replacement, status=400)
+        self.assertEqual(self.menu(), original)
+        archived = copy.deepcopy(original)
+        archived["products"] = archived["products"][1:]
+        archived = self.publish(archived)["menu"]
+        self.assertEqual(len(archived["products"]), 100)
+        self.assertTrue(next(product for product in archived["products"] if product["id"] == example["id"])["archived"])
+        self.assertEqual(len(self.publish(archived)["menu"]["products"]), 100)
+
+    def test_legacy_oversized_menu_remains_editable_and_cannot_keep_growing(self):
+        menu = self.menu()
+        example = menu["products"][0]
+        with self.database.connect() as db:
+            self.database.begin_write(db)
+            for position in range(len(menu["products"]), 101):
+                product = {**copy.deepcopy(example), "id": str(uuid.uuid4()), "archived": True}
+                available = product.pop("available")
+                db.execute("INSERT INTO products(id,restaurant_id,data,available,sort_order) VALUES (?,?,?,?,?)",
+                           (product["id"], "ti-kreol", json.dumps(product), int(available), position))
+        self.reload_application()
+        legacy = self.menu()
+        self.assertEqual(len(legacy["products"]), 101)
+        legacy["products"][0]["name"] = "Nom modifiable malgré les anciennes archives"
+        saved = self.publish(legacy)["menu"]
+        self.assertEqual(len(saved["products"]), 101)
+        self.assertEqual(saved["products"][0]["name"], legacy["products"][0]["name"])
+        growth = copy.deepcopy(saved)
+        growth["products"][-1]["id"] = str(uuid.uuid4())
+        self.publish(growth, status=400)
+        self.assertEqual(self.menu(), saved)
+
+    def test_repeat_initialization_avoids_per_order_writes_and_repairs_missing_assignment(self):
+        from server.marketplace import initialize_marketplace
+        source = self.create_order()
+        with self.database.connect() as db:
+            self.database.begin_write(db)
+            for index in range(300):
+                order = {**copy.deepcopy(source), "id": "MJ-RESTART%06d" % index, "status": "delivered", "acceptBy": None}
+                order["history"].append({"status": "delivered", "date": order["date"]})
+                db.execute("INSERT INTO orders VALUES (?,?,?,?,?,?,?)", (order["id"], order["customerId"], order["restaurantId"],
+                           str(uuid.uuid4()), "fixture", order["date"], json.dumps(order)))
+                db.execute("INSERT INTO order_assignments VALUES (?,?,?)", (order["id"], None, "delivered"))
+        statements = []
+        class RecordingConnection:
+            def __init__(self, connection):
+                self.connection = connection
+            def execute(self, statement, parameters=()):
+                statements.append(statement)
+                return self.connection.execute(statement, parameters)
+        with self.database.connect() as db:
+            self.database.begin_write(db)
+            before = [dict(row) for row in db.execute("SELECT * FROM orders ORDER BY id").fetchall()]
+            assignments = [dict(row) for row in db.execute("SELECT * FROM order_assignments ORDER BY order_id").fetchall()]
+            initialize_marketplace(RecordingConnection(db))
+            inserts = [query for query in statements if query.startswith("INSERT INTO order_assignments")]
+            self.assertLessEqual(len(inserts), 1, "Un redémarrage migré ne doit pas écrire chaque ancienne affectation")
+            self.assertEqual([dict(row) for row in db.execute("SELECT * FROM orders ORDER BY id").fetchall()], before)
+            self.assertEqual([dict(row) for row in db.execute("SELECT * FROM order_assignments ORDER BY order_id").fetchall()], assignments)
+            db.execute("DELETE FROM order_assignments WHERE order_id = 'MJ-RESTART000299'")
+            initialize_marketplace(db)
+            self.assertEqual([dict(row) for row in db.execute("SELECT * FROM order_assignments ORDER BY order_id").fetchall()], assignments)
+
     def test_archive_restore_empty_categories_and_restart_preserve_history(self):
         order = self.create_order()
         stale_order = self.order_payload()

@@ -115,6 +115,7 @@ def initialize_marketplace(db):
     for user in db.execute("SELECT id FROM users WHERE role = 'courier'").fetchall():
         db.execute("INSERT INTO courier_profiles(user_id) VALUES (?) ON CONFLICT(user_id) DO NOTHING", (user["id"],))
     # Existing order item and price snapshots are never reconstructed from menus.
+    assigned_orders = {row["order_id"] for row in db.execute("SELECT order_id FROM order_assignments").fetchall()}
     for row in db.execute("SELECT * FROM orders").fetchall():
         order = json.loads(row["data"])
         initial = copy.deepcopy(order)
@@ -138,7 +139,8 @@ def initialize_marketplace(db):
         order.setdefault("discount", 0)
         if order != initial:
             db.execute("UPDATE orders SET data = ? WHERE id = ?", (dumps(order), row["id"]))
-        db.execute("INSERT INTO order_assignments(order_id, courier_id, state) VALUES (?, ?, ?) ON CONFLICT(order_id) DO NOTHING", (order["id"], order["courierId"], order["status"]))
+        if order["id"] not in assigned_orders:
+            db.execute("INSERT INTO order_assignments(order_id, courier_id, state) VALUES (?, ?, ?) ON CONFLICT(order_id) DO NOTHING", (order["id"], order["courierId"], order["status"]))
     db.execute("DELETE FROM delivery_attempts WHERE attempted_at <= ?", (int(time.time()) - 300,))
 
 
@@ -311,13 +313,19 @@ def publish_menu(handler, db, restaurant_row, data):
     categories = [text_field({"category": value}, "category", 1, 80) for value in categories]
     if len({category.casefold() for category in categories}) != len(categories):
         raise APIError(400, "Les catégories doivent avoir des noms distincts.")
+    previous = {row["id"]: handler.state.database.product(row) for row in db.execute("SELECT * FROM products WHERE restaurant_id = ?", (restaurant_row["id"],))}
+    # Omitted products remain archived in storage. Count the union, otherwise
+    # repeated replacement batches can create a menu the editor cannot resubmit.
+    # Existing oversized menus stay editable without deleting their history.
+    maximum_products = max(100, len(previous))
     raw_products = data.get("products")
-    if not isinstance(raw_products, list) or len(raw_products) > 100:
+    if not isinstance(raw_products, list) or len(raw_products) > maximum_products:
         raise APIError(400, "La carte peut contenir au maximum cent produits.")
     products = [validated_product(raw, categories) for raw in raw_products]
     if len({product["id"] for product in products}) != len(products):
         raise APIError(400, "Chaque produit doit avoir un identifiant distinct.")
-    previous = {row["id"]: handler.state.database.product(row) for row in db.execute("SELECT * FROM products WHERE restaurant_id = ?", (restaurant_row["id"],))}
+    if len(set(previous) | {product["id"] for product in products}) > maximum_products:
+        raise APIError(400, "La carte peut contenir au maximum cent produits.")
     for product in products:
         row = db.execute("SELECT restaurant_id FROM products WHERE id = ?", (product["id"],)).fetchone()
         if row and row["restaurant_id"] != restaurant_row["id"]:

@@ -8,6 +8,9 @@ type MenuError = string | {source: string; params: Record<string, string | numbe
 const errorText = (error: MenuError) => typeof error === "string" ? t(error) : t(error.source, error.params);
 
 type RestaurantMenu = { version: number; categories: string[]; products: Product[] };
+const profileFields = ["name", "description", "minutes", "pickupAddress", "pickupCity"] as const;
+type RestaurantProfile = Pick<Restaurant, typeof profileFields[number]>;
+const restaurantProfile = (restaurant: Restaurant): RestaurantProfile => Object.fromEntries(profileFields.map(field => [field, restaurant[field]])) as RestaurantProfile;
 const copy = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 const newId = () => crypto.randomUUID();
 const cities = ["Cayenne", "Matoury", "Rémire-Montjoly"];
@@ -40,7 +43,7 @@ function validateMenu(menu: RestaurantMenu): MenuError {
   return "";
 }
 
-export default function MenuEditor({ restaurant, onRestaurantChange }: { restaurant: Restaurant; onRestaurantChange: (restaurant: Restaurant) => void }) {
+export default function MenuEditor({ restaurant, onRestaurantChange }: { restaurant: Restaurant; onRestaurantChange: (restaurant: Restaurant, fields: (keyof RestaurantProfile)[]) => void }) {
   const [draft, setDraft] = useState<RestaurantMenu | null>(null);
   const [baseline, setBaseline] = useState("");
   const [loading, setLoading] = useState(true);
@@ -53,7 +56,8 @@ export default function MenuEditor({ restaurant, onRestaurantChange }: { restaur
   const [expanded, setExpanded] = useState<string | null>(null);
   const [categoryName, setCategoryName] = useState("");
   const [discardArmed, setDiscardArmed] = useState(false);
-  const [profile, setProfile] = useState({ name: restaurant.name, description: restaurant.description, minutes: restaurant.minutes, pickupAddress: restaurant.pickupAddress, pickupCity: restaurant.pickupCity });
+  const [profile, setProfile] = useState(() => restaurantProfile(restaurant));
+  const profileBaseline = useRef(profile);
   const [profileBusy, setProfileBusy] = useState(false);
   const active = useRef(true);
   const savingRef = useRef(false);
@@ -61,10 +65,19 @@ export default function MenuEditor({ restaurant, onRestaurantChange }: { restaur
   const profileSavingRef = useRef(false);
   const request = useRef(0);
   const dirty = !!draft && JSON.stringify(draft) !== baseline;
-  const dirtyRef = useRef(dirty); dirtyRef.current = dirty;
+  const dirtyRef = useRef(dirty); dirtyRef.current = dirty || profileFields.some(field => profile[field] !== profileBaseline.current[field]);
   const key = `manjeo-menu-draft-${restaurant.id}`;
 
+  useEffect(() => {
+    const previous = profileBaseline.current;
+    const latest = restaurantProfile(restaurant);
+    // Polling may update shared details; preserve only fields the author edited.
+    setProfile(current => Object.fromEntries(profileFields.map(field => [field, current[field] === previous[field] ? latest[field] : current[field]])) as RestaurantProfile);
+    profileBaseline.current = latest;
+  }, [restaurant.name, restaurant.description, restaurant.minutes, restaurant.pickupAddress, restaurant.pickupCity]);
+
   async function load(restore = false) {
+    if (savingRef.current || uploadingRef.current) return;
     const sequence = ++request.current;
     setLoading(true); setError("");
     try {
@@ -131,14 +144,28 @@ export default function MenuEditor({ restaurant, onRestaurantChange }: { restaur
     uploadingRef.current = true; setUploading(productId); setError("");
     try {
       const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error("La photo n’a pas pu être lue.")); reader.readAsDataURL(file); });
+      if (!active.current) return;
       const data = await api<{ url: string }>(`/api/restaurants/${encodeURIComponent(restaurant.id)}/images`, { method: "POST", body: JSON.stringify({ dataUrl }) });
       if (active.current) updateProduct(productId, { image: data.url });
     } catch (cause) { if (active.current) setError(cause instanceof Error ? cause.message : "L’import a échoué."); }
     finally { uploadingRef.current = false; if (active.current) setUploading(""); }
   }
   async function saveProfile(event: React.FormEvent) {
-    event.preventDefault(); if (profileSavingRef.current) return; profileSavingRef.current = true; setProfileBusy(true); setError("");
-    try { const data = await api<{ restaurant: Restaurant }>(`/api/restaurants/${encodeURIComponent(restaurant.id)}`, { method: "PATCH", body: JSON.stringify(profile) }); if (active.current) { onRestaurantChange(data.restaurant); setNotice("Informations du restaurant enregistrées."); } }
+    event.preventDefault(); if (profileSavingRef.current) return;
+    const fields = profileFields.filter(field => profile[field] !== profileBaseline.current[field]);
+    if (!fields.length) { setNotice("Informations du restaurant enregistrées."); return; }
+    const changes = Object.fromEntries(fields.map(field => [field, profile[field]]));
+    profileSavingRef.current = true; setProfileBusy(true); setError("");
+    try {
+      const data = await api<{ restaurant: Restaurant }>(`/api/restaurants/${encodeURIComponent(restaurant.id)}`, { method: "PATCH", body: JSON.stringify(changes) });
+      if (active.current) {
+        const saved = Object.fromEntries(fields.map(field => [field, data.restaurant[field]]));
+        profileBaseline.current = { ...profileBaseline.current, ...saved };
+        setProfile(current => ({ ...current, ...saved }));
+        onRestaurantChange(data.restaurant, fields);
+        setNotice("Informations du restaurant enregistrées.");
+      }
+    }
     catch (cause) { if (active.current) setError(cause instanceof Error ? cause.message : "La modification a échoué."); }
     finally { profileSavingRef.current = false; if (active.current) setProfileBusy(false); }
   }
@@ -150,8 +177,8 @@ export default function MenuEditor({ restaurant, onRestaurantChange }: { restaur
     <div className="staff-section-heading"><div><h2>{t("Votre carte, à votre façon")}</h2><p>{t("Produits, catégories, photos et personnalisations : publiez quand tout est prêt.")}</p></div></div>
     {error && <div className="staff-alert" role="alert"><span>{errorText(error)}</span><button type="button" onClick={() => setError("")}>{t("Fermer")}</button></div>}
     {notice && <p className="menu-saved" role="status"><CheckCircle2 size={17} />{t(notice)}</p>}
-    {conflict && <div className="menu-conflict" role="alert"><strong>{t("La carte a changé depuis l’ouverture de votre brouillon.")}</strong><p>{t("Vos modifications restent dans cet onglet. Copiez les éléments à conserver avant de charger la carte publiée ; aucun écrasement automatique n’est effectué.")}</p><button className="staff-button" type="button" onClick={() => setDiscardArmed(true)}>{t("Charger la carte publiée")}</button></div>}
-    {discardArmed && <div className="menu-conflict" role="alert"><strong>{t("Remplacer le brouillon par la carte publiée ?")}</strong><p>{t("Les modifications non publiées de cet onglet seront supprimées.")}</p><div className="menu-toolbar-actions"><button className="staff-button" type="button" onClick={() => setDiscardArmed(false)}>{t("Garder mon brouillon")}</button><button className="staff-button menu-danger" type="button" onClick={() => void load()}>{t("Abandonner et recharger")}</button></div></div>}
+    {conflict && <div className="menu-conflict" role="alert"><strong>{t("La carte a changé depuis l’ouverture de votre brouillon.")}</strong><p>{t("Vos modifications restent dans cet onglet. Copiez les éléments à conserver avant de charger la carte publiée ; aucun écrasement automatique n’est effectué.")}</p><button className="staff-button" type="button" disabled={saving || !!uploading} onClick={() => setDiscardArmed(true)}>{t("Charger la carte publiée")}</button></div>}
+    {discardArmed && <div className="menu-conflict" role="alert"><strong>{t("Remplacer le brouillon par la carte publiée ?")}</strong><p>{t("Les modifications non publiées de cet onglet seront supprimées.")}</p><div className="menu-toolbar-actions"><button className="staff-button" type="button" onClick={() => setDiscardArmed(false)}>{t("Garder mon brouillon")}</button><button className="staff-button menu-danger" type="button" disabled={saving || !!uploading} onClick={() => void load()}>{t("Abandonner et recharger")}</button></div></div>}
     <form onSubmit={publish}>
       <div className="menu-toolbar"><div><strong className={dirty ? "menu-dirty" : ""}>{dirty ? t("Modifications non publiées") : t("Votre carte est publiée")}</strong><p>{t("{count} produits · version {version}", {count: draft.products.filter(product => !product.archived).length, version: draft.version})}{dirty && <> · {t("brouillon conservé dans cet onglet")}</>}</p></div><div className="menu-toolbar-actions"><button type="button" className="staff-button" disabled={saving || !!uploading} onClick={() => dirty ? setDiscardArmed(true) : void load()}><RefreshCw size={15} />{t("Recharger")}</button><button type="submit" className="staff-button staff-button-primary" disabled={!dirty || saving || !!uploading || conflict}><Save size={16} />{saving ? t("Publication…") : t("Publier la carte")}</button></div></div>
       <fieldset disabled={saving || !!uploading} className="menu-editor">

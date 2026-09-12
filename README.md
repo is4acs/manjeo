@@ -72,6 +72,13 @@ ou Stripe de test. La préférence ne contient aucun numéro de carte. La langue
 FR/HT/PT. Ces coordonnées préremplissent les prochaines commandes, tandis que les instantanés des
 commandes déjà confirmées restent inchangés.
 
+Les champs que vous ne modifiez pas suivent les données fraîches du compte. Une sauvegarde ne
+transmet que vos modifications : changer le téléphone ne réenregistre pas une ancienne adresse.
+Si la confirmation d’une commande est interrompue par le réseau, un récapitulatif **Confirmation à
+reprendre** permet de reprendre la demande exacte après rechargement. Cette reprise conserve son
+identifiant, son destinataire et ses instructions, et bloque une nouvelle confirmation tant que le
+résultat reste incertain. Une commande confirmée est consultable dans **Commandes en cours**.
+
 - **Les numéros suivent la prise en charge.** Le client joint le restaurant de l’acceptation à la
   livraison, et son livreur dès que la commande est prête puis pendant la livraison. Le livreur
   affecté joint le client et le restaurant ; le restaurant joint le client et le livreur affecté.
@@ -145,6 +152,31 @@ Pour les tests d’intégration PostgreSQL, fournir séparément `MANJEO_TEST_DA
 ```sh
 env -u DATABASE_URL -u POSTGRES_URL -u VERCEL .venv/bin/python -m unittest discover -s server -p 'test_*.py'
 ```
+
+### Parcours navigateur sur une base jetable
+
+La suite Playwright versionnée complète les tests unitaires. Après le setup :
+
+```sh
+npx playwright install chromium
+npm run test:browser
+```
+
+Pour vérifier également les moteurs de Safari et Firefox :
+
+```sh
+npx playwright install webkit firefox
+MANJEO_TEST_BROWSERS=chromium,webkit,firefox npm run test:browser
+```
+
+La commande compile l’interface et démarre son propre serveur sur un port localhost libre, avec
+une base SQLite temporaire supprimée à l’arrêt. Elle n’accepte aucune URL de déploiement et ignore
+les connexions de base et secrets du shell. Le géocodeur externe est remplacé par un point de test ;
+les sessions, preuves d’adresse, profils, prix, commandes, rôles, affectations et codes de remise
+passent par la véritable API. Les paiements restent simulés. Ces tests ne qualifient donc ni l’IGN
+en ligne, ni Stripe, ni la traduction externe. Ils vérifient notamment la commande en un clic,
+la reprise après réponse perdue, les profils modifiés depuis deux appareils, les langues persistantes,
+les fenêtres mobiles et les erreurs de chargement. Ils se lancent séparément de `codex-check.sh`.
 
 ## Option : développement local avec SQLite
 

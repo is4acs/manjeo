@@ -25,6 +25,32 @@ function hasConfirmation(payload: Record<string, unknown>) {
     || (token === undefined && Object.hasOwn(payload, 'useDefaultAddress') && saved === true);
 }
 
+function checkoutShape(payload: Record<string, unknown>) {
+  return ['restaurantId', 'customerName', 'phone', 'address', 'city', 'details', 'notes'].every(field => typeof payload[field] === 'string')
+    && Number.isSafeInteger(payload.expectedTotal) && Number(payload.expectedTotal) >= 0
+    && ['demo', 'stripe'].includes(String(payload.paymentMethod))
+    && (payload.promoCode === null || typeof payload.promoCode === 'string')
+    && Array.isArray(payload.items) && payload.items.length > 0 && payload.items.length <= 50
+    && payload.items.every(item => record(item) && typeof item.productId === 'string'
+      && Number.isSafeInteger(item.quantity) && Number(item.quantity) > 0 && Number(item.quantity) <= 20
+      && Number.isSafeInteger(item.unitPrice) && Number(item.unitPrice) >= 0
+      && Number.isSafeInteger(item.productVersion) && Number(item.productVersion) > 0
+      && Array.isArray(item.selections) && item.selections.every(selection => record(selection)
+        && typeof selection.groupId === 'string' && Array.isArray(selection.choiceIds) && selection.choiceIds.every(choice => typeof choice === 'string')));
+}
+
+/** Read only the named account's own, internally consistent pending request. */
+export function restoreOrderRequest(previous: unknown, userId: string): OrderRequest<Record<string, unknown>> | null {
+  if (!userId || !record(previous) || !Object.hasOwn(previous, 'key') || !Object.hasOwn(previous, 'id')
+      || !Object.hasOwn(previous, 'payload') || typeof previous.key !== 'string' || typeof previous.id !== 'string'
+      || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(previous.id)
+      || !record(previous.payload) || !hasConfirmation(previous.payload) || !checkoutShape(previous.payload)) return null;
+  try {
+    if (businessKey(userId, previous.payload) !== previous.key) return null;
+    return {key: previous.key, id: previous.id, payload: JSON.parse(JSON.stringify(canonical(previous.payload)))};
+  } catch { return null; }
+}
+
 /** Keep the first exact HTTP payload through an uncertain response or reload.
  * Saving the same address may switch its proof from a token to a saved default;
  * that alone must never create a second order or change an idempotent replay.

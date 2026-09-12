@@ -163,6 +163,37 @@ class PaymentContracts:
         self.assertEqual(parameters["payment_intent_data[metadata][order_id]"], self.order["id"])
         self.assertEqual(self.records()[0]["status"], "awaiting_payment")
 
+    def test_checkout_after_expiry_persists_cancellation_and_releases_promo(self):
+        with self.database.connect() as db:
+            self.database.begin_write(db)
+            db.execute("UPDATE order_payments SET expires_at=? WHERE order_id=?", (int(time.time()) - 1, self.order["id"]))
+            db.execute("INSERT INTO promo_uses VALUES (?,?,?,?)", (self.order["id"], "BIENVENUE", "demo-client", self.order["date"]))
+        self.assert_api(409, payments.create_checkout, self.handler(), self.order["id"], {})
+        order, row = self.records()
+        self.assertEqual((order["status"], row["status"]), ("cancelled", "expired"))
+        with self.database.connect() as db:
+            self.assertEqual(db.execute("SELECT state FROM order_assignments WHERE order_id=?", (self.order["id"],)).fetchone()[0], "cancelled")
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM promo_uses WHERE order_id=?", (self.order["id"],)).fetchone()[0], 0)
+
+    def test_checkout_response_arriving_after_expiry_never_returns_a_payment_link(self):
+        with patch.object(payments, "stripe_request", side_effect=APIError(503, "Timeout fictif")):
+            self.assert_api(503, payments.create_checkout, self.handler(), self.order["id"], {})
+        expires_at = self.records()[1]["expires_at"]
+        clock = [expires_at - 1]
+        paths = []
+        def stripe(method, path, parameters, key):
+            paths.append(path)
+            if path.endswith("/expire"):
+                return {}
+            session = self.session()
+            clock[0] = expires_at + 1
+            return session
+        with patch.object(payments.time, "time", side_effect=lambda: clock[0]), patch.object(payments, "stripe_request", side_effect=stripe):
+            self.assert_api(409, payments.create_checkout, self.handler(), self.order["id"], {})
+        order, row = self.records()
+        self.assertEqual((order["status"], row["status"]), ("cancelled", "expired"))
+        self.assertEqual(paths, ["/checkout/sessions", "/checkout/sessions/" + row["session_id"] + "/expire"])
+
     def test_checkout_network_retry_and_concurrency_keep_identical_idempotency_key_and_parameters(self):
         seen = []
         def outage(method, path, params, key):
@@ -184,7 +215,7 @@ class PaymentContracts:
 
     def test_checkout_rejects_forged_amount_foreign_metadata_live_session_and_redirect(self):
         for fields in [{"amount_total": 1}, {"amount_total": True}, {"metadata": {}}, {"livemode": True},
-                       {"currency": "usd"}, {"url": "https://evil.example/payment"}, {"id": "cs_live_NotAllowed"}]:
+                       {"currency": "usd"}, {"url": "https://evil.example/payment"}, {"url": "https://[invalid"}, {"id": "cs_live_NotAllowed"}]:
             with self.subTest(fields=fields), patch.object(payments, "stripe_request", return_value=self.session(**fields)):
                 with self.assertRaises(APIError):
                     payments.create_checkout(self.handler(), self.order["id"], {})
@@ -219,6 +250,8 @@ class PaymentContracts:
         self.assert_api(400, payments.verify_webhook, b"x" * (payments.MAX_WEBHOOK_BYTES + 1), signature)
         live = json.dumps(self.event(livemode=True)).encode()
         self.assert_api(400, payments.verify_webhook, live, self.signature(live))
+        nested = b'{"data":' + b'[' * 10000 + b'0' + b']' * 10000 + b'}'
+        self.assert_api(400, payments.verify_webhook, nested, self.signature(nested))
         self.assertEqual(payments.verify_webhook(raw, signature + ",v1=" + "0" * 64)["object"], "event")
 
     def test_only_verified_paid_webhook_opens_kitchen_and_starts_ten_minute_deadline(self):
@@ -233,6 +266,22 @@ class PaymentContracts:
         self.assertEqual(len(paid["history"]), 2)
         self.assertTrue(self.deliver(event)["duplicate"])
         self.assertEqual(self.records()[0], paid)
+
+    def test_webhook_acceptance_deadline_starts_after_waiting_for_the_write_lock(self):
+        event = self.event()
+        arrival = now_iso()
+        acquired = payments.future(arrival, 9)
+        locked = [False]
+        begin_write = self.database.begin_write
+        def delayed_lock(db):
+            begin_write(db)
+            locked[0] = True
+        with patch.object(self.database, "begin_write", side_effect=delayed_lock), patch.object(
+                payments, "now_iso", side_effect=lambda: acquired if locked[0] else arrival):
+            self.deliver(event)
+        order = self.records()[0]
+        self.assertEqual(order["acceptBy"], payments.future(acquired, 600))
+        self.assertEqual(order["history"][-1]["date"], acquired)
 
     def test_unpaid_completion_foreign_schema_and_unknown_events_do_not_activate_order(self):
         self.deliver(self.event(self.session(status="complete", payment_status="unpaid")))
@@ -331,6 +380,9 @@ class PaymentContracts:
         self.cancel()
         self.assert_api(400, self.deliver, self.event(self.refund(amount=1), kind="refund.updated"))
         self.assertEqual(self.records()[1]["status"], "refund_pending")
+        for status in ([], {}, None, True):
+            self.assert_api(400, self.deliver, self.event(self.refund(status=status), kind="refund.updated"))
+            self.assertEqual(self.records()[1]["status"], "refund_pending")
 
 
 class PaymentTests(PaymentContracts, unittest.TestCase):
@@ -378,14 +430,16 @@ class PaymentTransportTests(unittest.TestCase):
         self.assertIsNone(payments.NoRedirect().redirect_request(None, None, 302, "", {}, "https://untrusted.example"))
 
     def test_transport_rejects_provider_errors_live_responses_and_unbounded_bodies_without_leaking(self):
-        responses = [b'{"livemode":true}', b'[]', b'invalid', b'x' * (payments.MAX_RESPONSE_BYTES + 1)]
+        responses = [b'{"livemode":true}', b'[]', b'invalid', b'x' * (payments.MAX_RESPONSE_BYTES + 1),
+                     b'{"data":' + b'[' * 10000 + b'0' + b']' * 10000 + b'}']
         for raw in responses:
             with patch.object(payments, "build_opener") as builder:
                 builder.return_value.open.return_value = io.BytesIO(raw)
                 with self.assertRaises(APIError) as error:
                     payments.stripe_request("POST", "/checkout/sessions", {}, "test")
                 self.assertEqual(error.exception.status, 503)
-        for cause in [URLError("sk_test_DoNotExpose"), HTTPError("https://api.stripe.com", 500, "sk_test_DoNotExpose", {}, None), TimeoutError()]:
+        for cause in [URLError("sk_test_DoNotExpose"), HTTPError("https://api.stripe.com", 500, "sk_test_DoNotExpose", {}, None), TimeoutError(),
+                      http.client.IncompleteRead(b"sk_test_DoNotExpose", 40), http.client.BadStatusLine("sk_test_DoNotExpose")]:
             with patch.object(payments, "build_opener") as builder:
                 builder.return_value.open.side_effect = cause
                 with self.assertRaises(APIError) as error:
@@ -525,6 +579,34 @@ class PaymentHTTPContracts:
         event = {"id": "evt_" + uuid.uuid4().hex, "object": "event", "livemode": False, "type": "refund.updated", "data": {"object": refund}}
         self.assertEqual(self.webhook(event)[0], 200)
         self.assertEqual(self.request("GET", "/api/orders", role="client")[0]["orders"][0]["payment"]["status"], "refunded")
+
+    def test_http_late_refund_does_not_reopen_the_cancelled_orders_conversation(self):
+        order, _ = self.stripe_order()
+        path = "/api/orders/" + order["id"]
+        self.assertEqual(self.webhook(self.signed_paid(order))[0], 200)
+        self.login("restaurant")
+        self.request("PATCH", path, {"status": "accepted"}, role="restaurant")
+        self.request("POST", path + "/messages", {"body": "Votre commande est acceptée."}, role="restaurant", status=201)
+        self.login("admin")
+        self.request("PATCH", path, {"status": "cancelled", "reason": "Annulation de test après acceptation"}, role="admin")
+        with self.database.connect() as db:
+            self.database.begin_write(db)
+            current = json.loads(db.execute("SELECT data FROM orders WHERE id=?", (order["id"],)).fetchone()["data"])
+            current["updatedAt"] = payments.future(now_iso(), -1801)
+            current["history"][-1]["date"] = current["updatedAt"]
+            db.execute("UPDATE orders SET data=? WHERE id=?", (json.dumps(current), order["id"]))
+        self.assertFalse(self.request("GET", path + "/thread", role="client")[0]["open"])
+        row = self.payment_record(order)
+        refund = {"id": "re_" + row["payment_id"], "object": "refund", "status": "succeeded", "metadata": payments.metadata(row),
+                  "payment_intent": row["payment_intent_id"], "currency": "eur", "amount": row["amount"]}
+        event = {"id": "evt_" + uuid.uuid4().hex, "object": "event", "livemode": False, "type": "refund.updated", "data": {"object": refund}}
+        self.assertEqual(self.webhook(event)[0], 200)
+        self.assertEqual(self.request("GET", "/api/orders", role="client")[0]["orders"][0]["payment"]["status"], "refunded")
+        for role in ("client", "restaurant", "admin"):
+            thread = self.request("GET", path + "/thread", role=role)[0]
+            self.assertFalse(thread["open"], "Le remboursement ne redémarre pas la fenêtre de messagerie")
+            self.assertEqual(len(thread["messages"]), 1)
+            self.request("POST", path + "/messages", {"body": "Message tardif"}, role=role, status=409)
 
 
 class PaymentHTTPTests(PaymentHTTPContracts, AppTestHarness):

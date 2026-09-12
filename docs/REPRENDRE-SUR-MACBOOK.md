@@ -85,6 +85,11 @@ Quand les changements sont prêts à publier, demander à Codex de vérifier la 
 
 Les commandes de compilation et de test, ainsi que le mode local facultatif, sont détaillés dans [README.md](../README.md). Il n’est pas nécessaire de lancer localhost pour consulter le site en ligne.
 
+Pour revérifier les parcours après une modification, le dépôt inclut désormais `npm run test:browser`.
+Installer d’abord le navigateur de test avec `npx playwright install chromium` après le setup.
+La suite crée automatiquement une base jetable et un serveur local ; aucune connexion Neon ni
+variable Vercel n’est nécessaire. Les options WebKit et Firefox sont détaillées dans le README.
+
 ## Ce qui suit le projet
 
 - **Code et documentation** : synchronisés via GitHub. Les dépendances et fichiers compilés sont recréés quand nécessaire.

@@ -227,10 +227,15 @@ def thread_open(order):
     if not any(event.get("status") == "accepted" for event in order.get("history", [])):
         return False
     try:
-        ended = datetime.fromisoformat(order["updatedAt"].replace("Z", "+00:00"))
+        # A later refund updates updatedAt, but must never reopen a conversation.
+        # Keep the fallback only for legacy histories lacking their final event.
+        terminal = next((event for event in reversed(order.get("history", []))
+                         if event.get("status") == order["status"]), {})
+        ended_at = terminal.get("date") or order.get("updatedAt")
+        ended = datetime.fromisoformat(ended_at.replace("Z", "+00:00"))
         age = (datetime.now(timezone.utc) - ended).total_seconds()
         return 0 <= age < CLOSED_GRACE_SECONDS
-    except (KeyError, TypeError, ValueError):
+    except (AttributeError, KeyError, TypeError, ValueError):
         return False
 
 

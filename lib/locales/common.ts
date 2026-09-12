@@ -1,4 +1,10 @@
 export const commonTranslations: Record<string, [string, string]> = {
+  'La vérification de cette adresse a expiré. Recherchez et confirmez à nouveau votre point de livraison.':['Verifikasyon adrès sa a ekspire. Chèche epi konfime pwen livrezon ou ankò.','A verificação deste endereço expirou. Busque e confirme novamente seu ponto de entrega.'],
+  'Recherche des promotions disponibles…':['Ap chèche pwomosyon ki disponib…','Buscando promoções disponíveis…'],
+  'Votre espace est momentanément indisponible.':['Espas ou a pa disponib pou kounye a.','Sua área está temporariamente indisponível.'],
+  'Vérifiez votre connexion, puis rechargez la page pour rouvrir votre espace.':['Verifye koneksyon ou, epi rechaje paj la pou ouvri espas ou ankò.','Verifique sua conexão e recarregue a página para reabrir sua área.'],
+  'Recharger la page':['Rechaje paj la','Recarregar a página'],
+  'Retour aux restaurants':['Retounen nan restoran yo','Voltar aos restaurantes'],
   'Client':['Kliyan','Cliente'], 'Restaurant':['Restoran','Restaurante'], 'Restaurateur':['Responsab restoran','Responsável pelo restaurante'], 'Livreur':['Livrè','Entregador'], 'Admin':['Admin','Admin'], 'Administrateur':['Administratè','Administrador'],
   'Espace client':['Espas kliyan','Área do cliente'], 'Espace restaurateur':['Espas restoran','Área do restaurante'], 'Espace livreur':['Espas livrè','Área do entregador'], 'Administration':['Administrasyon','Administração'],
   'En attente':['Ap tann','Aguardando'], 'Acceptée':['Aksepte','Aceito'], 'En préparation':['An preparasyon','Em preparo'], 'Prête au retrait':['Pare pou pran','Pronto para retirada'], 'En livraison':['Y ap livre l','Saiu para entrega'], 'Livrée (test)':['Livre (tès)','Entregue (teste)'], 'Annulée':['Anile','Cancelado'],

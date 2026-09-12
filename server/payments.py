@@ -5,6 +5,7 @@ write lock while contacting Stripe. Only a verified webhook may unlock an order.
 """
 import hashlib
 import hmac
+import http.client
 import json
 import os
 import re
@@ -183,7 +184,7 @@ def stripe_request(method, path, parameters=None, idempotency_key=None):
         if not isinstance(payload, dict) or payload.get("livemode") is True:
             raise ValueError()
         return payload
-    except (HTTPError, URLError, TimeoutError, OSError, ValueError, UnicodeError):
+    except (HTTPError, URLError, TimeoutError, OSError, http.client.HTTPException, ValueError, UnicodeError, RecursionError):
         # Provider errors can include API keys, request bodies and card details.
         raise APIError(503, "Stripe est momentanément indisponible. Réessayez le paiement de test.") from None
 
@@ -245,11 +246,14 @@ def create_checkout(handler, order_id, data):
         row, order = owned_payment(handler, db, order_id)
         if row["status"] != "awaiting_payment" or order["status"] != "awaiting_payment":
             raise APIError(409, "Cette commande n’attend plus de paiement.")
-        if row["expires_at"] <= int(time.time()):
-            raise APIError(409, "Ce paiement a expiré. Annulez la commande et recommencez.")
-        if row["checkout_url"]:
+        expired = row["expires_at"] <= int(time.time())
+        if expired:
+            # This route owns its transactions and bypasses the generic expiry
+            # sweep. Commit the cancellation before returning its refusal.
+            cancel_waiting_order(db, order, "expired", now_iso())
+        elif row["checkout_url"]:
             return {"checkoutUrl": row["checkout_url"], "orderId": order_id}
-        if row["checkout_parameters"]:
+        elif row["checkout_parameters"]:
             parameters = json.loads(row["checkout_parameters"])
         else:
             # Stripe requires >=30 minutes from session creation. A draft that
@@ -258,10 +262,15 @@ def create_checkout(handler, order_id, data):
                 raise APIError(409, "Ce paiement a expiré. Annulez la commande et recommencez.")
             parameters = session_parameters(row, order, locale)
             db.execute("UPDATE order_payments SET checkout_parameters=? WHERE order_id=?", (dumps(parameters), order_id))
+    if expired:
+        raise APIError(409, "Cette commande n’attend plus de paiement.")
     session = stripe_request("POST", "/checkout/sessions", parameters, "manjeo:" + row["payment_id"] + ":checkout")
     sid = valid_session(session, row)
     url = session.get("url")
-    parsed = urlsplit(url) if isinstance(url, str) else None
+    try:
+        parsed = urlsplit(url) if isinstance(url, str) else None
+    except ValueError:
+        parsed = None
     if not parsed or parsed.scheme != "https" or parsed.netloc != "checkout.stripe.com" or parsed.username or session.get("status") != "open":
         raise APIError(502, "La page de paiement de test est indisponible.")
     with database.connect() as db:
@@ -269,6 +278,8 @@ def create_checkout(handler, order_id, data):
         current, order = owned_payment(handler, db, order_id)
         valid_session(session, current)
         db.execute("UPDATE order_payments SET session_id=?, checkout_url=? WHERE order_id=?", (sid, url, order_id))
+        if current["expires_at"] <= int(time.time()):
+            cancel_waiting_order(db, order, "expired", now_iso())
         waiting = current["status"] == "awaiting_payment" and order["status"] == "awaiting_payment"
     if not waiting:
         # Persist the session ID even if cancellation won the network race, so
@@ -295,7 +306,7 @@ def verify_webhook(raw, signature, stamp=None):
         raise APIError(400, "La signature du paiement est invalide ou trop ancienne.")
     try:
         event = json.loads(raw)
-    except (ValueError, UnicodeError):
+    except (ValueError, UnicodeError, RecursionError):
         raise APIError(400, "Le webhook de paiement est invalide.") from None
     if not isinstance(event, dict) or event.get("livemode") is not False or event.get("object") != "event" or not isinstance(event.get("id"), str) or not re.fullmatch(r"evt_[A-Za-z0-9]+", event["id"]) or not isinstance(event.get("type"), str):
         raise APIError(400, "Seuls les événements Stripe de test sont autorisés.")
@@ -310,9 +321,9 @@ def apply_webhook(database, event):
     obj = event.get("data", {}).get("object") if isinstance(event.get("data"), dict) else None
     if not isinstance(obj, dict) or not isinstance(obj.get("id"), str):
         raise APIError(400, "Le webhook de paiement est invalide.")
-    stamp = now_iso()
     with database.connect() as db:
         database.begin_write(db)
+        stamp = now_iso()
         if db.execute("SELECT event_id FROM payment_events WHERE event_id=?", (event["id"],)).fetchone():
             return {"received": True, "duplicate": True}
         meta = obj.get("metadata")
@@ -359,7 +370,7 @@ def apply_webhook(database, event):
             if order["status"] != "cancelled":
                 raise APIError(409, "La commande doit être annulée avant son remboursement.")
             status = obj.get("status")
-            if status not in {"succeeded", "failed", "canceled", "pending", "requires_action"}:
+            if not isinstance(status, str) or status not in {"succeeded", "failed", "canceled", "pending", "requires_action"}:
                 raise APIError(400, "Le statut du remboursement est invalide.")
             db.execute("UPDATE order_payments SET refund_id=? WHERE order_id=?", (obj["id"], order["id"]))
             if row["status"] != "refunded" and not (row["status"] == "refund_failed" and status in {"pending", "requires_action"}):

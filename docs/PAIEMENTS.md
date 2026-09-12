@@ -24,6 +24,8 @@ ou Apple Pay/Google Pay fonctionne effectivement sur le déploiement.
 5. Le retour du navigateur affiche le suivi de la commande. **Ce retour ne confirme jamais le paiement.**
    Seul le webhook signé attestant `payment_status=paid` et `status=complete` ouvre `pending`.
    Les dix minutes laissées au restaurateur démarrent alors, et non au début du paiement.
+   Leur instant de référence est capturé après acquisition du verrou de transaction : une attente
+   d’écriture en base ne raccourcit pas ce délai.
 
 Cette intégration demande le type `card` à Checkout. Apple Pay et Google Pay peuvent apparaître dans
 la page Stripe selon les paramètres du compte, la compatibilité du navigateur/appareil et la présence
@@ -146,6 +148,12 @@ signifie seulement que le client est revenu de Checkout ; il peut reprendre ou a
 L’annulation explicite ne rouvre jamais la cuisine, même si une confirmation de paiement arrive ensuite.
 [Expiration des sessions](https://docs.stripe.com/api/checkout/sessions/expire).
 
+Une demande de page Checkout après l’heure d’expiration annule durablement la commande et libère
+sa promotion avant de renvoyer 409. Le serveur revérifie aussi cette échéance après l’appel Stripe :
+si une réponse arrive trop tard, il conserve le rapprochement de session, annule l’attente et tente
+d’expirer cette session distante, sans retourner de lien de paiement au client. Un éventuel paiement
+tardif reste traité par le webhook et exige un remboursement ; il ne rouvre pas la commande.
+
 L’expiration enregistrée lors des requêtes de cycle de vie annule la commande et libère sa promotion.
 Il n’y a pas de tâche planifiée implicite. Si un paiement arrive après une annulation ou après
 l’échéance locale, la commande reste annulée et passe en `refund_pending`.
@@ -156,6 +164,9 @@ Un événement d’expiration reçu après un paiement confirmé n’efface pas 
 Toute annulation après paiement, y compris l’expiration du délai du restaurateur, doit appeler le hook
 `cancel_payment` dans sa transaction. Le statut `refund_pending` reste durable et visible tant que
 le remboursement n’est pas confirmé.
+
+Les mises à jour de paiement peuvent modifier `updatedAt`, mais ne prolongent pas la conversation :
+les trente minutes après annulation sont calculées depuis l’événement d’annulation de l’historique.
 
 Dans cette première étape, l’administrateur demande le remboursement via l’endpoint prévu. Il ne
 s’agit pas d’un remboursement automatique en arrière-plan. La demande est intégrale, utilise le

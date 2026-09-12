@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, Bike, ChefHat, LogOut, ShieldCheck, ShoppingBag, UserRound } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -10,8 +10,10 @@ import { LanguageBar, useLanguage, chooseLanguage, adoptProfileLanguage, hasLang
 import CustomerAccount from "./customer-account";
 import { localizeInvalid, clearValidity, refreshValidationLanguage } from "./validation";
 import Home from "./page";
-import Staff from "./staff";
+import RouteBoundary from "./route-boundary";
 import "./accounts.css";
+
+const Staff = lazy(() => import("./staff"));
 
 const demos = [
   { role: "client", label: "Client", email: "client@manjeo.test", icon: ShoppingBag },
@@ -216,7 +218,7 @@ export default function Application() {
   return <div className="localized-app" onInvalidCapture={localizeInvalid} onInputCapture={clearValidity}>
     <LanguageBar onChange={value => void selectLanguage(value)} disabled={locked}/>
     {staff && user && user.role !== "client"
-      ? <Staff key={user.id} user={viewer!} onLogout={() => void logout()} onAccount={() => openAccount()} onShop={() => {setStaff(false); void refreshCatalog().catch(() => {});}}/>
+      ? <RouteBoundary key={user.id} onShop={() => setStaff(false)}><Suspense fallback={<main className="app-startup"><span className="brand">manjéo</span><div className="startup-card" role="status"><p>{t("Chargement de votre espace…")}</p></div></main>}><Staff user={viewer!} onLogout={() => void logout()} onAccount={() => openAccount()} onShop={() => {setStaff(false); void refreshCatalog().catch(() => {});}}/></Suspense></RouteBoundary>
       : <Home user={viewer} onSaveProfile={saveCustomerProfile} restaurants={restaurants} refreshCatalog={refreshCatalog} onAccount={openAccount} onStaff={() => setStaff(true)}/>}
     <Dialog open={accountOpen} onOpenChange={open => {if (!locked) setAccountOpen(open);}}><DialogContent className="app-dialog account-dialog">
       {user ? <>

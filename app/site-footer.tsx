@@ -18,6 +18,8 @@ export default function SiteFooter({city, cities, onCity, onAccount, onOrders, o
   const [panel, setPanel] = useState<Panel>("");
   const [promotions, setPromotions] = useState<PublicPromotion[]>([]);
   const [promotionsError, setPromotionsError] = useState("");
+  const [promotionsLoading, setPromotionsLoading] = useState(true);
+  const [promotionsAttempt, setPromotionsAttempt] = useState(0);
   const [installer, setInstaller] = useState<InstallPrompt | null>(null);
 
   useEffect(() => {
@@ -27,10 +29,14 @@ export default function SiteFooter({city, cities, onCity, onAccount, onOrders, o
   }, []);
   useEffect(() => {
     if (panel !== "promotions") return;
-    void api<{promotions: PublicPromotion[]}>("/api/promotions")
-      .then(data => { setPromotions(data.promotions); setPromotionsError(""); })
-      .catch(error => setPromotionsError((error as Error).message));
-  }, [panel]);
+    const controller = new AbortController();
+    setPromotionsLoading(true); setPromotionsError(""); setPromotions([]);
+    void api<{promotions: PublicPromotion[]}>("/api/promotions", {signal: controller.signal})
+      .then(data => { if (!controller.signal.aborted) setPromotions(data.promotions); })
+      .catch(error => { if (!controller.signal.aborted) setPromotionsError((error as Error).message); })
+      .finally(() => { if (!controller.signal.aborted) setPromotionsLoading(false); });
+    return () => controller.abort();
+  }, [panel, promotionsAttempt]);
 
   async function install() {
     if (!installer) { setPanel("install"); return; }
@@ -118,11 +124,12 @@ export default function SiteFooter({city, cities, onCity, onAccount, onOrders, o
       <div className="dialog-symbol"><Tag size={24}/></div>
       <DialogTitle>{t("Les codes du moment")}</DialogTitle>
       <DialogDescription>{t("À saisir dans votre panier avant de confirmer. Le montant exact est recalculé par le serveur.")}</DialogDescription>
-      {promotionsError && <p className="checkout-error" role="alert">{t(promotionsError)}</p>}
-      {promotions.length > 0 ? <ul className="promo-catalog">{promotions.map(promotion => <li key={promotion.code}>
+      {promotionsLoading && <p className="dialog-note" role="status">{t("Recherche des promotions disponibles…")}</p>}
+      {promotionsError && <><p className="checkout-error" role="alert">{t(promotionsError)}</p><Button variant="outline" onClick={() => setPromotionsAttempt(value => value + 1)}>{t("Réessayer")}</Button></>}
+      {!promotionsLoading && promotions.length > 0 ? <ul className="promo-catalog">{promotions.map(promotion => <li key={promotion.code}>
         <code>{promotion.code}</code>
         <span><strong>{t(promotion.label)}</strong><small>{promotion.conditions.split(" · ").map(part => t(part)).join(" · ")}</small></span>
-      </li>)}</ul> : !promotionsError && <p className="dialog-note">{t("Aucun code n’est ouvert en ce moment.")}</p>}
+      </li>)}</ul> : !promotionsLoading && !promotionsError && <p className="dialog-note">{t("Aucun code n’est ouvert en ce moment.")}</p>}
     </DialogContent></Dialog>
 
     <Dialog open={panel === "install"} onOpenChange={open => !open && setPanel("")}><DialogContent className="app-dialog">

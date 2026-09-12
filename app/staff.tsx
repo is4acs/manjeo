@@ -125,7 +125,7 @@ function StaffDashboard({ user, onLogout, onShop, onAccount }: { user: User; onL
     return () => window.removeEventListener("manjeo-thread-read", read);
   }, [user.id]);
 
-  const refresh = useCallback(async (silent = false) => {
+  const refresh = useCallback(async (silent = false, preserveMutationError = false) => {
     if (mutations.current.size) return;
     const sequence = ++requestSequence.current;
     if (!silent) setRefreshing(true);
@@ -142,9 +142,9 @@ function StaffDashboard({ user, onLogout, onShop, onAccount }: { user: User; onL
       setUsers(userData.users);
       setCouriers(courierData.couriers);
       setUpdated(new Date().toISOString());
-      setError("");
+      if (!preserveMutationError) setError("");
     } catch (cause) {
-      if (mounted.current && sequence === requestSequence.current) setError(cause instanceof Error ? cause.message : "Le chargement a échoué. Réessayez.");
+      if (mounted.current && sequence === requestSequence.current) setError(current => preserveMutationError && current ? current : cause instanceof Error ? cause.message : "Le chargement a échoué. Réessayez.");
     } finally {
       if (mounted.current && sequence === requestSequence.current) { setLoading(false); setRefreshing(false); }
     }
@@ -167,10 +167,18 @@ function StaffDashboard({ user, onLogout, onShop, onAccount }: { user: User; onL
     ++requestSequence.current;
     setRefreshing(false);
     setBusyKeys([...mutations.current]);
-    setError("");
+    setError(""); setNotice("");
     try { await action(); if (mounted.current) { setNotice(message); setUpdated(new Date().toISOString()); } }
     catch (cause) { if (mounted.current) setError(cause instanceof Error ? cause.message : "La modification n’a pas été enregistrée."); }
-    finally { mutations.current.delete(key); if (mounted.current) setBusyKeys([...mutations.current]); }
+    finally {
+      mutations.current.delete(key);
+      if (mounted.current) {
+        setBusyKeys([...mutations.current]);
+        // Even a lost HTTP response may follow a committed action. Re-read the
+        // shared state after the last pending action, preserving its error.
+        if (!mutations.current.size) void refresh(true, true);
+      }
+    }
   }
 
   function changeStatus(order: Order, status: OrderStatus, reason?: string) {
@@ -184,7 +192,7 @@ function StaffDashboard({ user, onLogout, onShop, onAccount }: { user: User; onL
     const acceptingOrders = !restaurant.acceptingOrders;
     void mutate(`restaurant-${restaurant.id}`, async () => {
       const data = await api<{ restaurant: Restaurant }>(`/api/restaurants/${encodeURIComponent(restaurant.id)}`, { method: "PATCH", body: JSON.stringify({ acceptingOrders }) });
-      if (mounted.current) setRestaurants(current => current.map(item => item.id === restaurant.id ? data.restaurant : item));
+      if (mounted.current) setRestaurants(current => current.map(item => item.id === restaurant.id ? { ...item, acceptingOrders: data.restaurant.acceptingOrders } : item));
     }, {source: acceptingOrders ? "{name} accepte les commandes." : "{name} est en pause.", params: {name: restaurant.name}});
   }
 
@@ -197,8 +205,6 @@ function StaffDashboard({ user, onLogout, onShop, onAccount }: { user: User; onL
     void mutate(`order-${order.id}`, async () => {
       const data = await api<{ order: Order }>(`/api/orders/${encodeURIComponent(order.id)}/assign`, { method: "POST", body: JSON.stringify({ courierId, reason }) });
       if (mounted.current) setOrders(current => current.map(item => item.id === order.id ? data.order : item));
-      const refreshed = await api<{ couriers: CourierProfile[] }>("/api/couriers");
-      if (mounted.current) setCouriers(refreshed.couriers);
     }, courierId ? "L’affectation du livreur est enregistrée." : "La course est à nouveau disponible.");
   }
 
@@ -244,11 +250,11 @@ function StaffDashboard({ user, onLogout, onShop, onAccount }: { user: User; onL
         {tab === "orders" && <section aria-label={t("Liste des commandes")}>
           <div className="staff-section-heading"><div><h2>{t("Les commandes")}</h2><p>{admin ? t("Un suivi partagé pour tous les restaurants.") : t("Acceptez, préparez, puis signalez que tout est prêt.")}</p></div><span className="staff-result-count">{t(visibleOrders.length !== 1 ? "{count} résultats" : "{count} résultat", {count: visibleOrders.length})}</span></div>
           {admin && orders.some(order => ['refund_pending', 'refund_failed'].includes(order.payment?.status || '')) && <div className="staff-help"><p>{t('Des remboursements de test nécessitent votre attention.')}</p><button type="button" className="staff-button" onClick={() => {setStatusFilter('all'); setRestaurantFilter('all'); setSearch('');}}>{t('Voir toutes les commandes')}</button></div>}
-          <div className="staff-filters"><label className="staff-search"><Search size={17} /><input aria-label={t("Rechercher une commande")} placeholder={t("Nom, numéro, ville…")} value={search} onChange={event => setSearch(event.target.value)} /></label><label className="staff-select"><span>{t("Statut")}</span><select value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="active">{t("En cours")}</option><option value="all">{t("Toutes les commandes")}</option>{allStatuses.map(status => <option key={status} value={status}>{t(statusLabels[status])}</option>)}</select><ChevronDown size={14} /></label>{admin && <label className="staff-select"><span>{t("Restaurant")}</span><select value={restaurantFilter} onChange={event => setRestaurantFilter(event.target.value)}><option value="all">{t("Tous les restaurants")}</option>{restaurants.map(restaurant => <option key={restaurant.id} value={restaurant.id}>{restaurant.name}</option>)}</select><ChevronDown size={14} /></label>}</div>
+          <div className="staff-filters"><label className="staff-search"><Search size={17} /><input aria-label={t("Rechercher une commande")} placeholder={t("Nom, numéro, ville…")} value={search} onChange={event => setSearch(event.target.value)} /></label><label className="staff-select"><span>{t("Statut")}</span><select aria-label={t("Statut")} value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="active">{t("En cours")}</option><option value="all">{t("Toutes les commandes")}</option>{allStatuses.map(status => <option key={status} value={status}>{t(statusLabels[status])}</option>)}</select><ChevronDown size={14} /></label>{admin && <label className="staff-select"><span>{t("Restaurant")}</span><select aria-label={t("Restaurant")} value={restaurantFilter} onChange={event => setRestaurantFilter(event.target.value)}><option value="all">{t("Tous les restaurants")}</option>{restaurants.map(restaurant => <option key={restaurant.id} value={restaurant.id}>{restaurant.name}</option>)}</select><ChevronDown size={14} /></label>}</div>
           {visibleOrders.length ? <div className="staff-orders">{visibleOrders.map(order => <OrderCard key={order.id} order={order} admin={admin} busy={busyKeys.includes(`order-${order.id}`)} onStatus={changeStatus} couriers={couriers} onAssign={assignCourier} onRefund={refundPayment} language={user.language || "fr"} unread={unread[order.id] || 0} viewerId={user.id} />)}</div> : <div className="staff-empty"><span><PackageCheck size={32} /></span><h3>{orders.length ? t("Aucune commande avec ces filtres") : t("La première commande se prépare ici")}</h3><p>{orders.length ? t("Essayez un autre statut ou effacez votre recherche.") : t("Connectez-vous avec le compte client pour passer une commande test. Elle apparaîtra ici automatiquement.")}</p>{orders.length > 0 ? <button type="button" className="staff-button" onClick={() => { setSearch(""); setStatusFilter("all"); setRestaurantFilter("all"); }}>{t("Voir toutes les commandes")}</button> : <span className="staff-empty-account">client@manjeo.test</span>}</div>}
         </section>}
 
-        {menuRestaurant && <section hidden={tab !== "menu"} aria-label={t("Gestion des cartes")}>{admin && <label className="staff-menu-selector">{t("Restaurant à modifier")}<select value={menuRestaurant.id} onChange={event => setMenuRestaurantId(event.target.value)}>{restaurants.map(restaurant => <option key={restaurant.id} value={restaurant.id}>{restaurant.name}</option>)}</select></label>}<MenuEditor key={menuRestaurant.id} restaurant={menuRestaurant} onRestaurantChange={restaurant => { ++requestSequence.current; setRefreshing(false); setRestaurants(current => current.map(item => item.id === restaurant.id ? restaurant : item)); }} /></section>}
+        {menuRestaurant && <section hidden={tab !== "menu"} aria-label={t("Gestion des cartes")}>{admin && <label className="staff-menu-selector">{t("Restaurant à modifier")}<select value={menuRestaurant.id} onChange={event => setMenuRestaurantId(event.target.value)}>{restaurants.map(restaurant => <option key={restaurant.id} value={restaurant.id}>{restaurant.name}</option>)}</select></label>}<MenuEditor key={menuRestaurant.id} restaurant={menuRestaurant} onRestaurantChange={(restaurant, fields) => { ++requestSequence.current; setRefreshing(false); const saved = Object.fromEntries(fields.map(field => [field, restaurant[field]])); setRestaurants(current => current.map(item => item.id === restaurant.id ? { ...item, ...saved } : item)); }} /></section>}
 
         {tab === "couriers" && admin && <section aria-label={t("Activité des livreurs")}><div className="staff-section-heading"><div><h2>{t("Les livreurs, en direct")}</h2><p>{t("{count} disponibles · une mission active par livreur.", {count: couriers.filter(courier => courier.online && !courier.activeOrderId).length})}</p></div></div><div className="staff-couriers">{couriers.map(courier => { const mission = orders.find(order => order.id === courier.activeOrderId); return <article className="staff-courier" key={courier.id}><span className="staff-avatar"><Bike size={25} /></span><div><h3>{courier.name}</h3><p>{courier.email}</p><span className={`staff-status ${courier.activeOrderId ? "staff-status-picked_up" : courier.online ? "staff-status-ready" : "staff-status-pending"}`}><span />{courier.activeOrderId ? t("En mission") : courier.online ? t("Disponible") : t("En pause")}</span>{mission ? <p className="staff-courier-mission">{mission.restaurant} → {mission.city}<br /><strong>{t(statusLabels[mission.status])}</strong></p> : <p className="staff-courier-mission">{courier.online ? t("Peut prendre une nouvelle course") : t("Les nouvelles attributions sont en pause")}</p>}{courier.activeOrderId && <button type="button" className="staff-button" onClick={() => { setSearch(courier.activeOrderId || ""); setStatusFilter("all"); setRestaurantFilter("all"); setTab("orders"); }}>{t("Voir la mission")}<ArrowRight size={14} /></button>}</div></article>; })}</div>{!couriers.length && <div className="staff-empty"><span><Bike size={29} /></span><h3>{t("Aucun livreur pour le moment")}</h3><p>{t("Les comptes livreur apparaissent ici avec leur disponibilité.")}</p></div>}<p className="staff-help"><Bike size={17} />{t("Depuis une commande acceptée, attribuez ou réattribuez une course à un livreur disponible. Après le retrait, seul ce livreur peut confirmer la livraison avec le code client.")}</p></section>}
 

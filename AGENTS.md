@@ -22,11 +22,14 @@ Le setup crée `.venv` et installe les dépendances verrouillées. Le même scri
 
 Le script de vérification retire les connexions de base de son environnement : il lance les tests autonomes et ignore les tests PostgreSQL. Signaler les tests ignorés, sans maintenir ici de totaux fixes. Les tests PostgreSQL supplémentaires se lancent séparément avec `.venv/bin/python -m unittest discover -s server -p 'test_*.py'` et une base dédiée fournie par `MANJEO_TEST_DATABASE_URL` ; ils créent leurs propres schémas temporaires. Ne pas utiliser la base du site public.
 
+Les parcours navigateur se lancent avec `npm run test:browser` après `npx playwright install chromium` ; `MANJEO_TEST_BROWSERS=chromium,webkit,firefox` active les trois moteurs installés. `tests/browser/server.py` utilise toujours sa propre base SQLite temporaire et un géocodeur de test. Ne jamais adapter cette suite pour écrire en Production. Elle reste distincte de `codex-check.sh` et ne vérifie pas les fournisseurs externes.
+
 ## Invariants
 
 - Vérifier les rôles, les prix et les transitions côté serveur.
 - Conserver l’idempotence des commandes, les versions des cartes et les instantanés des commandes confirmées.
 - Une nouvelle commande exige une preuve d’adresse liée au client ou son adresse habituelle encore valable. Le replay précède cette validation ; conserver le corps exact d’une requête incertaine même si sa preuve devient une adresse enregistrée.
+- Une tentative incertaine reste séparée par compte dans sessionStorage, avec reprise explicite et même UUID ; ne pas créer une nouvelle commande avant résolution ni effacer un panier constitué ensuite.
 - L’adresse habituelle et la préférence de paiement sont privées au compte. Le point d’une commande est visible seulement par son client, l’admin et le livreur affecté ; ni restaurant ni offre libre. Une modification du profil ne change pas l’instantané.
 - Une acceptation après dix minutes doit être refusée. L’expiration et la restitution d’une promotion doivent rester validées même si l’action demandée est refusée ; préserver le point de sauvegarde de `dispatch_api`.
 - Une seule course active par livreur ; affectation et transitions atomiques.

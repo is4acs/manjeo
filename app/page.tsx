@@ -15,7 +15,8 @@ import AddressVerification, { savedAddressMatches } from "./address-verification
 import PaymentMethods from "./payment-methods";
 import OrderChat from "./order-chat";
 import SiteFooter from "./site-footer";
-import { prepareOrderRequest, type OrderRequest } from "@/lib/checkout-request";
+import { prepareOrderRequest, restoreOrderRequest, type OrderRequest } from "@/lib/checkout-request";
+import { readPendingOrder, writePendingOrder, clearPendingOrder, orderMatchesCart } from './checkout-state';
 import { promotionContext, quotedDiscount, shouldAdoptProfileLocation, type ProfileLocation } from "./customer-state";
 
 import { api, ApiError, statusLabels, type Order, type Promotion, type PublicPromotion, type User, type Role, type AddressCandidate, type PaymentMethod, type PaymentConfig } from "@/lib/api";
@@ -50,7 +51,7 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   const paymentOpening = useRef(false);
   const [paymentBusy, setPaymentBusy] = useState(false);
   const [paymentError, setPaymentError] = useState('');
-  const [profileSaveWarning, setProfileSaveWarning] = useState(false);
+  const [profileSaveWarning, setProfileSaveWarning] = useState<string | null>(null);
   const paymentReturn = useRef('');
   const contactTouched = useRef({name: false, phone: false});
   const [locationOpen, setLocationOpen] = useState(false);
@@ -84,16 +85,20 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   const listRef = useRef<HTMLElement>(null);
   const groupRefs = useRef<Record<string, HTMLElement | null>>({});
   const request = useRef<OrderRequest<Record<string, unknown>> | null>(null);
+  const [pendingRequest, setPendingRequest] = useState<OrderRequest<Record<string, unknown>> | null>(null);
   const activeUser = useRef(user?.id);
+  const accountSession = useRef({id: user?.id, generation: 0});
+  if (accountSession.current.id !== user?.id) accountSession.current = {id: user?.id, generation: accountSession.current.generation + 1};
   const addressAccount = useRef(user?.id);
   const profileLocation = useRef<ProfileLocation | null>(null);
+  const profilePayment = useRef({id: user?.id, method: user?.paymentMethod || 'demo'});
   const orderSequence = useRef(0);
   const promoSequence = useRef(0);
   const submittingRef = useRef(false);
   const cancellingRef = useRef(false);
   const promoIdentity = useRef({context: "", code: ""});
   activeUser.current = user?.id;
-  useEffect(() => () => { activeUser.current = undefined; ++orderSequence.current; ++promoSequence.current; }, []);
+  useEffect(() => () => { activeUser.current = undefined; accountSession.current = {id: undefined, generation: accountSession.current.generation + 1}; ++orderSequence.current; ++promoSequence.current; }, []);
   useEffect(() => {
     const markRead = (event: Event) => {
       const detail = (event as CustomEvent<{orderId: string; viewerId: string}>).detail;
@@ -136,6 +141,7 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   const savedDelivery = savedAddressMatches(user?.deliveryAddress, address, city);
   const confirmedCandidate = addressCandidate?.address === address.trim() && addressCandidate.city === city && Date.parse(addressCandidate.expiresAt) > Date.now() ? addressCandidate : null;
   const paymentReady = paymentMethod === 'demo' || !!paymentConfig?.stripeAvailable;
+  const pendingOrder = useMemo(() => user?.role === 'client' ? restoreOrderRequest(pendingRequest, user.id) : null, [pendingRequest, user?.id, user?.role]);
   const quickReady = user?.role === 'client' && savedDelivery && user.name.trim().length >= 2 && /^\+?\d{10,15}$/.test((user.phone || '').replace(/[\s().-]/g, '')) && paymentReady;
   const activeOrders = orders.filter(order => !['delivered', 'cancelled'].includes(order.status));
   const cartUnavailable = !!cart.length && (!cartRestaurant?.acceptingOrders || cart.some(line => !cartRestaurant.products.find(item => item.id === line.productId)?.available));
@@ -157,10 +163,6 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   ] : [];
   useEffect(() => {
     try {
-      const savedRequest = JSON.parse(sessionStorage.getItem("manjeo-request-v1") || "null");
-      request.current = savedRequest;
-    } catch {}
-    try {
       const stored = JSON.parse(localStorage.getItem("manjeo-cart-v2") || "[]");
       if (Array.isArray(stored)) {
         const valid = stored.filter(validStoredLine).slice(0, 50);
@@ -179,10 +181,12 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   useEffect(() => { if (ready) { try { localStorage.setItem("manjeo-cart-v2", JSON.stringify(cart)); } catch {} } }, [cart, ready]);
   useEffect(() => { if (ready && !user) { try { localStorage.setItem("manjeo-location-v1", JSON.stringify({ city, address })); } catch {} } }, [city, address, ready, user?.id]);
   useEffect(() => {
+    request.current = user?.role === 'client' ? readPendingOrder(sessionStorage, user.id) : null;
+    setPendingRequest(request.current);
     if (addressAccount.current && addressAccount.current !== user?.id) {setAddress(user?.deliveryAddress?.address || ''); setCity(user?.deliveryAddress?.city || 'Cayenne');}
     addressAccount.current = user?.id;
     contactTouched.current = {name: false, phone: false}; setCheckoutName(user?.role === "client" ? user.name : ""); setCheckoutPhone(user?.role === "client" ? user.phone || "" : "");
-    setAddressCandidate(null); setDetails(''); setNotes(''); setPaymentMethod(user?.paymentMethod || 'demo'); setPaymentError(''); setPaymentBusy(false); paymentOpening.current = false;
+    setAddressCandidate(null); setDetails(''); setNotes(''); setPaymentMethod(user?.paymentMethod || 'demo'); setPaymentError(''); setPaymentBusy(false); paymentOpening.current = false; setProfileSaveWarning(null);
     setOrders([]); setUnread({}); setCurrentOrder(null); setOrdersError(""); setOrderError(""); setOrdersLoading(false); setHistoryOpen(false); setSubmitting(false);
     ++orderSequence.current; ++promoSequence.current; setQuote(null); setAppliedCode(""); setPromoCode(""); setPromoBusy(false); setPromoError(""); setCancelOrder(null); setCancelError(""); setCancelling(false); submittingRef.current = false; cancellingRef.current = false;
     setView(current => current === "success" ? "home" : current);
@@ -201,7 +205,11 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
       setAddress(next.address); setCity(next.city); setDetails(next.details); setAddressCandidate(null);
     }
   }, [user?.id, user?.deliveryAddress?.address, user?.deliveryAddress?.city, user?.deliveryAddress?.details, user?.deliveryAddress?.verifiedAt]);
-  useEffect(() => { setPaymentMethod(user?.paymentMethod || 'demo'); }, [user?.id, user?.paymentMethod]);
+  useEffect(() => {
+    const next = {id: user?.id, method: user?.paymentMethod || 'demo'};
+    if (profilePayment.current.id !== next.id || paymentMethod === profilePayment.current.method) setPaymentMethod(next.method);
+    profilePayment.current = next;
+  }, [user?.id, user?.paymentMethod]);
   useEffect(() => {
     let alive = true;
     void api<PaymentConfig>('/api/payments/config').then(config => {if (alive) setPaymentConfig(config);}).catch(() => {if (alive) setPaymentConfig({mode:'demo', stripeAvailable:false, reason:'Le paiement Stripe de test n’est pas configuré. La démonstration reste disponible.'});});
@@ -326,15 +334,17 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   async function confirmCancel(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!cancelOrder || cancellingRef.current || user?.role !== "client") return;
     const userId = user.id;
+    const session = accountSession.current;
+    const isCurrent = () => activeUser.current === userId && accountSession.current === session;
     cancellingRef.current = true; setCancelling(true); setCancelError(""); ++orderSequence.current;
     try {
       const result = await api<{order: Order}>(`/api/orders/${encodeURIComponent(cancelOrder.id)}`, {method:"PATCH", body:JSON.stringify({status:"cancelled", reason:cancelReason.trim()})});
-      if (activeUser.current !== userId) return;
+      if (!isCurrent()) return;
       setOrders(current => current.map(order => order.id === result.order.id ? result.order : order));
       setCurrentOrder(current => current?.id === result.order.id ? result.order : current);
       setCancelOrder(null); setNotice("La commande a été annulée.");
-    } catch (error) { if (activeUser.current === userId) setCancelError((error as Error).message); }
-    finally { if (activeUser.current === userId) { cancellingRef.current = false; setCancelling(false); void loadOrders(); } }
+    } catch (error) { if (isCurrent()) setCancelError((error as Error).message); }
+    finally { if (isCurrent()) { cancellingRef.current = false; setCancelling(false); void loadOrders(); } }
   }
   function renderCartUpdate() {
     return cartOutdated && <div className="cart-update" role="status"><strong>{t("La carte a changé")}</strong><p>{t("Actualisez les prix et options. Les articles indisponibles ou dont les options ont changé seront retirés ; vous pourrez les choisir à nouveau.")}</p><button type="button" disabled={updatingCart || submitting} onClick={() => void updateCart()}>{updatingCart ? t("Actualisation…") : t("Mettre à jour mon panier")}<RefreshCw size={15}/></button></div>;
@@ -348,25 +358,70 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   async function openPayment(order: Order) {
     if (paymentOpening.current || user?.role !== 'client') return;
     const accountId = user.id;
+    const session = accountSession.current;
+    const isCurrent = () => activeUser.current === accountId && accountSession.current === session;
     paymentOpening.current = true; setPaymentBusy(true); setPaymentError('');
     try {
       const result = await api<{checkoutUrl: string}>(`/api/orders/${order.id}/checkout`, {method:'POST', body:JSON.stringify({language:user.language})});
-      if (activeUser.current !== accountId) return;
+      if (!isCurrent()) return;
       const url = new URL(result.checkoutUrl);
       if (url.protocol !== 'https:' || url.hostname !== 'checkout.stripe.com' || url.username || url.password) throw new Error('Le lien de paiement est invalide. Réessayez.');
       window.location.assign(url.href);
-    } catch (cause) {if (activeUser.current === accountId) setPaymentError((cause as Error).message);}
-    finally {if (activeUser.current === accountId) {paymentOpening.current = false; setPaymentBusy(false);}}
+    } catch (cause) {if (isCurrent()) setPaymentError((cause as Error).message);}
+    finally {if (isCurrent()) {paymentOpening.current = false; setPaymentBusy(false);}}
+  }
+  async function sendOrder(attempt: OrderRequest<Record<string, unknown>>, profile?: Record<string, unknown>) {
+    if (submittingRef.current || user?.role !== 'client') return;
+    const accountId = user.id;
+    const session = accountSession.current;
+    const isCurrent = () => activeUser.current === accountId && accountSession.current === session;
+    ++orderSequence.current; submittingRef.current = true; setSubmitting(true); setOrdersLoading(false); setOrderError(''); setProfileSaveWarning(null);
+    request.current = attempt; setPendingRequest(attempt); writePendingOrder(sessionStorage, accountId, attempt);
+    try {
+      const data = await api<{order: Order}>('/api/orders', {method: 'POST', body: JSON.stringify({...attempt.payload, requestId: attempt.id})});
+      if (data.order.customerId !== accountId) throw new Error('Le compte connecté a changé. Réessayez.');
+      clearPendingOrder(sessionStorage, accountId, attempt.id);
+      if (!isCurrent()) return;
+      request.current = null; setPendingRequest(null);
+      setCurrentOrder(data.order); setOrders(current => [data.order, ...current.filter(order => order.id !== data.order.id)]);
+      // The confirmed request may belong to a basket from before a reload.
+      if (orderMatchesCart(attempt.payload, cart)) clearPromo();
+      setCart(current => orderMatchesCart(attempt.payload, current) ? [] : current);
+      setCartOpen(false); setView('success');
+      if (profile) {
+        // Saving defaults is optional and must not hold up the payment page.
+        void onSaveProfile(profile).catch(() => { if (isCurrent()) setProfileSaveWarning(data.order.id); });
+      }
+      if (data.order.status === 'awaiting_payment') await openPayment(data.order);
+    } catch (error) {
+      const definitelyRejected = error instanceof ApiError && error.code === 'order_not_created';
+      if (definitelyRejected) clearPendingOrder(sessionStorage, accountId, attempt.id);
+      if (isCurrent()) {
+        setOrderError((error as Error).message);
+        if (definitelyRejected) { request.current = null; setPendingRequest(null); }
+        if (error instanceof ApiError && error.status === 409 && appliedCode) { setQuote(null); void checkPromo(appliedCode, true); }
+        void refreshCatalog().catch(() => {});
+      }
+    } finally { if (isCurrent()) { submittingRef.current = false; setSubmitting(false); } }
+  }
+  async function resumeOrder() {
+    if (user?.role !== 'client') return;
+    const pending = restoreOrderRequest(request.current, user.id);
+    if (pending) await sendOrder(pending);
   }
   async function placeOrder(quick: boolean) {
     if (!cartRestaurant || submittingRef.current || cartUnavailable || cartOutdated || updatingCart || promoPending || !paymentReady) return;
     if (user?.role !== 'client') {onAccount(); return;}
+    if (restoreOrderRequest(request.current, user.id)) {
+      setOrderError('Reprenez la confirmation précédente avant de passer une nouvelle commande.'); return;
+    }
     const customerName = (quick ? user.name : checkoutName).trim();
     const phoneDigits = (quick ? user.phone : checkoutPhone).replace(/[\s().-]/g, '');
     if (!/^\+?\d{10,15}$/.test(phoneDigits)) {setOrderError('Saisissez un numéro de téléphone valide, par exemple 0694 00 00 00.'); return;}
     if (customerName.length < 2) {setOrderError('Renseignez votre prénom et votre nom.'); return;}
-    if (!savedDelivery && !confirmedCandidate) {setOrderError('Confirmez le point de livraison avant de passer commande.'); return;}
-    ++orderSequence.current; submittingRef.current = true; setSubmitting(true); setOrderError(""); setProfileSaveWarning(false);
+    // A background tab can keep a render that predates the proof's expiry.
+    const proof = confirmedCandidate && Date.parse(confirmedCandidate.expiresAt) > Date.now() ? confirmedCandidate : null;
+    if (!savedAddressMatches(user.deliveryAddress, address, city) && !proof) {setOrderError('Confirmez le point de livraison avant de passer commande.'); return;}
     const payload = {
       restaurantId: cartRestaurant.id,
       expectedTotal: total,
@@ -374,37 +429,12 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
       promoCode: promotion?.code || null,
       customerName, phone: phoneDigits,
       address: address.trim(), city, details: (quick ? user.deliveryAddress?.details || '' : details).trim(), notes: quick ? '' : notes.trim(), paymentMethod,
-      ...(confirmedCandidate ? {addressVerificationToken:confirmedCandidate.verificationToken} : {useDefaultAddress:true}),
+      ...(proof ? {addressVerificationToken:proof.verificationToken} : {useDefaultAddress:true}),
     };
-    request.current = prepareOrderRequest(request.current, user.id, payload, () => crypto.randomUUID());
-    try { sessionStorage.setItem("manjeo-request-v1", JSON.stringify(request.current)); } catch {}
-    try {
-      const data = await api<{order: Order}>("/api/orders", {method: "POST", body: JSON.stringify({...request.current.payload, requestId: request.current.id})});
-      if (activeUser.current !== user.id) return;
-      setCurrentOrder(data.order); setOrders(current => [data.order, ...current.filter(order => order.id !== data.order.id)]);
-      setCart([]); clearPromo(); setCartOpen(false); setView("success"); request.current = null;
-      try { sessionStorage.removeItem("manjeo-request-v1"); } catch {}
-      if (!quick && saveForNext) {
-        try {
-          await onSaveProfile({name:customerName, phone:phoneDigits, language:getLanguage(), paymentMethod,
-            deliveryAddress:{address:payload.address, city, details:payload.details, ...(confirmedCandidate ? {verificationToken:confirmedCandidate.verificationToken} : {})}});
-          if (activeUser.current !== user.id) return;
-        } catch {
-          if (activeUser.current === user.id) setProfileSaveWarning(true);
-        }
-      }
-      if (data.order.status === "awaiting_payment") await openPayment(data.order);
-    } catch (error) {
-      if (activeUser.current === user.id) {
-        setOrderError((error as Error).message);
-        if (error instanceof ApiError && error.code === 'order_not_created') {
-          request.current = null;
-          try {sessionStorage.removeItem('manjeo-request-v1');} catch {}
-        }
-        if (error instanceof ApiError && error.status === 409 && appliedCode) { setQuote(null); void checkPromo(appliedCode, true); }
-        void refreshCatalog().catch(() => {});
-      }
-    } finally { if (activeUser.current === user.id) { submittingRef.current = false; setSubmitting(false); } }
+    const attempt = prepareOrderRequest(null, user.id, payload, () => crypto.randomUUID());
+    const profile = !quick && saveForNext ? {name:customerName, phone:phoneDigits, language:getLanguage(), paymentMethod,
+      deliveryAddress:{address:payload.address, city, details:payload.details, ...(proof ? {verificationToken:proof.verificationToken} : {})}} : undefined;
+    await sendOrder(attempt, profile);
   }
   useEffect(() => {
     const context = (document as unknown as { modelContext?: { registerTool: (tool: unknown, options: { signal: AbortSignal }) => unknown } }).modelContext;
@@ -434,11 +464,29 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
     if (!address.trim()) { setLocationOpen(true); return; }
     scrollToBlock(listRef.current);
   }
+  function renderPendingOrder() {
+    if (!pendingOrder || submitting) return null;
+    const payload = pendingOrder.payload;
+    const pendingRestaurant = restaurants.find(item => item.id === payload.restaurantId)?.name;
+    return <div className="cart-update pending-order" role="region" aria-label={t('Confirmation à reprendre')}>
+      <strong>{t('Confirmation à reprendre')}</strong>
+      <p>{t('La réponse de votre dernière demande est incertaine. Reprenez sa confirmation avant de commander à nouveau.')}</p>
+      <p><b>{pendingRestaurant || t('Commande précédente')}</b>{typeof payload.expectedTotal === 'number' && ` · ${money(payload.expectedTotal)}`}</p>
+      <p>{String(payload.customerName || '')} · {String(payload.phone || '')}<br/>{String(payload.address || '')}, {String(payload.city || '')}</p>
+      {typeof payload.details === 'string' && payload.details && <p>{payload.details}</p>}
+      {typeof payload.notes === 'string' && payload.notes && <p>{payload.notes}</p>}
+      <p>{t(payload.paymentMethod === 'stripe' ? 'Paiement Stripe de test' : 'Simulation sans paiement')}</p>
+      {orderError && <p className="checkout-error" role="alert">{t(orderError)}</p>}
+      <Button type="button" onClick={() => void resumeOrder()}>{t('Reprendre cette confirmation')}</Button>
+      <small>{t('La même demande sera vérifiée avec ses coordonnées, ses articles et son montant d’origine.')}</small>
+    </div>;
+  }
   function renderCartPanel() {
     const photo = (line: Line) => cartRestaurant?.products.find(item => item.id === line.productId)?.image;
     return <div className="cart-panel">
       <div className="cart-heading"><h2>{t("Votre panier")}</h2><span className="count-pill">{t(count > 1 ? "{count} articles" : "{count} article", {count})}</span></div>
       <div className="cart-body">
+        {renderPendingOrder()}
         {!cart.length ? <div className="empty-cart"><span className="bag-illustration"><ShoppingBag size={34}/></span><h3>{t("Une petite faim ?")}</h3><p>{t("Il ne manque que vos envies.")}<br/>{t("Ajoutez un plat pour commencer.")}</p></div> : <>
           <button className="cart-restaurant" onClick={() => { if (cartRestaurant) openRestaurant(cartRestaurant); setCartOpen(false); }}><Utensils size={15}/><span>{t("Chez {restaurant} · {city}", {restaurant: cartRestaurant?.name || "", city: cartRestaurant?.pickupCity || city})}</span><ArrowRight size={15}/></button>
           <div className="cart-lines">{cart.map(line => <div className="cart-line" key={line.key}>
@@ -459,7 +507,7 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
         </>}
       </div>
       {!!cart.length && view !== 'checkout' && quickReady && <div className="quick-order-summary"><strong>{t('Prêt à commander en un clic')}</strong><p>{user?.name} · {user?.phone}</p><p>{address}, {city}{user?.deliveryAddress?.details && ` · ${user.deliveryAddress.details}`}</p><p>{t(paymentMethod === 'demo' ? 'Simulation sans paiement' : 'Carte bancaire · Apple Pay · Google Pay')}</p><button type="button" disabled={submitting} onClick={checkout}>{t('Modifier les coordonnées ou le paiement')}</button>{orderError && <p className="checkout-error" role="alert">{t(orderError)}</p>}</div>}
-      {!!cart.length && view !== "checkout" && <div className="cart-foot"><Button disabled={submitting || cartUnavailable || cartOutdated || updatingCart || promoPending} className="cart-checkout" onClick={() => quickReady ? void placeOrder(true) : checkout()}>{submitting ? t("Confirmation en cours…") : t(quickReady ? "Confirmer · {total}" : "Passer commande · {total}", {total: money(total)})}</Button></div>}
+      {!!cart.length && view !== "checkout" && <div className="cart-foot"><Button disabled={submitting || !!pendingOrder || cartUnavailable || cartOutdated || updatingCart || promoPending} className="cart-checkout" onClick={() => quickReady ? void placeOrder(true) : checkout()}>{submitting ? t("Confirmation en cours…") : t(quickReady ? "Confirmer · {total}" : "Passer commande · {total}", {total: money(total)})}</Button></div>}
     </div>;
   }
   return <>
@@ -480,6 +528,7 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
     {!!activeOrders.length && view !== 'success' && user?.role === 'client' && <section className="active-orders" aria-label={t('Commandes en cours')}>{activeOrders.map(order => <div className="active-order-card" key={order.id}><ShoppingBag size={23}/><div><strong>{t('Commande en cours')}</strong><p>{order.restaurant} · {t(statusLabels[order.status])}</p></div><Button variant="outline" onClick={() => {setCurrentOrder(order); setView('success');}}>{t('Voir le suivi')}</Button></div>)}</section>}
     <main className="page-shell">
       <div className="main-content">
+        {renderPendingOrder()}
         {view === "home" && <>
           <section className="hero">
             <div className="hero-copy">
@@ -570,7 +619,7 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
             {renderCartUpdate()}
             {orderError && <p className="checkout-error" role="alert">{t(orderError)}</p>}
             {cartUnavailable && <p className="checkout-error" role="alert">{t("Un article ou le restaurant est devenu indisponible. Modifiez votre panier.")}</p>}
-            <Button className="submit-order" type="submit" disabled={submitting || user?.role !== "client" || cartUnavailable || cartOutdated || updatingCart || promoPending || (!savedDelivery && !confirmedCandidate) || !paymentReady}>{submitting ? t("Confirmation en cours…") : t("Confirmer · {total}", {total: money(total)})}</Button>
+            <Button className="submit-order" type="submit" disabled={submitting || !!pendingOrder || user?.role !== "client" || cartUnavailable || cartOutdated || updatingCart || promoPending || (!savedDelivery && !confirmedCandidate) || !paymentReady}>{submitting ? t("Confirmation en cours…") : t("Confirmer · {total}", {total: money(total)})}</Button>
             <p className="demo-explanation">{t("Restaurants et produits fictifs. Commande enregistrée dans la démo partagée en ligne, sans paiement ni livraison réelle.")}</p>
           </form>
         </>}
@@ -590,7 +639,7 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
             <OrderTracking order={currentOrder} onCancel={requestCancel}/>
           </div>
           {!["awaiting_payment", "pending", "cancelled"].includes(currentOrder.status) && <OrderChat order={currentOrder} viewerId={user?.id || ""} language={user?.language || "fr"}/>}
-          {profileSaveWarning && <p className="account-error" role="alert">{t('Votre commande est enregistrée, mais vos coordonnées n’ont pas pu être sauvegardées dans le compte.')}</p>}
+          {profileSaveWarning === currentOrder.id && <p className="account-error" role="alert">{t('Votre commande est enregistrée, mais vos coordonnées n’ont pas pu être sauvegardées dans le compte.')}</p>}
           {currentOrder.status === 'awaiting_payment' && <div className="payment-followup"><strong>{t('Paiement à terminer')}</strong><p>{t('Votre commande sera envoyée au restaurant après confirmation du paiement de test.')}</p><Button disabled={paymentBusy} onClick={() => void openPayment(currentOrder)}>{t(paymentBusy ? 'Ouverture du paiement…' : 'Reprendre le paiement')}</Button>{paymentError && <p className="checkout-error" role="alert">{t(paymentError)}</p>}</div>}
           {ordersError && <p className="orders-error" role="alert">{t(ordersError)}</p>}
           <div className="success-info"><PackageCheck size={21}/><p>{t("Testez la préparation depuis le compte restaurant, puis la prise en charge depuis le compte livreur. Votre suivi s’actualise ici. Aucun paiement ni livraison réelle.")}</p></div>

@@ -8,6 +8,7 @@ import threading
 import unittest
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from server import messaging
@@ -173,6 +174,7 @@ class MessagingContracts:
         with self.database.connect() as db:
             record = json.loads(db.execute("SELECT data FROM orders WHERE id = ?", (order["id"],)).fetchone()[0])
             record["updatedAt"] = "2000-01-01T00:00:00.000Z"
+            record["history"][-1]["date"] = record["updatedAt"]
             db.execute("UPDATE orders SET data = ? WHERE id = ?", (json.dumps(record), order["id"]))
         for role in ("client", "restaurant", "courier", "admin"):
             self.assertFalse(self.conversation(order["id"], role)["open"])
@@ -285,6 +287,28 @@ class MessagingContracts:
                     self.request("POST", "/api/translate", {"text": "Bonjour", "from": "fr", "to": "en"}, role="client", status=502)
         with patch.dict(os.environ, {"MANJEO_TRANSLATE_URL": ""}):
             self.assertEqual(self.request("POST", "/api/translate", {"text": "Bonjour", "from": "fr", "to": "fr"}, role="client")[0]["text"], "Bonjour")
+
+
+class MessageWindowTests(unittest.TestCase):
+    def test_terminal_event_controls_exact_grace_boundary_and_legacy_fallback(self):
+        now = datetime(2026, 9, 12, 12, tzinfo=timezone.utc)
+        with patch.object(messaging, "datetime") as clock:
+            clock.now.return_value = now
+            clock.fromisoformat.side_effect = datetime.fromisoformat
+            for status in ("cancelled", "delivered"):
+                for seconds, expected in ((1799.999, True), (1800, False), (1801, False), (-1, False)):
+                    ended = (now - timedelta(seconds=seconds)).isoformat()
+                    order = {"status": status, "updatedAt": now.isoformat(),
+                             "history": [{"status": "accepted"}, {"status": status, "date": ended}]}
+                    with self.subTest(status=status, age=seconds):
+                        self.assertEqual(messaging.thread_open(order), expected)
+                legacy = {"status": status, "updatedAt": now.isoformat(), "history": [{"status": "accepted"}]}
+                self.assertTrue(messaging.thread_open(legacy))
+                legacy["updatedAt"] = (now - timedelta(seconds=1800)).isoformat()
+                self.assertFalse(messaging.thread_open(legacy))
+                legacy["updatedAt"] = now.isoformat()
+                legacy["history"].append({"status": status, "date": "invalid-date"})
+                self.assertFalse(messaging.thread_open(legacy))
 
 
 class MessagingTests(MessagingContracts, AppTestHarness):
