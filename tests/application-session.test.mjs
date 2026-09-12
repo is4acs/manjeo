@@ -13,9 +13,12 @@ const customer = id => ({id, name: id, email: `${id}@manjeo.test`, role: 'client
 const restaurants = [{id: 'ti-kreol', name: 'Ti Kréol'}];
 const event = {preventDefault() {}};
 
-function harness() {
+function harness({language = 'fr', explicitChoice = false} = {}) {
   const hooks = [], effects = [], requests = [], listeners = new Map();
   let cursor = 0, dirty = false, alive = true, tree, writesAfterUnmount = 0;
+  let uiLanguage = language, chosenLanguage = explicitChoice;
+  const normalizeLanguage = value => ['fr', 'ht', 'pt'].includes(value) ? value : null;
+  const languageNames = {fr: 'français', ht: 'créole haïtien', pt: 'portugais', en: 'anglais', es: 'espagnol', gcr: 'créole guyanais', zh: 'chinois'};
   const same = (left, right) => left && right && left.length === right.length && left.every((value, index) => Object.is(value, right[index]));
   const slot = (kind, initial) => {
     const index = cursor++;
@@ -60,8 +63,18 @@ function harness() {
       if (name === '@/lib/api') return {api(path, options = {}) {
         return new Promise((resolve, reject) => requests.push({path, options, resolve, reject, taken: false}));
       }};
-      if (name === '@/lib/i18n') return {t: value => value, documentLanguage: () => 'fr', normalizeLanguage: value => value, languageOptions: []};
-      if (name === './i18n') return {useLanguage: () => 'fr', adoptProfileLanguage() {}, chooseLanguage() {}, LanguageBar: components.LanguageBar};
+      if (name === '@/lib/i18n') return {
+        t: (value, parameters = {}) => value.replace(/\{(\w+)\}/g, (_match, name) => parameters[name] || ''),
+        documentLanguage: () => uiLanguage, normalizeLanguage,
+        languageOptions: ['fr', 'ht', 'pt'].map(code => ({code, label: languageNames[code]})),
+      };
+      if (name === './i18n') return {
+        useLanguage: () => uiLanguage, hasLanguageChoice: () => chosenLanguage,
+        adoptProfileLanguage(value) { if (!chosenLanguage && normalizeLanguage(value) && uiLanguage !== value) { uiLanguage = value; dirty = true; } },
+        chooseLanguage(value) { chosenLanguage = true; uiLanguage = value; dirty = true; },
+        LanguageBar: components.LanguageBar,
+      };
+      if (name === './translate') return {languageNames};
       if (name === './validation') return {refreshValidationLanguage() {}};
       if (name === './page') return {default: components.Home};
       if (name === './staff') return {default: components.Staff};
@@ -105,6 +118,8 @@ function harness() {
     find: predicate => nodes(tree).find(predicate),
     startup: () => !!nodes(tree).find(node => node.props?.className === 'app-startup'),
     button: label => nodes(tree).find(node => node.type === components.Button && node.props.children === label),
+    chooseLanguage: value => nodes(tree).find(node => node.type === components.LanguageBar).props.onChange(value),
+    get interfaceLanguage() { return uiLanguage; },
     unmount() { alive = false; for (const hook of hooks) if (hook.kind === 'effect') hook.cleanup?.(); },
     get writesAfterUnmount() { return writesAfterUnmount; },
   };
@@ -226,4 +241,80 @@ test('after startup, a late login cannot replace the account selected in another
   await login; await app.flush();
   assert.equal(app.home().props.user.id, 'other-tab');
   assert.equal(app.startup(), false);
+});
+
+for (const language of ['en', 'es', 'gcr', 'zh']) {
+  test(`saving contact details preserves the existing ${language} message language and the three-language interface`, async () => {
+    const app = harness();
+    const account = {...customer('legacy'), language};
+    await settleInitial(app, account);
+    assert.equal(app.home().props.user.language, language);
+    assert.equal(app.interfaceLanguage, 'fr');
+    app.home().props.onAccount();
+    await app.flush();
+    const languageField = app.find(node => node.type === 'select' && node.props.name === 'language');
+    assert.equal(languageField.props.value, language);
+    const options = languageField.props.children.flat().filter(Boolean);
+    assert.deepEqual(Array.from(options, option => option.props.value), ['fr', 'ht', 'pt', language]);
+    assert.match(options.at(-1).props.children, /\(messages\)$/);
+    app.find(node => node.props?.name === 'name').props.onChange({target: {value: 'Updated name'}});
+    await app.flush();
+    app.find(node => node.props?.name === 'phone').props.onChange({target: {value: '0694 01 02 03'}});
+    await app.flush();
+    const save = app.find(node => node.type === 'form' && node.props.className === 'account-form profile-form').props.onSubmit(event);
+    const request = app.take('/api/profile');
+    assert.deepEqual(JSON.parse(request.options.body), {name: 'Updated name', phone: '0694 01 02 03', language});
+    request.resolve({user: {...account, name: 'Updated name', phone: '0694 01 02 03'}});
+    await save; await app.flush();
+    assert.equal(app.home().props.user.language, language);
+    assert.equal(app.home().props.user.name, 'Updated name');
+    assert.equal(app.interfaceLanguage, 'fr');
+  });
+}
+
+test('an explicit main language choice replaces the legacy message target and persists only the language', async () => {
+  const app = harness();
+  const account = {...customer('legacy'), language: 'gcr'};
+  await settleInitial(app, account);
+  app.chooseLanguage('ht');
+  const request = app.take('/api/profile');
+  assert.deepEqual(JSON.parse(request.options.body), {language: 'ht'});
+  await app.flush();
+  assert.equal(app.interfaceLanguage, 'ht');
+  assert.equal(app.home().props.user.language, 'ht', 'The explicit UI choice takes effect while persistence is pending');
+  request.resolve({user: {...account, language: 'ht'}});
+  await app.flush();
+  app.home().props.onAccount();
+  await app.flush();
+  const field = app.find(node => node.type === 'select' && node.props.name === 'language');
+  assert.equal(field.props.value, 'ht');
+  assert.equal(field.props.children.flat().filter(Boolean).length, 3);
+});
+
+test('a previously explicit device preference controls messages without rewriting the legacy account on startup', async () => {
+  const app = harness({language: 'pt', explicitChoice: true});
+  await settleInitial(app, {...customer('legacy'), language: 'zh'});
+  assert.equal(app.interfaceLanguage, 'pt');
+  assert.equal(app.home().props.user.language, 'pt');
+  assert.equal(app.requests.filter(request => request.path === '/api/profile').length, 0);
+  app.home().props.onAccount();
+  await app.flush();
+  assert.equal(app.find(node => node.type === 'select' && node.props.name === 'language').props.value, 'zh');
+});
+
+test('choosing a primary language in the profile updates both messages and interface after saving', async () => {
+  const app = harness();
+  const account = {...customer('legacy'), language: 'en'};
+  await settleInitial(app, account);
+  app.home().props.onAccount();
+  await app.flush();
+  app.find(node => node.type === 'select' && node.props.name === 'language').props.onChange({target: {value: 'pt'}});
+  await app.flush();
+  const save = app.find(node => node.type === 'form' && node.props.className === 'account-form profile-form').props.onSubmit(event);
+  const request = app.take('/api/profile');
+  assert.equal(JSON.parse(request.options.body).language, 'pt');
+  request.resolve({user: {...account, language: 'pt'}});
+  await save; await app.flush();
+  assert.equal(app.interfaceLanguage, 'pt');
+  assert.equal(app.home().props.user.language, 'pt');
 });

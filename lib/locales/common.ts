@@ -71,4 +71,5 @@ export const commonTranslations: Record<string, [string, string]> = {
   'L’original reste disponible, même lorsqu’une traduction ne peut pas être obtenue.':['Orijinal la toujou disponib, menm lè tradiksyon an pa posib.','O original continua disponível, mesmo quando não é possível obter uma tradução.'],
   'Langue du site et des messages':['Lang sit la ak mesaj yo','Idioma do site e das mensagens'],
   'Cette langue sera également utilisée lors de votre prochaine connexion sur un autre appareil.':['Y ap sèvi ak lang sa a tou lè ou konekte sou yon lòt aparèy.','Este idioma também será usado quando você entrar em outro aparelho.'],
+  '{language} (messages)':['{language} (mesaj)','{language} (mensagens)'],
 };

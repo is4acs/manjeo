@@ -28,7 +28,7 @@ export default function OrderChat({order, language, viewerId}: {order: Order; la
   const readingCache = useRef<{key:string; retry:number; values:Record<string,Translation|null>}>({key:"",retry:0,values:{}});
   const [originals, setOriginals] = useState<Record<string, boolean>>({});
   const [phrasesReady, setPhrasesReady] = useState(false);
-  const [retryTranslation, setRetryTranslation] = useState(0);
+  const [retryTranslation, setRetryTranslation] = useState({version:0,messageId:""});
   const bottom = useRef<HTMLDivElement>(null);
   const mounted = useRef(false);
   const sequence = useRef(0);
@@ -91,8 +91,8 @@ export default function OrderChat({order, language, viewerId}: {order: Order; la
     const ids = new Set(messages.map(message => message.id));
     // New messages must not retranslate the entire conversation or consume the
     // quota again for earlier failures. Only an explicit retry restarts failures.
-    const values = sameContext ? Object.fromEntries(Object.entries(previous.values).filter(([id,value]) => ids.has(id) && (value !== null || previous.retry === retryTranslation))) : {};
-    readingCache.current = {key:translationContext,retry:retryTranslation,values};
+    const values = sameContext ? Object.fromEntries(Object.entries(previous.values).filter(([id,value]) => ids.has(id) && (value !== null || previous.retry === retryTranslation.version || id !== retryTranslation.messageId))) : {};
+    readingCache.current = {key:translationContext,retry:retryTranslation.version,values};
     setReadings({key:translationContext,values});
     if (!sameContext) setOriginals({});
     const queue = messages.filter(message => !(message.id in values) && (message.phraseId ? message.language !== language : !message.mine || message.language !== language));
@@ -152,7 +152,7 @@ export default function OrderChat({order, language, viewerId}: {order: Order; la
           ? <>{showOriginal ? t('Écrit en {language}',{language:t(languageNames[originalLanguage] || originalLanguage)}) : reading.engine === 'phrases' ? t('Réponse rapide préparée dans votre langue') : t('Traduction automatique · {language}',{language:t(languageNames[originalLanguage] || originalLanguage)})}
               <button type="button" onClick={() => setOriginals(current => ({...current, [message.id]: !showOriginal}))}>{t(showOriginal ? 'Afficher la traduction' : 'Voir l’original')}</button></>
           : message.id in values
-            ? <>{t('Traduction indisponible. Le message original reste affiché.')}<button type="button" onClick={() => setRetryTranslation(value => value + 1)}>{t('Réessayer la traduction')}</button></>
+            ? <>{t('Traduction indisponible. Le message original reste affiché.')}<button type="button" onClick={() => setRetryTranslation(value => ({version:value.version + 1,messageId:message.id}))}>{t('Réessayer la traduction')}</button></>
             : <>{t('Traduction en cours… L’original reste affiché.')}</>}
       </span>}
     </>;

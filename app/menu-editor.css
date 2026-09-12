@@ -7,3 +7,11 @@
 .menu-toolbar,.menu-panel,.menu-product-editor{border-radius:20px}
 .menu-icon-button,.menu-new-category button,.menu-saved{border-radius:999px}
 .menu-saved{background:var(--punch);color:var(--ink)}
+
+/* Les champs intrinsèques ne doivent pas élargir les grilles sur mobile. */
+.menu-panel{min-width:0}
+.menu-categories,.menu-product-form,.menu-option-group{grid-template-columns:minmax(0,1fr)}
+@media(max-width:720px){
+ .menu-form-grid{grid-template-columns:minmax(0,1fr)}
+ .menu-section-title,.menu-option-group-title{flex-wrap:wrap}
+}

@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { api, type User, type Role } from "@/lib/api";
 import { type Restaurant } from "@/lib/menu";
 import { t, documentLanguage, languageOptions, normalizeLanguage, type UILanguage } from "@/lib/i18n";
-import { LanguageBar, useLanguage, chooseLanguage, adoptProfileLanguage } from "./i18n";
+import { LanguageBar, useLanguage, chooseLanguage, adoptProfileLanguage, hasLanguageChoice } from "./i18n";
+import { languageNames } from "./translate";
 import { localizeInvalid, clearValidity, refreshValidationLanguage } from "./validation";
 import Home from "./page";
 import Staff from "./staff";
@@ -20,7 +21,7 @@ const demos = [
 ] as const;
 const roleNames: Record<Role, string> = { client: "Espace client", restaurant: "Espace restaurateur", courier: "Espace livreur", admin: "Administration" };
 const emptyProfile = {name: "", phone: "", language: "fr"};
-const profileOf = (user: User | null) => user ? {name: user.name, phone: user.phone || "", language: normalizeLanguage(user.language) || "fr"} : emptyProfile;
+const profileOf = (user: User | null) => user ? {name: user.name, phone: user.phone || "", language: user.language || "fr"} : emptyProfile;
 
 export default function Application() {
   const uiLanguage = useLanguage();
@@ -189,7 +190,7 @@ export default function Application() {
   }
   if (loading || initialError) return <><LanguageBar onChange={value => chooseLanguage(value)}/><main className="app-startup"><span className="brand">manjéo</span><div className="startup-card"><ShoppingBag size={32}/><h1>{loading ? t("Les bonnes adresses arrivent…") : t("La cuisine se fait attendre")}</h1><p>{loading ? t("Connexion à Manjéo.") : t(initialError)}</p>{initialError && <Button onClick={initialize}>{t("Réessayer")}</Button>}</div></main></>;
   const locked = busy || profileBusy;
-  const viewer = user ? {...user,language:uiLanguage} : null;
+  const viewer = user ? {...user,language:!normalizeLanguage(user.language) && !hasLanguageChoice() ? user.language : uiLanguage} : null;
   return <div className="localized-app" onInvalidCapture={localizeInvalid} onInputCapture={clearValidity}>
     <LanguageBar onChange={value => void selectLanguage(value)} disabled={locked}/>
     {staff && user && user.role !== "client"
@@ -204,7 +205,7 @@ export default function Application() {
           <fieldset disabled={locked} className="profile-fields">
           <label>{t("Nom affiché")}<Input name="name" value={profileDraft.name} onChange={event => setProfileDraft({...profileDraft, name: event.target.value})} required minLength={2} maxLength={100} autoComplete="name"/></label>
           <label>{t("Téléphone")}<Input name="phone" type="tel" value={profileDraft.phone} onChange={event => setProfileDraft({...profileDraft, phone: event.target.value})} maxLength={30} autoComplete="tel" placeholder="0694 00 00 00"/><small>{t("Vos interlocuteurs autorisés peuvent vous joindre pendant leur prise en charge de la commande.")}</small></label>
-          <label>{t("Langue du site et des messages")}<select name="language" value={profileDraft.language} onChange={event => setProfileDraft({...profileDraft, language: event.target.value})}>{languageOptions.map(option => <option key={option.code} value={option.code}>{t(option.label)}</option>)}</select><small>{t("Cette langue sera également utilisée lors de votre prochaine connexion sur un autre appareil.")}</small></label>
+          <label>{t("Langue du site et des messages")}<select name="language" value={profileDraft.language} onChange={event => setProfileDraft({...profileDraft, language: event.target.value})}>{languageOptions.map(option => <option key={option.code} value={option.code}>{t(option.label)}</option>)}{!normalizeLanguage(profileDraft.language) && <option value={profileDraft.language}>{t("{language} (messages)", {language:t(languageNames[profileDraft.language] || profileDraft.language)})}</option>}</select><small>{t("Cette langue sera également utilisée lors de votre prochaine connexion sur un autre appareil.")}</small></label>
           {profileNotice && <p className="account-notice" role="status">{t(profileNotice)}</p>}
           <Button type="submit" variant="outline" disabled={locked}>{profileBusy ? t("Enregistrement…") : t("Enregistrer mes coordonnées")}</Button>
           </fieldset>
