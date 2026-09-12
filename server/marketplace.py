@@ -457,6 +457,18 @@ def courier_profile(db, user):
             "online": bool(row["online"]) if row else False, "activeOrderId": active["order_id"] if active else None}
 
 
+def courier_profiles(db):
+    # The partial unique index guarantees at most one active assignment per
+    # courier; LEFT JOIN also preserves couriers whose profile row is absent.
+    rows = db.execute("""SELECT u.id, u.name, u.email, p.online, a.order_id AS active_order_id
+        FROM users u LEFT JOIN courier_profiles p ON p.user_id = u.id
+        LEFT JOIN order_assignments a ON a.courier_id = u.id
+            AND a.state IN ('accepted','preparing','ready','picked_up')
+        WHERE u.role = 'courier' ORDER BY u.name, u.id""")
+    return [{"id": row["id"], "name": row["name"], "email": row["email"],
+             "online": bool(row["online"]), "activeOrderId": row["active_order_id"]} for row in rows]
+
+
 def order_row(db, order_id):
     row = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
     if not row:
@@ -650,7 +662,7 @@ def handle_marketplace(handler, db, path, data):
         return 200, {"profile": courier_profile(db, user)}, None
     if method == "GET" and path == "/api/couriers":
         handler.user(db, {"admin"})
-        return 200, {"couriers": [courier_profile(db, row) for row in db.execute("SELECT * FROM users WHERE role = 'courier' ORDER BY name, id")]}, None
+        return 200, {"couriers": courier_profiles(db)}, None
     match = re.fullmatch(r"/api/orders/([A-Za-z0-9-]+)/(claim|release|assign)", path)
     if match and method == "POST":
         return assign_order(handler, db, match[1], match[2], data)

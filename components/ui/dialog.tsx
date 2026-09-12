@@ -7,6 +7,7 @@ import { Dialog as DialogPrimitive } from "radix-ui"
 import { cn } from "@/lib/utils"
 import { t } from "@/lib/i18n"
 import { Button } from "@/components/ui/button"
+import { dialogFocusHandlers } from "@/components/ui/dialog-focus"
 
 function Dialog({
   ...props
@@ -66,6 +67,7 @@ function DialogContent({
           className
         )}
         {...props}
+        {...dialogFocusHandlers(props)}
       >
         {children}
         {showCloseButton && (

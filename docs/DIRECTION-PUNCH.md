@@ -54,7 +54,10 @@ primitives `components/ui/*` héritent de la direction sans feuille de style par
 - Rayons : blocs 18–20 px · vignettes 12–14 px · photo du héros 24 px · feuille mobile 28 px ·
   boutons, champs, pastilles **999 px**.
 - États définis une seule fois (`.primary-btn`, `.punch-btn`, `.outline-btn`) : survol, pressé,
-  `:focus-visible` en `3px solid var(--punch)` (cream sur fond encre), désactivé à 45 %.
+  `:focus-visible` en `3px solid var(--ink)` (cream sur fond encre), désactivé à 45 %.
+  Le contour encre remplace le jaune sur crème : leurs contrastes sont respectivement
+  15,55:1 et 1,37:1. Dans le menu de langue, le fond jaune du choix pointé garde un
+  contour intérieur encre de 2 px pour rester repérable au clavier.
 - Transitions fonctionnelles seulement, 150 ms `ease-out`. Aucun parallax, aucun `hover:scale`.
 - `prefers-reduced-motion: reduce` coupe animations et défilements animés, marquee comprise.
 

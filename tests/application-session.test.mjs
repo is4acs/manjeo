@@ -103,7 +103,7 @@ function harness({language = 'fr', explicitChoice = false} = {}) {
   function nodes(node) {
     if (Array.isArray(node)) return node.flatMap(value => nodes(value));
     if (!node || typeof node !== 'object') return [];
-    return [node, ...nodes(node.props?.children)];
+    return [node, ...nodes(node.props?.children), ...((node.type === components.Home || node.type === components.Staff) ? nodes(node.props?.languageControl) : [])];
   }
   function take(path) {
     const request = requests.find(item => item.path === path && !item.taken);

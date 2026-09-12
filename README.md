@@ -2,7 +2,7 @@
 
 Application de commande de repas pour Cayenne, Rémire-Montjoly et Matoury, avec quatre espaces reliés : client, restaurateur, livreur et administration.
 
-Les quatre espaces proposent une interface en **français, créole haïtien (Kreyòl ayisyen) et portugais du Brésil**. Le menu de langue est disponible avant connexion ; le choix global pilote aussi les messages, reste conservé sur l’appareil et se synchronise avec le profil connecté. Il remplace l’ancien sélecteur distinct de sept langues de messagerie.
+Les quatre espaces proposent une interface en **français, créole haïtien (Kreyòl ayisyen) et portugais du Brésil**. Le menu de langue est intégré à l’en-tête principal, à droite du panier côté client, et reste disponible avant connexion ; le choix global pilote aussi les messages, reste conservé sur l’appareil et se synchronise avec le profil connecté. Il remplace l’ancien sélecteur distinct de sept langues de messagerie.
 
 **Adresse du projet : [https://manjeo.vercel.app](https://manjeo.vercel.app).** Le site s’utilise depuis un ordinateur ou un téléphone, sans lancer de serveur local. Pour reprendre le développement sur un autre Mac, suivre le [guide MacBook](docs/REPRENDRE-SUR-MACBOOK.md).
 
@@ -137,6 +137,8 @@ Les anciens essais SQLite de l’ordinateur ne sont pas importés dans Neon. La 
 Le dépôt inclut `AGENTS.md` pour transmettre le contexte à un nouvel agent, `scripts/codex-setup.sh` pour installer les dépendances, et `scripts/codex-check.sh` pour exécuter les tests autonomes et compiler. La connexion GitHub et l’environnement Cloud se configurent dans Codex Web ; suivre le [guide Cloud et MacBook](docs/REPRENDRE-SUR-MACBOOK.md#activer-codex-cloud).
 
 ## Modifier et vérifier le code
+
+Le [rapport d’audit du 12 septembre 2026](docs/AUDIT-2026-09-12-PARCOURS.md) décrit les corrections des parcours, les essais isolés et les limites des validations.
 
 Prérequis : Git, Node.js 22.13 ou supérieur avec npm, et Python 3.12 pour le backend et le traitement des photos. Cloner le dépôt dans un dossier hors iCloud et ouvrir ce dossier dans Codex ; voir le [guide MacBook](docs/REPRENDRE-SUR-MACBOOK.md).
 

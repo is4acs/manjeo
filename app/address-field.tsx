@@ -23,9 +23,9 @@ export default function AddressField({value, city, onChange, onPick, inputProps,
   const suggestions = result.key === queryKey ? result.addresses : [];
   const visible = !disabled && open && query.length >= 2 && suggestions.length > 0;
 
+  useEffect(() => { setActive(-1); }, [queryKey, disabled]);
   useEffect(() => {
     const current = ++sequence.current;
-    setActive(-1);
     if (!open || disabled || query.length < 2) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
@@ -44,9 +44,15 @@ export default function AddressField({value, city, onChange, onPick, inputProps,
     onPick?.(suggestion);
   }
   function navigate(event: React.KeyboardEvent<HTMLInputElement>) {
+    const alreadyHandled = event.defaultPrevented;
     inputProps?.onKeyDown?.(event);
-    if (event.defaultPrevented) return;
+    if (!alreadyHandled && event.defaultPrevented) return;
+    // Dialog's capture handler may already have reserved Escape for this list.
     if (event.key === "Escape" && open) { event.preventDefault(); event.stopPropagation(); close(); return; }
+    if (event.defaultPrevented) return;
+    if (!disabled && !open && query.length >= 2 && suggestions.length && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+      event.preventDefault(); setOpen(true); setActive(event.key === "ArrowDown" ? 0 : suggestions.length - 1); return;
+    }
     if (!visible) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
@@ -57,6 +63,7 @@ export default function AddressField({value, city, onChange, onPick, inputProps,
   }
   return <div className={`address-field${className ? ` ${className}` : ""}`} ref={box} {...rest}>
     <Input {...inputProps} role="combobox" aria-expanded={visible} aria-controls={visible ? listId : undefined} aria-autocomplete="list"
+      data-address-suggestions={visible ? 'open' : undefined}
       aria-activedescendant={visible && active >= 0 && active < suggestions.length ? `${listId}-${active}` : undefined} autoComplete="off"
       value={value} onFocus={event => { inputProps?.onFocus?.(event); if (!disabled) setOpen(true); }} onKeyDown={navigate}
       onBlur={event => { inputProps?.onBlur?.(event); if (!box.current?.contains(event.relatedTarget as Node | null)) close(); }}
