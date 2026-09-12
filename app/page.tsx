@@ -521,7 +521,7 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
         {user && user.role !== "client" && <button className="account-staff-button" onClick={onStaff}>{user.role === "admin" ? t("Administration") : user.role === "courier" ? t("Mes livraisons") : t("Mon restaurant")}</button>}
         <button className="account-header-button" aria-label={user ? t("Mon compte, {name}", {name: user.name}) : t("Se connecter")} onClick={() => onAccount()}><UserRound size={17}/><span>{user ? user.name : t("Se connecter")}</span></button>
         <button className="account-mobile-orders" aria-label={t("Mes commandes")} onClick={openHistory}><PackageCheck size={18}/></button>
-        <button className="header-cart" aria-label={t(count > 1 ? "Ouvrir le panier, {count} articles, {total}" : "Ouvrir le panier, {count} article, {total}", {count, total: money(total)})} onClick={() => setCartOpen(true)}><ShoppingBag size={16}/>{count ? money(total) : t("Panier")}</button>
+        <button className="header-cart" aria-label={t(count > 1 ? "Ouvrir le panier, {count} articles, {total}" : "Ouvrir le panier, {count} article, {total}", {count, total: money(total)})} onClick={() => setCartOpen(true)}><ShoppingBag size={16}/><span className="header-cart-label">{count ? money(total) : t("Panier")}</span></button>
         {languageControl}
       </div>
     </div></header>

@@ -34,6 +34,9 @@
 .staff-app .chat-origin button{text-decoration:underline}
 
 /* Compact language control shares the primary header with account actions. */
+.staff-welcome>div,.staff-user-card>div{min-width:0}
+.staff-user-card{min-width:0;max-width:38%;flex-shrink:1}
+.staff-user-card strong{overflow-wrap:anywhere}
 .staff-header-actions{gap:16px;min-width:0}
 .staff-header-inner .staff-space-label{min-width:0}
 @media(max-width:760px){
