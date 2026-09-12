@@ -1,5 +1,7 @@
 /* Connexion, comptes de démonstration et écran de démarrage — direction « Punch ». */
-.account-dialog{max-width:460px}
+.account-dialog{max-width:460px;grid-template-columns:minmax(0,1fr);overflow-wrap:anywhere}
+.account-dialog>*{min-width:0}
+.account-dialog button[data-slot=button]{min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;padding-top:12px;padding-bottom:12px}
 .account-symbol{width:56px;height:56px;background:var(--punch);border:2px solid var(--ink);color:var(--ink);border-radius:50%;display:grid;place-items:center;margin-bottom:14px}
 .account-identity{display:grid;gap:6px;padding:16px;background:var(--cream-2);border:2px solid var(--line);border-radius:20px;font-size:14px;margin-top:18px}
 .account-identity strong{font-weight:600;overflow-wrap:anywhere}
@@ -8,8 +10,8 @@
 .demo-account-picker button{display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 6px;border:2px solid var(--line);border-radius:18px;font-size:12px;font-weight:600;background:var(--cream-2);min-height:78px}
 .demo-account-picker button:hover{border-color:var(--ink)}
 .demo-account-picker button[aria-pressed=true]{background:var(--punch);border-color:var(--ink);color:var(--ink)}
-.account-form{display:grid;gap:16px;margin-top:18px}
-.account-form label{display:grid;gap:8px;font-size:13px;font-weight:600}
+.account-form{display:grid;grid-template-columns:minmax(0,1fr);min-width:0;gap:16px;margin-top:18px}
+.account-form label{display:grid;grid-template-columns:minmax(0,1fr);min-width:0;gap:8px;font-size:13px;font-weight:600}
 .demo-credentials{font-size:13px;line-height:1.7;color:var(--ink-soft);background:var(--cream-2);border:2px solid var(--line);padding:14px;border-radius:20px;margin-top:16px}
 .demo-credentials code{font-family:var(--display);font-size:13px;color:var(--ink);letter-spacing:.02em}
 

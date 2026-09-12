@@ -4,12 +4,12 @@ import vm from 'node:vm';
 import ts from 'typescript';
 
 export class ApiError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
+  constructor(status, message, code) { super(message); this.status = status; this.code = code; }
 }
 
 // Render the actual component and its hooks, controlling HTTP completion order.
 // Children stay as JSX nodes so tests interact with their real handlers/props.
-export function staffHarness(file, initialProps, {dashboard = false, stored = {}, globals = {}} = {}) {
+export function staffHarness(file, initialProps, {dashboard = false, componentName, translate, stored = {}, globals = {}} = {}) {
   const hooks = [], effects = [], requests = [], listeners = new Map(), intervals = new Set();
   const storage = new Map(Object.entries(stored));
   let cursor = 0, dirty = false, alive = true, tree, props = initialProps;
@@ -56,7 +56,7 @@ export function staffHarness(file, initialProps, {dashboard = false, stored = {}
     addEventListener(name, callback) {if (!listeners.has(name)) listeners.set(name, new Set()); listeners.get(name).add(callback);},
     removeEventListener(name, callback) {listeners.get(name)?.delete(callback);},
   };
-  vm.runInNewContext(source, {
+  vm.runInNewContext(source + (componentName ? `\nexports.testComponent = ${componentName};` : ''), {
     exports, Error,
     require(name) {
       if (name === 'react') return react;
@@ -64,7 +64,7 @@ export function staffHarness(file, initialProps, {dashboard = false, stored = {}
       if (name === '@/lib/api') return {ApiError, statusLabels: new Proxy({}, {get: (_, name) => name}), api(path, options = {}) {
         return new Promise((resolve, reject) => requests.push({path, options, resolve, reject, taken: false}));
       }};
-      if (name === '@/lib/i18n') return {t: (value, params = {}) => value.replace(/\{(\w+)\}/g, (_, name) => params[name] ?? ''), tEvent: value => value, formatDate: value => value};
+      if (name === '@/lib/i18n') return {t: translate || ((value, params = {}) => value.replace(/\{(\w+)\}/g, (_, name) => params[name] ?? '')), tEvent: value => value, formatDate: value => value};
       if (name === '@/lib/menu') return {money: value => String(value)};
       return components;
     },
@@ -76,7 +76,7 @@ export function staffHarness(file, initialProps, {dashboard = false, stored = {}
   });
   function render() {
     cursor = 0; dirty = false;
-    tree = dashboard ? exports.default(props).type(props) : exports.default(props);
+    tree = componentName ? exports.testComponent(props) : dashboard ? exports.default(props).type(props) : exports.default(props);
     while (effects.length) effects.shift()();
   }
   async function flush() {

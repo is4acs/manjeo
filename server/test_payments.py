@@ -252,6 +252,11 @@ class PaymentContracts:
         self.assert_api(400, payments.verify_webhook, live, self.signature(live))
         nested = b'{"data":' + b'[' * 10000 + b'0' + b']' * 10000 + b'}'
         self.assert_api(400, payments.verify_webhook, nested, self.signature(nested))
+        for character in ("\x00", "\ud800", "\udfff"):
+            invalid = self.event()
+            invalid["extra"] = [{"value": character}]
+            invalid_raw = json.dumps(invalid).encode()
+            self.assert_api(400, payments.verify_webhook, invalid_raw, self.signature(invalid_raw))
         self.assertEqual(payments.verify_webhook(raw, signature + ",v1=" + "0" * 64)["object"], "event")
 
     def test_only_verified_paid_webhook_opens_kitchen_and_starts_ten_minute_deadline(self):
@@ -515,6 +520,67 @@ class PaymentHTTPContracts:
         self.request("POST", "/api/orders/" + order["id"] + "/checkout", {}, role="admin", status=403)
         self.request("POST", "/api/orders/" + order["id"] + "/checkout", {}, status=401)
         self.request("POST", "/api/orders/" + order["id"] + "/messages", {"body": "Trop tôt"}, role="client", status=409)
+
+    def test_http_unpaid_order_thread_messages_translations_and_badges_are_private(self):
+        order, _ = self.stripe_order()
+        self.login("restaurant")
+        path = "/api/orders/" + order["id"]
+        message_id = uuid.uuid4().hex
+        # A historical/imported message must not bypass the order's payment
+        # visibility through either the badge aggregate or translation cache.
+        with self.database.connect() as db:
+            self.database.begin_write(db)
+            db.execute("INSERT INTO order_messages VALUES (?,?,?,?,?,?,?,?,?)",
+                       (message_id, order["id"], "demo-admin", "admin", "Assistance", "Message de test", "fr", "", order["date"]))
+        with patch("server.translation.provider_config") as provider:
+            for state in ("awaiting_payment", "cancelled", "late_payment_after_cancellation"):
+                with self.subTest(state=state):
+                    if state == "cancelled":
+                        self.request("PATCH", path, {"status": "cancelled", "reason": "Paiement abandonné"}, role="client")
+                    elif state == "late_payment_after_cancellation":
+                        self.assertEqual(self.webhook(self.signed_paid(order))[0], 200)
+                    listed = self.request("GET", "/api/orders", role="restaurant")[0]
+                    self.assertEqual((listed["orders"], listed["unread"]), ([], {}))
+                    self.request("GET", path + "/thread", role="restaurant", status=403)
+                    self.request("POST", path + "/messages", {"body": "Accès refusé"}, role="restaurant", status=403)
+                    self.request("POST", "/api/translate", {"orderId": order["id"], "messageId": message_id, "to": "ht"},
+                                 role="restaurant", status=403)
+                    with self.database.connect() as db:
+                        self.assertEqual(db.execute("SELECT COUNT(*) FROM order_message_reads WHERE user_id='demo-restaurant'").fetchone()[0], 0)
+                        self.assertEqual(db.execute("SELECT COUNT(*) FROM order_message_receipts WHERE user_id='demo-restaurant'").fetchone()[0], 0)
+                        self.assertEqual(db.execute("SELECT COUNT(*) FROM translation_usage").fetchone()[0], 0)
+                        self.assertEqual(db.execute("SELECT COUNT(*) FROM translation_cache").fetchone()[0], 0)
+                        self.assertEqual(db.execute("SELECT COUNT(*) FROM order_messages").fetchone()[0], 1)
+            provider.assert_not_called()
+        self.assertEqual(self.request("GET", "/api/orders", role="client")[0]["unread"], {order["id"]: 1})
+
+    def test_http_paid_then_cancelled_order_keeps_thread_badges_and_exact_grace(self):
+        order, _ = self.stripe_order()
+        self.assertEqual(self.webhook(self.signed_paid(order))[0], 200)
+        self.login("restaurant")
+        path = "/api/orders/" + order["id"]
+        self.request("PATCH", path, {"status": "accepted"}, role="restaurant")
+        message = self.request("POST", path + "/messages", {"phraseId": "thanks"}, role="client", status=201)[0]["message"]
+        self.request("PATCH", path, {"status": "cancelled", "reason": "Test après paiement et acceptation"}, role="restaurant")
+        visible = self.request("GET", "/api/orders", role="restaurant")[0]
+        self.assertEqual([row["id"] for row in visible["orders"]], [order["id"]])
+        self.assertEqual(visible["unread"], {order["id"]: 1})
+        thread = self.request("GET", path + "/thread", role="restaurant")[0]
+        self.assertTrue(thread["open"])
+        self.assertEqual([row["id"] for row in thread["messages"]], [message["id"]])
+        self.assertEqual(self.request("GET", "/api/orders", role="restaurant")[0]["unread"], {})
+        translated = self.request("POST", "/api/translate", {"orderId": order["id"], "messageId": message["id"], "to": "ht"}, role="restaurant")[0]
+        self.assertEqual(translated["provider"], "phrases")
+        self.request("POST", path + "/messages", {"body": "Annulation prise en compte"}, role="restaurant", status=201)
+        with self.database.connect() as db:
+            self.database.begin_write(db)
+            current = json.loads(db.execute("SELECT data FROM orders WHERE id=?", (order["id"],)).fetchone()["data"])
+            current["history"][-1]["date"] = payments.future(now_iso(), -1801)
+            db.execute("UPDATE orders SET data=? WHERE id=?", (json.dumps(current), order["id"]))
+        thread = self.request("GET", path + "/thread", role="restaurant")[0]
+        self.assertFalse(thread["open"])
+        self.assertEqual(len(thread["messages"]), 2)
+        self.request("POST", path + "/messages", {"body": "Trop tard"}, role="restaurant", status=409)
 
     def test_http_raw_signed_webhook_without_browser_origin_unlocks_and_order_replay_is_current(self):
         order, payload = self.stripe_order()

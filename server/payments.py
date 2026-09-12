@@ -234,7 +234,6 @@ def valid_session(session, row):
 
 
 def create_checkout(handler, order_id, data):
-    require_configured()
     if set(data) - {"language"}:
         raise APIError(400, "La demande de paiement contient des champs non autorisés.")
     locale = data.get("language", "fr")
@@ -244,6 +243,7 @@ def create_checkout(handler, order_id, data):
     with database.connect() as db:
         database.begin_write(db)
         row, order = owned_payment(handler, db, order_id)
+        require_configured()
         if row["status"] != "awaiting_payment" or order["status"] != "awaiting_payment":
             raise APIError(409, "Cette commande n’attend plus de paiement.")
         expired = row["expires_at"] <= int(time.time())
@@ -306,6 +306,8 @@ def verify_webhook(raw, signature, stamp=None):
         raise APIError(400, "La signature du paiement est invalide ou trop ancienne.")
     try:
         event = json.loads(raw)
+        from .app import validate_json_value
+        validate_json_value(event)
     except (ValueError, UnicodeError, RecursionError):
         raise APIError(400, "Le webhook de paiement est invalide.") from None
     if not isinstance(event, dict) or event.get("livemode") is not False or event.get("object") != "event" or not isinstance(event.get("id"), str) or not re.fullmatch(r"evt_[A-Za-z0-9]+", event["id"]) or not isinstance(event.get("type"), str):
@@ -380,11 +382,11 @@ def apply_webhook(database, event):
 
 
 def request_refund(handler, order_id):
-    require_configured()
     database = handler.state.database
     with database.connect() as db:
         database.begin_write(db)
         row, order = owned_payment(handler, db, order_id, admin=True)
+        require_configured()
         if order["status"] != "cancelled" or row["status"] not in {"refund_pending", "refund_failed", "refunded"} or not row["payment_intent_id"]:
             raise APIError(409, "Ce paiement ne peut pas être remboursé depuis cet état.")
         if row["status"] == "refunded":

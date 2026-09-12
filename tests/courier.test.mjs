@@ -18,6 +18,16 @@ async function courier(data = empty) {
 const codeInput = app => app.find(node => node.props?.['aria-label'] === 'Code de remise du client');
 const deliveryForm = app => app.find(node => node.props?.className === 'staff-action-form courier-code-form');
 
+test('private delivery reads retain the displayed courier identity on startup and refresh', async () => {
+  const app = staffHarness('courier.tsx', props);
+  const initial = app.take('/api/deliveries');
+  assert.equal(initial.options.accountId, 'driver');
+  initial.resolve(empty);
+  await app.flush();
+  app.tick();
+  assert.equal(app.take('/api/deliveries').options.accountId, 'driver');
+});
+
 test('one claim at a time and an older offer poll cannot replace the claimed mission', async () => {
   const app = await courier();
   app.tick();
@@ -25,7 +35,9 @@ test('one claim at a time and an older offer poll cannot replace the claimed mis
   const click = app.button('Prendre cette course').props.onClick;
   click(); click();
   assert.equal(app.requests.filter(item => item.options.method === 'POST').length, 1);
-  app.take('/api/orders/ORDER-1/claim', 'POST').resolve({order: mission});
+  const claim = app.take('/api/orders/ORDER-1/claim', 'POST');
+  assert.equal(claim.options.accountId, 'driver');
+  claim.resolve({order: mission});
   await app.flush();
   old.resolve(empty);
   await app.flush();
@@ -43,7 +55,9 @@ test('releasing a mission removes private details immediately even if the refres
   app.field('Motif de libération').props.onChange(change('Panne du véhicule'));
   await app.flush();
   void app.find(node => node.props?.className === 'staff-action-form courier-release-form').props.onSubmit(formEvent);
-  app.take('/api/orders/ORDER-1/release', 'POST').resolve({ok: true});
+  const release = app.take('/api/orders/ORDER-1/release', 'POST');
+  assert.equal(release.options.accountId, 'driver');
+  release.resolve({ok: true});
   await app.flush();
   assert.ok(!app.text.includes('12 rue privée'));
   assert.equal(app.find(node => node.type === 'a' && node.props.href?.startsWith('tel:')), undefined);
@@ -70,6 +84,7 @@ test('incorrect PIN keeps the entered leading zero and blocks duplicate requests
   const submit = deliveryForm(app).props.onSubmit;
   void submit(formEvent); void submit(formEvent);
   const request = app.take('/api/orders/ORDER-1', 'PATCH');
+  assert.equal(request.options.accountId, 'driver');
   assert.deepEqual(JSON.parse(request.options.body), {status: 'delivered', deliveryCode: '0123'});
   assert.equal(app.requests.filter(item => item.options.method === 'PATCH').length, 1);
   request.reject(new ApiError(400, 'Le code de remise est incorrect.'));
@@ -118,4 +133,17 @@ test('a claim completing after logout does not read or mutate the next session',
   request.resolve({order: mission});
   await app.flush();
   assert.equal(app.requests.filter(item => item.path === '/api/deliveries').length, 1);
+});
+
+test('availability and pickup mutations carry the displayed courier identity', async () => {
+  const online = await courier();
+  online.find(node => node.props?.role === 'switch').props.onClick();
+  const availability = online.take('/api/courier/profile', 'PATCH');
+  assert.equal(availability.options.accountId, 'driver');
+  assert.deepEqual(JSON.parse(availability.options.body), {online: false});
+  const app = await courier(assigned());
+  app.button('J’ai récupéré la commande').props.onClick();
+  const pickup = app.take('/api/orders/ORDER-1', 'PATCH');
+  assert.equal(pickup.options.accountId, 'driver');
+  assert.deepEqual(JSON.parse(pickup.options.body), {status: 'picked_up'});
 });

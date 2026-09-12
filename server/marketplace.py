@@ -204,6 +204,13 @@ def expire_pending_orders(handler, db, stamp=None):
         release_use(db, current["id"])
 
 
+def kitchen_visible(order):
+    """Payment drafts never entered the restaurant's order or chat scope."""
+    return order["status"] != "awaiting_payment" and not (
+        order.get("payment", {}).get("provider") == "stripe" and order["status"] == "cancelled"
+        and not any(event.get("status") == "pending" for event in order.get("history", [])))
+
+
 def projected_order(order, user):
     result = copy.deepcopy(order)
     if not (user['role'] == 'admin' or user['role'] == 'client' and user['id'] == order['customerId']

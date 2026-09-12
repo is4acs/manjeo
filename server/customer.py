@@ -110,11 +110,11 @@ def _quota(db, user_id, instant):
 def verify_address_request(handler, data):
     database = handler.state.database
     with database.connect() as db:
+        database.begin_write(db)
         user = handler.user(db, {"client"})
         if not isinstance(data, dict) or set(data) != {"address", "city"}:
             raise APIError(400, "Les champs de vérification d’adresse sont invalides.")
         address, city, _ = _address_fields(data)
-        database.begin_write(db)
         _quota(db, user["id"], _instant())
     try:
         result = geocode(address, city)
@@ -122,10 +122,10 @@ def verify_address_request(handler, data):
         raise APIError(503, "La vérification d’adresse est temporairement indisponible. Réessayez dans quelques instants.") from None
     # Neither an open connection nor the cross-instance write lock spans network.
     with database.connect() as db:
+        database.begin_write(db)
         current = handler.user(db, {"client"})
         if current["id"] != user["id"]:
             raise APIError(409, "Le compte connecté a changé. Vérifiez de nouveau l’adresse.")
-        database.begin_write(db)
         candidates = [issue_verification(db, user["id"], candidate) for candidate in result["candidates"]]
     response = {"candidates": candidates, "source": result["source"]}
     if result.get("note"):

@@ -47,6 +47,8 @@ function OrderCard({ order, admin, busy, onStatus, couriers, onAssign, onRefund,
   const [courierId, setCourierId] = useState(order.courierId ?? "");
   const canCancel = !expired && ["awaiting_payment", "pending", "accepted", "preparing", "ready"].includes(order.status);
   const canAssign = admin && ["accepted", "preparing", "ready"].includes(order.status);
+  const selectedCourier = couriers.find(courier => courier.id === courierId);
+  const courierUnavailable = !!courierId && (!selectedCourier || !selectedCourier.online || !!selectedCourier.activeOrderId && selectedCourier.activeOrderId !== order.id);
   useEffect(() => { setCourierId(order.courierId ?? ""); setAssignReason(""); }, [order.courierId]);
   return <article className={`staff-order ${order.status === "pending" ? "staff-order-new" : ""}`}>
     <div className="staff-order-top">
@@ -77,7 +79,7 @@ function OrderCard({ order, admin, busy, onStatus, couriers, onAssign, onRefund,
       {chatOpen && <OrderChat order={order} language={language} viewerId={viewerId} />}
     </div>}
     <div className="staff-delivery-strip"><Bike size={16} /><span>{order.courierName ? <strong>{t("Livreur : {name}", {name: order.courierName})}</strong> : order.status === "pending" ? t("La recherche de livreur commence après acceptation.") : order.status === "delivered" || order.status === "cancelled" ? t("Suivi de livraison archivé") : t("Aucun livreur assigné pour le moment")}</span>{order.courierName && <small>{order.status === "picked_up" ? t("Commande récupérée") : order.status === "delivered" ? t("Livraison terminée") : order.status === "cancelled" ? t("Mission annulée") : t("Retrait à venir")}</small>}</div>
-    {canAssign && <details className="staff-order-details staff-dispatch"><summary>{order.courierId ? t("Réassigner ou libérer la course") : t("Assigner un livreur")}<ChevronDown size={16} /></summary><form className="staff-action-form" onSubmit={event => { event.preventDefault(); if (assignReason.trim().length >= 3) onAssign(order, courierId || null, assignReason.trim()); }}><label>{t("Livreur")}<select value={courierId} disabled={busy} onChange={event => setCourierId(event.target.value)}><option value="">{t("Aucun livreur — rendre la course disponible")}</option>{couriers.map(courier => <option key={courier.id} value={courier.id} disabled={courier.id !== order.courierId && (!courier.online || !!courier.activeOrderId && courier.activeOrderId !== order.id)}>{courier.name} · {courier.activeOrderId && courier.activeOrderId !== order.id ? t("En mission") : courier.online ? t("En ligne") : t("En pause")}</option>)}</select></label><label>{t("Motif de l’affectation")}<textarea required minLength={3} maxLength={250} value={assignReason} disabled={busy} onChange={event => setAssignReason(event.target.value)} placeholder={t("Indiquez pourquoi vous changez l’affectation.")} /></label><p>{t("Une seule mission active par livreur. L’affectation est verrouillée après le retrait.")}</p><button type="submit" className="staff-button" disabled={busy || assignReason.trim().length < 3 || courierId === (order.courierId ?? "")}>{busy ? t("Enregistrement…") : courierId ? t("Confirmer l’affectation") : t("Libérer la course")}</button></form></details>}
+    {canAssign && <details className="staff-order-details staff-dispatch"><summary>{order.courierId ? t("Réassigner ou libérer la course") : t("Assigner un livreur")}<ChevronDown size={16} /></summary><form className="staff-action-form" onSubmit={event => { event.preventDefault(); if (!busy && !courierUnavailable && assignReason.trim().length >= 3 && courierId !== (order.courierId ?? "")) onAssign(order, courierId || null, assignReason.trim()); }}><label>{t("Livreur")}<select value={courierId} disabled={busy} onChange={event => setCourierId(event.target.value)}><option value="">{t("Aucun livreur — rendre la course disponible")}</option>{couriers.map(courier => <option key={courier.id} value={courier.id} disabled={courier.id !== order.courierId && (!courier.online || !!courier.activeOrderId && courier.activeOrderId !== order.id)}>{courier.name} · {courier.activeOrderId && courier.activeOrderId !== order.id ? t("En mission") : courier.online ? t("En ligne") : t("En pause")}</option>)}</select></label><label>{t("Motif de l’affectation")}<textarea required minLength={3} maxLength={250} value={assignReason} disabled={busy} onChange={event => setAssignReason(event.target.value)} placeholder={t("Indiquez pourquoi vous changez l’affectation.")} /></label><p>{t("Une seule mission active par livreur. L’affectation est verrouillée après le retrait.")}</p><button type="submit" className="staff-button" disabled={busy || courierUnavailable || assignReason.trim().length < 3 || courierId === (order.courierId ?? "")}>{busy ? t("Enregistrement…") : courierId ? t("Confirmer l’affectation") : t("Libérer la course")}</button></form></details>}
     <PaymentStatus order={order}/>
     {admin && order.payment?.status === 'refund_pending' && <div className="staff-inline-action"><button type="button" className="staff-button" disabled={busy} onClick={() => onRefund(order)}>{t('Demander le remboursement de test')}</button></div>}
     <details className="staff-order-details">
@@ -131,10 +133,10 @@ function StaffDashboard({ user, onLogout, onShop, onAccount }: { user: User; onL
     if (!silent) setRefreshing(true);
     try {
       const [orderData, restaurantData, userData, courierData] = await Promise.all([
-        api<{ orders: Order[]; unread: Record<string, number> }>("/api/orders"),
+        api<{ orders: Order[]; unread: Record<string, number> }>("/api/orders", {accountId: user.id}),
         api<{ restaurants: Restaurant[] }>("/api/restaurants"),
-        admin ? api<{ users: User[] }>("/api/users") : Promise.resolve({ users: [] as User[] }),
-        admin ? api<{ couriers: CourierProfile[] }>("/api/couriers") : Promise.resolve({ couriers: [] as CourierProfile[] }),
+        admin ? api<{ users: User[] }>("/api/users", {accountId: user.id}) : Promise.resolve({ users: [] as User[] }),
+        admin ? api<{ couriers: CourierProfile[] }>("/api/couriers", {accountId: user.id}) : Promise.resolve({ couriers: [] as CourierProfile[] }),
       ]);
       if (!mounted.current || sequence !== requestSequence.current) return;
       setOrders(orderData.orders); setUnread(orderData.unread || {});
@@ -183,7 +185,7 @@ function StaffDashboard({ user, onLogout, onShop, onAccount }: { user: User; onL
 
   function changeStatus(order: Order, status: OrderStatus, reason?: string) {
     void mutate(`order-${order.id}`, async () => {
-      const data = await api<{ order: Order }>(`/api/orders/${encodeURIComponent(order.id)}`, { method: "PATCH", body: JSON.stringify({ status, ...(reason ? { reason } : {}) }) });
+      const data = await api<{ order: Order }>(`/api/orders/${encodeURIComponent(order.id)}`, { method: "PATCH", accountId: user.id, body: JSON.stringify({ status, ...(reason ? { reason } : {}) }) });
       if (mounted.current) setOrders(current => current.map(item => item.id === order.id ? data.order : item));
     }, {source: "{id} · {status}", params: {id: order.id, status: statusLabels[status]}});
   }
@@ -191,19 +193,19 @@ function StaffDashboard({ user, onLogout, onShop, onAccount }: { user: User; onL
   function toggleRestaurant(restaurant: Restaurant) {
     const acceptingOrders = !restaurant.acceptingOrders;
     void mutate(`restaurant-${restaurant.id}`, async () => {
-      const data = await api<{ restaurant: Restaurant }>(`/api/restaurants/${encodeURIComponent(restaurant.id)}`, { method: "PATCH", body: JSON.stringify({ acceptingOrders }) });
+      const data = await api<{ restaurant: Restaurant }>(`/api/restaurants/${encodeURIComponent(restaurant.id)}`, { method: "PATCH", accountId: user.id, body: JSON.stringify({ acceptingOrders }) });
       if (mounted.current) setRestaurants(current => current.map(item => item.id === restaurant.id ? { ...item, acceptingOrders: data.restaurant.acceptingOrders } : item));
     }, {source: acceptingOrders ? "{name} accepte les commandes." : "{name} est en pause.", params: {name: restaurant.name}});
   }
 
   function refundPayment(order: Order) {
     void mutate(`order-${order.id}`, async () => {
-      await api(`/api/orders/${encodeURIComponent(order.id)}/refund`, {method:'POST', body:'{}'});
+      await api(`/api/orders/${encodeURIComponent(order.id)}/refund`, {method:'POST', accountId: user.id, body:'{}'});
     }, 'Demande envoyée. La confirmation du remboursement apparaîtra après le retour de Stripe.');
   }
   function assignCourier(order: Order, courierId: string | null, reason: string) {
     void mutate(`order-${order.id}`, async () => {
-      const data = await api<{ order: Order }>(`/api/orders/${encodeURIComponent(order.id)}/assign`, { method: "POST", body: JSON.stringify({ courierId, reason }) });
+      const data = await api<{ order: Order }>(`/api/orders/${encodeURIComponent(order.id)}/assign`, { method: "POST", accountId: user.id, body: JSON.stringify({ courierId, reason }) });
       if (mounted.current) setOrders(current => current.map(item => item.id === order.id ? data.order : item));
     }, courierId ? "L’affectation du livreur est enregistrée." : "La course est à nouveau disponible.");
   }
@@ -254,7 +256,7 @@ function StaffDashboard({ user, onLogout, onShop, onAccount }: { user: User; onL
           {visibleOrders.length ? <div className="staff-orders">{visibleOrders.map(order => <OrderCard key={order.id} order={order} admin={admin} busy={busyKeys.includes(`order-${order.id}`)} onStatus={changeStatus} couriers={couriers} onAssign={assignCourier} onRefund={refundPayment} language={user.language || "fr"} unread={unread[order.id] || 0} viewerId={user.id} />)}</div> : <div className="staff-empty"><span><PackageCheck size={32} /></span><h3>{orders.length ? t("Aucune commande avec ces filtres") : t("La première commande se prépare ici")}</h3><p>{orders.length ? t("Essayez un autre statut ou effacez votre recherche.") : t("Connectez-vous avec le compte client pour passer une commande test. Elle apparaîtra ici automatiquement.")}</p>{orders.length > 0 ? <button type="button" className="staff-button" onClick={() => { setSearch(""); setStatusFilter("all"); setRestaurantFilter("all"); }}>{t("Voir toutes les commandes")}</button> : <span className="staff-empty-account">client@manjeo.test</span>}</div>}
         </section>}
 
-        {menuRestaurant && <section hidden={tab !== "menu"} aria-label={t("Gestion des cartes")}>{admin && <label className="staff-menu-selector">{t("Restaurant à modifier")}<select value={menuRestaurant.id} onChange={event => setMenuRestaurantId(event.target.value)}>{restaurants.map(restaurant => <option key={restaurant.id} value={restaurant.id}>{restaurant.name}</option>)}</select></label>}<MenuEditor key={menuRestaurant.id} restaurant={menuRestaurant} onRestaurantChange={(restaurant, fields) => { ++requestSequence.current; setRefreshing(false); const saved = Object.fromEntries(fields.map(field => [field, restaurant[field]])); setRestaurants(current => current.map(item => item.id === restaurant.id ? { ...item, ...saved } : item)); }} /></section>}
+        {menuRestaurant && <section hidden={tab !== "menu"} aria-label={t("Gestion des cartes")}>{admin && <label className="staff-menu-selector">{t("Restaurant à modifier")}<select value={menuRestaurant.id} onChange={event => setMenuRestaurantId(event.target.value)}>{restaurants.map(restaurant => <option key={restaurant.id} value={restaurant.id}>{restaurant.name}</option>)}</select></label>}<MenuEditor key={menuRestaurant.id} restaurant={menuRestaurant} viewerId={user.id} onRestaurantChange={(restaurant, fields) => { ++requestSequence.current; setRefreshing(false); const saved = Object.fromEntries(fields.map(field => [field, restaurant[field]])); setRestaurants(current => current.map(item => item.id === restaurant.id ? { ...item, ...saved } : item)); }} /></section>}
 
         {tab === "couriers" && admin && <section aria-label={t("Activité des livreurs")}><div className="staff-section-heading"><div><h2>{t("Les livreurs, en direct")}</h2><p>{t("{count} disponibles · une mission active par livreur.", {count: couriers.filter(courier => courier.online && !courier.activeOrderId).length})}</p></div></div><div className="staff-couriers">{couriers.map(courier => { const mission = orders.find(order => order.id === courier.activeOrderId); return <article className="staff-courier" key={courier.id}><span className="staff-avatar"><Bike size={25} /></span><div><h3>{courier.name}</h3><p>{courier.email}</p><span className={`staff-status ${courier.activeOrderId ? "staff-status-picked_up" : courier.online ? "staff-status-ready" : "staff-status-pending"}`}><span />{courier.activeOrderId ? t("En mission") : courier.online ? t("Disponible") : t("En pause")}</span>{mission ? <p className="staff-courier-mission">{mission.restaurant} → {mission.city}<br /><strong>{t(statusLabels[mission.status])}</strong></p> : <p className="staff-courier-mission">{courier.online ? t("Peut prendre une nouvelle course") : t("Les nouvelles attributions sont en pause")}</p>}{courier.activeOrderId && <button type="button" className="staff-button" onClick={() => { setSearch(courier.activeOrderId || ""); setStatusFilter("all"); setRestaurantFilter("all"); setTab("orders"); }}>{t("Voir la mission")}<ArrowRight size={14} /></button>}</div></article>; })}</div>{!couriers.length && <div className="staff-empty"><span><Bike size={29} /></span><h3>{t("Aucun livreur pour le moment")}</h3><p>{t("Les comptes livreur apparaissent ici avec leur disponibilité.")}</p></div>}<p className="staff-help"><Bike size={17} />{t("Depuis une commande acceptée, attribuez ou réattribuez une course à un livreur disponible. Après le retrait, seul ce livreur peut confirmer la livraison avec le code client.")}</p></section>}
 

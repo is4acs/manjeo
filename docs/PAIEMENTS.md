@@ -138,6 +138,14 @@ l’identifiant de commande : un webhook destiné à un autre schéma isolé ne 
 Une commande garde une seule session Checkout. La première tentative enregistre ses paramètres
 avant l’appel réseau ; les tentatives suivantes conservent ces paramètres et la même clé
 d’idempotence, même si la langue demandée change ou si une réponse réseau a été perdue.
+
+L’interface lie aussi les actions à son compte affiché avec l’en-tête `X-Manjeo-Account`.
+Un cookie passé à un autre compte dans un onglet concurrent reçoit `409/session_changed`
+avant toute création ou demande de paiement ; cette erreur ne libère pas l’UUID d’une
+commande incertaine. L’identité et les droits sont recontrôlés après l’appel Stripe.
+Une session révoquée entre-temps ne reçoit ni URL Checkout ni reçu de remboursement.
+Un appel Stripe déjà parti reste associé à sa clé d’idempotence ; les webhooks signés
+continuent de rapprocher son résultat indépendamment de la session du navigateur.
 Deux créations concurrentes ne créent donc pas deux opérations distinctes chez Stripe. Les
 identifiants d’événement webhook sont également uniques en base, sous verrou d’écriture.
 

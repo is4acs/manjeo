@@ -36,20 +36,23 @@ export const statusLabels: Record<OrderStatus, string> = {
 export class ApiError extends Error {
   constructor(message: string, public status: number, public code?: string) { super(message); }
 }
-export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+export type ApiOptions = RequestInit & {accountId?: string};
+export async function api<T>(path: string, options: ApiOptions = {}): Promise<T> {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 15000);
   const abort = () => controller.abort();
   if (options.signal?.aborted) controller.abort();
   else options.signal?.addEventListener("abort", abort, { once: true });
   try {
+    const {accountId, ...requestOptions} = options;
     const response = await fetch(path, {
-      ...options, credentials: "same-origin", signal: controller.signal,
-      headers: { "Content-Type": "application/json", ...options.headers },
+      ...requestOptions, credentials: "same-origin", signal: controller.signal,
+      headers: { "Content-Type": "application/json", ...options.headers, ...(accountId ? {"X-Manjeo-Account": accountId} : {}) },
     });
     const data = await response.json().catch(() => { throw new ApiError("Réponse du serveur illisible. Réessayez.", response.status >= 400 ? response.status : 502); });
     if (!response.ok) {
       if (response.status === 401 && path !== "/api/login" && path !== "/api/session") window.dispatchEvent(new Event("manjeo-session-expired"));
+      if (response.status === 409 && data.code === "session_changed") window.dispatchEvent(new Event("manjeo-session-changed"));
       throw new ApiError(data.error || "La demande n’a pas abouti.", response.status, typeof data.code === "string" ? data.code : undefined);
     }
     return data as T;

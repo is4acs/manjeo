@@ -1,5 +1,10 @@
 // Interface restaurant, livreur et éditeur de carte : créole haïtien, portugais du Brésil.
 export const staffTranslations: Record<string, [string, string]> = {
+  "Nouveau produit": ["Nouvo pwodwi", "Novo produto"],
+  "À la carte": ["Meni", "Cardápio"],
+  "Nouvelle option": ["Nouvo opsyon", "Nova opção"],
+  "Premier choix": ["Premye chwa", "Primeira opção"],
+  "Nouveau choix": ["Nouvo chwa", "Nova opção"],
   "Accepter la commande": [
     "Aksepte kòmand lan",
     "Aceitar o pedido"

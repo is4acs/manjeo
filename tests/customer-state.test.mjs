@@ -1,12 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { promotionContext, quotedDiscount, shouldAdoptProfileLocation } from '../app/customer-state.ts';
+import { promotionContext, quotedDiscount, shouldAdoptProfileLocation, hasOrderConversation } from '../app/customer-state.ts';
 import { remainingSeconds, countdown, clockLabel, isLate } from '../app/delivery-time.ts';
 
 const basket = {userId: 'client-a', role: 'client', restaurantId: 'ti-kreol', city: 'Cayenne', subtotal: 2000, delivery: 250};
 const context = promotionContext(basket);
 const quote = {context, promotion: {code: 'BIENVENUE', discount: 400}};
 const profileLocation = {userId: 'client-a', address: '7 Rue Lallouette', city: 'Cayenne', details: 'Portail bleu'};
+
+test('accepted conversations remain accessible after cancellation or delivery, including after the writing window', () => {
+  for (const status of ['accepted', 'preparing', 'ready', 'picked_up']) assert.equal(hasOrderConversation({status, history: []}), true);
+  for (const status of ['delivered', 'cancelled']) {
+    assert.equal(hasOrderConversation({status, history: [{status:'accepted', date:'2020-01-01T00:00:00Z'}, {status, date:'2020-01-01T01:00:00Z'}]}), true);
+    assert.equal(hasOrderConversation({status, history: [{status:'pending'}, {status}]}), false);
+  }
+  for (const status of ['pending', 'awaiting_payment']) assert.equal(hasOrderConversation({status, history: []}), false);
+});
 
 test('a profile refresh updates an untouched checkout destination', () => {
   const updated = {...profileLocation, address: '9 Rue Lallouette', details: 'Entrée à droite'};

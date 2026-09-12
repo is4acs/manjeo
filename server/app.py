@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import hmac
 import json
+import math
 import mimetypes
 import os
 import re
@@ -23,6 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent
 mimetypes.add_type("application/manifest+json", ".webmanifest")
 COOKIE_NAME = "manjeo_session"
 SESSION_SECONDS = 8 * 60 * 60
+MAX_JSON_DEPTH = 64
 PASSWORD_ITERATIONS = 240_000
 CITIES = {"Cayenne", "Rémire-Montjoly", "Matoury"}
 TRANSITIONS = {
@@ -114,6 +116,30 @@ def text_field(data, field, minimum=0, maximum=500):
     if not isinstance(value, str) or not minimum <= len(value.strip()) <= maximum:
         raise APIError(400, "Le champ « %s » est invalide." % field)
     return value.strip()
+
+
+def validate_json_value(data):
+    """Reject unstoreable or excessively nested JSON without rewriting a value.
+
+    PostgreSQL text rejects NUL and both database drivers reject lone Unicode
+    surrogates. Validate keys as well as nested values before hashes or writes;
+    an iterative walk remains bounded even when json.loads accepts deep input.
+    """
+    pending = [(data, 0)]
+    while pending:
+        value, depth = pending.pop()
+        if depth > MAX_JSON_DEPTH:
+            raise ValueError("JSON nesting limit exceeded")
+        if isinstance(value, str):
+            if "\x00" in value:
+                raise ValueError("NUL is not supported")
+            value.encode("utf-8", errors="strict")
+        elif isinstance(value, dict):
+            pending.extend((item, depth + 1) for pair in value.items() for item in pair)
+        elif isinstance(value, list):
+            pending.extend((item, depth + 1) for item in value)
+        elif isinstance(value, float) and not math.isfinite(value):
+            raise ValueError("Non-finite numbers are not JSON values")
 
 
 class Database:
@@ -301,8 +327,12 @@ class Handler(BaseHTTPRequestHandler):
         if not 0 < length <= limit:
             raise APIError(413 if length > limit else 400, "Taille de requête invalide.")
         try:
-            data = json.loads(self.rfile.read(length).decode("utf-8"))
-        except (ValueError, UnicodeDecodeError):
+            raw = self.rfile.read(length)
+            if len(raw) != length:
+                raise ValueError()
+            data = json.loads(raw.decode("utf-8"))
+            validate_json_value(data)
+        except (ValueError, UnicodeError, RecursionError):
             raise APIError(400, "Le JSON est invalide.")
         if not isinstance(data, dict):
             raise APIError(400, "Un objet JSON est requis.")
@@ -363,6 +393,15 @@ class Handler(BaseHTTPRequestHandler):
             if roles is not None:
                 raise APIError(401, "Connectez-vous pour continuer.")
             return None
+        if roles is not None:
+            # The UI may still display A after another tab replaced its cookie
+            # with B. This assertion is separate from the immutable order body
+            # and must run before either role checks or idempotency lookups.
+            expected = self.headers.get("X-Manjeo-Account")
+            if expected is not None and expected != user["id"]:
+                error = APIError(409, "Le compte connecté a changé. Réessayez.")
+                error.code = "session_changed"
+                raise error
         if roles is not None and user["role"] not in roles:
             raise APIError(403, "Votre compte ne permet pas cette action.")
         return user
@@ -455,10 +494,12 @@ class Handler(BaseHTTPRequestHandler):
                     "/api/deliveries", "/api/couriers", "/api/promotions", "/api/promotions/check",
                 }
                 if lifecycle_route:
+                    self.ensure_write(db)
+                    if self.headers.get("X-Manjeo-Account") is not None and not (self.command == "GET" and path == "/api/promotions"):
+                        self.user(db, {"client", "restaurant", "courier", "admin"})
                     from .marketplace import expire_pending_orders
                     # Expiry is independent of the requested action. A rejected
                     # acceptance must not resurrect an expired order or its promo.
-                    self.ensure_write(db)
                     expire_pending_orders(self, db)
                     from .payments import expire_awaiting_payments
                     expire_awaiting_payments(db)
@@ -530,6 +571,8 @@ class Handler(BaseHTTPRequestHandler):
             from .messaging import profile
             return 200, {"user": {**public_user(row), **profile(db, row["id"], include_delivery=True)}}, self.session_cookie(token, SESSION_SECONDS)
         if method == "POST" and path == "/api/logout":
+            if self.headers.get("X-Manjeo-Account") is not None:
+                self.user(db, {"client", "restaurant", "courier", "admin"})
             db.execute("DELETE FROM sessions WHERE token_hash = ?", (self.session_hash(),))
             return 200, {"ok": True}, self.session_cookie()
         if method == "GET" and path == "/api/restaurants":
@@ -548,9 +591,8 @@ class Handler(BaseHTTPRequestHandler):
             rows = db.execute("SELECT data FROM orders" + clause + " ORDER BY created_at DESC, id DESC", args)
             visible_orders = [json.loads(row['data']) for row in rows]
             if user['role'] == 'restaurant':
-                visible_orders = [order for order in visible_orders if order['status'] != 'awaiting_payment' and not (
-                    order.get('payment', {}).get('provider') == 'stripe' and order['status'] == 'cancelled'
-                    and not any(event.get('status') == 'pending' for event in order.get('history', [])))]
+                from .marketplace import kitchen_visible
+                visible_orders = [order for order in visible_orders if kitchen_visible(order)]
             return 200, {"orders": [projected_order(order, user) for order in visible_orders],
                          "unread": unread_counts(db, user)}, None
         if method == "POST" and path == "/api/orders":

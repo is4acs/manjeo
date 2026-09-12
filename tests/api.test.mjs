@@ -38,6 +38,24 @@ const stalled = (_path, {signal}) => new Promise((_resolve, reject) => {
   else signal.addEventListener('abort', aborted, {once: true});
 });
 
+test('an expected account is a transport precondition and never changes the order body', async () => {
+  const module = client(async () => response(200, {ok: true}));
+  const body = '{"requestId":"original-uuid","items":[]}';
+  await module.api('/api/orders', {method: 'POST', accountId: 'customer-original', body});
+  assert.equal(module.requests[0].options.headers['X-Manjeo-Account'], 'customer-original');
+  assert.equal(module.requests[0].options.body, body);
+  assert.equal('accountId' in module.requests[0].options, false);
+  await module.api('/api/session');
+  assert.equal(module.requests[1].options.headers['X-Manjeo-Account'], undefined);
+});
+
+test('an account precondition failure requests fresh session state and preserves its code', async () => {
+  const module = client(async () => response(409, {error: 'Le compte connecté a changé.', code: 'session_changed'}));
+  await assert.rejects(module.api('/api/orders', {method: 'POST', accountId: 'customer-a', body: '{}'}), error => error.status === 409 && error.code === 'session_changed');
+  assert.deepEqual(module.events, ['manjeo-session-changed']);
+  assert.equal(module.requests.length, 1, 'A failed command is never retried automatically under another cookie');
+});
+
 test('a 401 while confirming the session cannot recursively trigger expiration', async () => {
   const module = client(async () => response(401, {error: 'Session indisponible'}));
   await assert.rejects(module.api('/api/session'), error => error instanceof module.ApiError && error.status === 401);

@@ -152,7 +152,7 @@ test('a late order response from an earlier visit to the same account cannot cle
   await submission;
   assert.equal(flow.context.currentOrder, undefined);
   assert.equal(flow.context.cart[0].quantity, 3);
-  assert.equal(flow.storage.has(orderRequestStorageKey('customer-a')), false, 'A confirmed old attempt no longer needs recovery after another reload');
+  assert.equal(flow.storage.has(orderRequestStorageKey('customer-a')), true, 'The returning account must recover the original order before its leftover basket can create another');
   assert.equal(attempt.id, firstId);
 });
 

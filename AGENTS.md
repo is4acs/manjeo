@@ -30,6 +30,7 @@ Les parcours navigateur se lancent avec `npm run test:browser` après `npx playw
 - Conserver l’idempotence des commandes, les versions des cartes et les instantanés des commandes confirmées.
 - Une nouvelle commande exige une preuve d’adresse liée au client ou son adresse habituelle encore valable. Le replay précède cette validation ; conserver le corps exact d’une requête incertaine même si sa preuve devient une adresse enregistrée.
 - Une tentative incertaine reste séparée par compte dans sessionStorage, avec reprise explicite et même UUID ; ne pas créer une nouvelle commande avant résolution ni effacer un panier constitué ensuite.
+- Transmettre le compte affiché via `accountId` à `api()` pour les lectures et actions privées. `X-Manjeo-Account` vérifie le contexte du cookie, sans accorder de droit ; un `session_changed` resynchronise le compte et conserve la tentative incertaine. Ne pas ajouter cette identité au corps idempotent.
 - L’adresse habituelle et la préférence de paiement sont privées au compte. Le point d’une commande est visible seulement par son client, l’admin et le livreur affecté ; ni restaurant ni offre libre. Une modification du profil ne change pas l’instantané.
 - Une acceptation après dix minutes doit être refusée. L’expiration et la restitution d’une promotion doivent rester validées même si l’action demandée est refusée ; préserver le point de sauvegarde de `dispatch_api`.
 - Une seule course active par livreur ; affectation et transitions atomiques.

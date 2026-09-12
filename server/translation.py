@@ -306,6 +306,9 @@ def legacy_request(handler, data):
     config = provider_config(handler, legacy=True)
     with database.connect() as db:
         database.begin_write(db)
+        user = handler.user(db, {"client", "restaurant", "courier", "admin"})
         reserve_usage(db, user, len(text), now_epoch())
     translated = relay_translate(config, text, source, target)
+    with database.connect() as db:
+        handler.user(db, {"client", "restaurant", "courier", "admin"})
     return 200, {"text": translated, "from": source, "to": target}, None

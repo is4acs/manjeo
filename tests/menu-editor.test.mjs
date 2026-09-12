@@ -1,18 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ApiError, change, formEvent, staffHarness} from './support/staff-harness.mjs';
+import {t} from '../lib/i18n.ts';
 
 const restaurant = {id: 'kaz', name: 'La Kaz', description: 'Cuisine maison', minutes: 25, pickupAddress: '7 rue ancienne', pickupCity: 'Cayenne', acceptingOrders: true};
 const menu = {version: 2, categories: ['Plats'], products: [{id: 'dish', name: 'Riz', description: '', group: 'Plats', price: 1000, available: true, archived: false, allergens: '', image: '', optionGroups: [], version: 1}]};
 
 async function editor(options = {}) {
   const changes = [];
-  const app = staffHarness('menu-editor.tsx', {restaurant, onRestaurantChange: (...args) => changes.push(args)}, options);
+  const app = staffHarness('menu-editor.tsx', {restaurant, viewerId: 'restaurant-owner', onRestaurantChange: (...args) => changes.push(args)}, options);
   app.take('/api/restaurants/kaz/menu').resolve({menu});
   await app.flush();
   return {app, changes};
 }
 const profileForm = app => app.all(node => node.type === 'form').at(-1);
+
+test('loading the private menu sends its originating viewer identity', () => {
+  const app = staffHarness('menu-editor.tsx', {restaurant, viewerId: 'restaurant-owner', onRestaurantChange() {}});
+  assert.equal(app.take('/api/restaurants/kaz/menu').options.accountId, 'restaurant-owner');
+});
 
 test('restaurant updates refresh untouched fields and preserve an in-progress profile edit', async () => {
   const {app} = await editor();
@@ -25,6 +31,7 @@ test('restaurant updates refresh untouched fields and preserve an in-progress pr
   assert.equal(app.field('Présentation').props.value, 'Mon nouveau texte');
   void profileForm(app).props.onSubmit(formEvent);
   const request = app.take('/api/restaurants/kaz', 'PATCH');
+  assert.equal(request.options.accountId, 'restaurant-owner');
   assert.deepEqual(JSON.parse(request.options.body), {description: 'Mon nouveau texte'}, 'Only intentional edits may overwrite the shared restaurant');
 });
 
@@ -50,7 +57,9 @@ test('menu publishing is single flight and a version conflict keeps the exact dr
   const submit = app.all(node => node.type === 'form')[0].props.onSubmit;
   void submit(formEvent); void submit(formEvent);
   assert.equal(app.requests.filter(item => item.options.method === 'PATCH').length, 1);
-  app.take('/api/restaurants/kaz/menu', 'PATCH').reject(new ApiError(409, 'La carte a changé.'));
+  const publish = app.take('/api/restaurants/kaz/menu', 'PATCH');
+  assert.equal(publish.options.accountId, 'restaurant-owner');
+  publish.reject(new ApiError(409, 'La carte a changé.'));
   await app.flush();
   assert.equal(app.find(node => node.type === 'input' && node.props['aria-label'] === 'Nom de la catégorie 1').props.value, 'Plats du jour');
   assert.equal(app.button('Publier la carte').props.disabled, true);
@@ -97,7 +106,9 @@ test('double photo selection creates one upload and preserves the unsaved menu',
   assert.equal(readers.length, 1);
   readers[0].finish();
   await app.flush();
-  app.take('/api/restaurants/kaz/images', 'POST').resolve({url: '/api/images/test-photo'});
+  const upload = app.take('/api/restaurants/kaz/images', 'POST');
+  assert.equal(upload.options.accountId, 'restaurant-owner', 'The upload retains its original viewer after the asynchronous FileReader step');
+  upload.resolve({url: '/api/images/test-photo'});
   await app.flush();
   assert.equal(app.requests.filter(item => item.path.endsWith('/images')).length, 1);
   assert.equal(app.field('Photo : adresse HTTPS').props.value, '/api/images/test-photo');
@@ -115,3 +126,56 @@ test('leaving the editor during local photo reading does not upload under a late
   await app.flush();
   assert.equal(app.requests.filter(item => item.path.endsWith('/images')).length, 0);
 });
+
+test('photo reading cannot retarget its account precondition to a later rendered viewer', async () => {
+  const {FileReader, readers} = controlledFiles();
+  const {app} = await editor({globals: {FileReader}});
+  const input = await photoInput(app);
+  input.props.onChange({target: {files: [{type: 'image/png', size: 100}], value: 'photo.png'}});
+  app.updateProps({viewerId: 'replacement-admin'});
+  readers[0].finish();
+  await app.flush();
+  assert.equal(app.take('/api/restaurants/kaz/images', 'POST').options.accountId, 'restaurant-owner');
+});
+
+test('a session-changed rejection preserves the menu draft without claiming a menu-version conflict', async () => {
+  const {app} = await editor();
+  app.find(node => node.type === 'input' && node.props['aria-label'] === 'Nom de la catégorie 1').props.onChange(change('Plats du jour'));
+  await app.flush();
+  void app.all(node => node.type === 'form')[0].props.onSubmit(formEvent);
+  app.take('/api/restaurants/kaz/menu', 'PATCH').reject(new ApiError(409, 'Le compte connecté a changé. Réessayez.', 'session_changed'));
+  await app.flush();
+  assert.equal(app.button('Charger la carte publiée'), undefined);
+  assert.ok(app.text.includes('Le compte connecté a changé. Réessayez.'));
+  assert.equal(JSON.parse(app.storage.get('manjeo-menu-draft-kaz')).draft.categories[0], 'Plats du jour');
+});
+
+for (const language of ['ht', 'pt']) {
+  test(`new menu content uses ${language} at creation and is preserved when the interface language changes`, async () => {
+    let currentLanguage = language, id = 0;
+    const translate = (source, params = {}) => t(source, params, currentLanguage);
+    const {app} = await editor({translate, globals: {crypto: {randomUUID: () => `choice-${++id}`}}});
+    app.button(translate('Ajouter un produit')).props.onClick();
+    await app.flush();
+    const createdName = app.field(translate('Nom du produit')).props.value;
+    assert.equal(createdName, t('Nouveau produit', {}, language));
+    assert.notEqual(createdName, 'Nouveau produit');
+    app.button(translate('Ajouter un groupe')).props.onClick();
+    await app.flush();
+    assert.equal(app.field(translate('Nom du groupe')).props.value, t('Nouvelle option', {}, language));
+    assert.equal(app.field(translate('Choix')).props.value, t('Premier choix', {}, language));
+    app.button(translate('Ajouter un choix')).props.onClick();
+    await app.flush();
+    currentLanguage = 'fr';
+    app.updateProps({restaurant: {...restaurant}});
+    await app.flush();
+    assert.equal(app.field('Nom du produit').props.value, createdName);
+    void app.all(node => node.type === 'form')[0].props.onSubmit(formEvent);
+    const saved = JSON.parse(app.take('/api/restaurants/kaz/menu', 'PATCH').options.body);
+    assert.equal(saved.products[0].name, 'Riz', 'Existing authored content is never translated');
+    const created = saved.products.at(-1);
+    assert.equal(created.name, createdName);
+    assert.equal(created.optionGroups[0].name, t('Nouvelle option', {}, language));
+    assert.deepEqual(created.optionGroups[0].choices.map(choice => choice.name), [t('Premier choix', {}, language), t('Nouveau choix', {}, language)]);
+  });
+}

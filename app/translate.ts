@@ -96,7 +96,7 @@ export async function translate(text: string, from: string, to: string, viewerId
     }
     if (signal?.aborted) return null;
     try {
-      const result = await api<{text: string}>("/api/translate", {method: "POST", body: JSON.stringify({text, from, to}), signal});
+      const result = await api<{text: string}>("/api/translate", {method: "POST", accountId:viewerId || undefined, body: JSON.stringify({text, from, to}), signal});
       if (signal?.aborted) return null;
       return typeof result.text === "string" && result.text.trim() ? {text: result.text, engine: "server"} : null;
     } catch { return null; }
@@ -132,7 +132,7 @@ export async function translateMessage(orderId: string, messageId: string, to: s
     for (let attempt=0; attempt<4 && !signal?.aborted; attempt++) {
       try {
         const result = await api<{text:string;from:string;to:string;provider:string}>('/api/translate', {
-          method:'POST',body:JSON.stringify({orderId,messageId,to}),signal,
+          method:'POST',accountId:viewerId,body:JSON.stringify({orderId,messageId,to}),signal,
         });
         if (signal?.aborted || result.to !== to || typeof result.text !== 'string' || !result.text.trim() || Array.from(result.text).length > 4000 || typeof result.from !== 'string' || !Object.hasOwn(languageNames,result.from) || !['phrases','vercel','libretranslate'].includes(result.provider)) return null;
         return {text:result.text,engine:result.provider === 'phrases' ? 'phrases' : 'server',source:result.from};

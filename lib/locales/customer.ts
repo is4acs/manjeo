@@ -1,6 +1,7 @@
 export const customerTranslations: Record<string, [string, string]> = {
  'Confirmation à reprendre':['Konfimasyon pou reprann','Confirmação a retomar'],
  'Commande précédente':['Kòmann anvan an','Pedido anterior'],
+ 'Article de la carte précédente':['Atik nan meni anvan an','Item do cardápio anterior'],
  'La réponse de votre dernière demande est incertaine. Reprenez sa confirmation avant de commander à nouveau.':['Repons dènye demann ou an pa sèten. Reprann konfimasyon li anvan ou fè yon lòt kòmann.','A resposta da sua última solicitação é incerta. Retome a confirmação antes de fazer outro pedido.'],
  'Reprenez la confirmation précédente avant de passer une nouvelle commande.':['Reprann konfimasyon anvan an anvan ou fè yon nouvo kòmann.','Retome a confirmação anterior antes de fazer um novo pedido.'],
  'Reprendre cette confirmation':['Reprann konfimasyon sa a','Retomar esta confirmação'],

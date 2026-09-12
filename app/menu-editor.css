@@ -10,6 +10,7 @@
 
 /* Les champs intrinsèques ne doivent pas élargir les grilles sur mobile. */
 .menu-panel{min-width:0}
+.menu-product-heading p,.menu-option-group-title strong{min-width:0;overflow-wrap:anywhere}
 .menu-categories,.menu-product-form,.menu-option-group{grid-template-columns:minmax(0,1fr)}
 @media(max-width:720px){
  .menu-form-grid{grid-template-columns:minmax(0,1fr)}

@@ -43,7 +43,7 @@ export default function OrderChat({order, language, viewerId}: {order: Order; la
     fetching.current?.abort();
     const controller = new AbortController(); fetching.current = controller;
     try {
-      const data = await api<Thread>(`/api/orders/${encodeURIComponent(order.id)}/thread`, {signal: controller.signal});
+      const data = await api<Thread>(`/api/orders/${encodeURIComponent(order.id)}/thread`, {accountId:viewerId, signal: controller.signal});
       if (!mounted.current || controller.signal.aborted || currentAccess.current !== accessContext || sequence.current !== version) return;
       if (data.viewerId !== viewerId) { setLoaded(null); readingCache.current = {key:"",retry:0,values:{}}; setReadings({key:"",values:{}}); setError("Le compte connecté a changé. Rouvrez la conversation."); return; }
       setLoaded({context, access: accessContext, value: data}); setError("");
@@ -51,7 +51,7 @@ export default function OrderChat({order, language, viewerId}: {order: Order; la
     } catch (caught) {
       if (!mounted.current || controller.signal.aborted || currentAccess.current !== accessContext || sequence.current !== version) return;
       // Revocation must remove old phone numbers and messages immediately.
-      if (caught instanceof ApiError && [401, 403, 404].includes(caught.status)) { setLoaded(null); readingCache.current = {key:"",retry:0,values:{}}; setReadings({key:"",values:{}}); }
+      if (caught instanceof ApiError && ([401, 403, 404].includes(caught.status) || caught.code === 'session_changed')) { setLoaded(null); readingCache.current = {key:"",retry:0,values:{}}; setReadings({key:"",values:{}}); }
       setError(caught instanceof Error ? caught.message : "La conversation est indisponible.");
     }
   }, [context, accessContext, order.id, viewerId]);
@@ -123,15 +123,15 @@ export default function OrderChat({order, language, viewerId}: {order: Order; la
     const key = JSON.stringify([context, payload]);
     if (request.current.key !== key) request.current = {key, id: crypto.randomUUID()};
     try {
-      await api(`/api/orders/${encodeURIComponent(order.id)}/messages`, {method: "POST", body: JSON.stringify({...payload, requestId: request.current.id}), signal: controller.signal});
+      await api(`/api/orders/${encodeURIComponent(order.id)}/messages`, {method: "POST", accountId:viewerId, body: JSON.stringify({...payload, requestId: request.current.id}), signal: controller.signal});
       if (!mounted.current || controller.signal.aborted || currentContext.current !== context) return;
       if (payload.body) setDraft(current => current.trim() === payload.body ? "" : current);
       request.current = {key: "", id: ""};
       if (currentAccess.current === accessContext) await load();
     } catch (caught) {
       if (!mounted.current || controller.signal.aborted || currentContext.current !== context) return;
-      if (caught instanceof ApiError && [401, 403, 404].includes(caught.status)) { setLoaded(null); readingCache.current = {key:"",retry:0,values:{}}; setReadings({key:"",values:{}}); }
-      if (caught instanceof ApiError && caught.status === 409 && currentAccess.current === accessContext) await load();
+      if (caught instanceof ApiError && ([401, 403, 404].includes(caught.status) || caught.code === 'session_changed')) { setLoaded(null); readingCache.current = {key:"",retry:0,values:{}}; setReadings({key:"",values:{}}); }
+      if (caught instanceof ApiError && caught.status === 409 && caught.code !== 'session_changed' && currentAccess.current === accessContext) await load();
       if (currentContext.current === context && mounted.current) setError(caught instanceof Error ? caught.message : "Le message n’a pas été envoyé.");
     } finally {
       if (mounted.current && currentContext.current === context) { sendingRef.current = false; setSending(false); }

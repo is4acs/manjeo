@@ -83,7 +83,8 @@ function harness({language = 'fr', explicitChoice = false} = {}) {
       if (name === './staff') return {default: components.Staff};
       return components;
     },
-    window: {addEventListener, removeEventListener: (name, callback) => listeners.get(name)?.delete(callback)},
+    window: {addEventListener, removeEventListener: (name, callback) => listeners.get(name)?.delete(callback), dispatchEvent: event => { for (const callback of listeners.get(event.type) || []) callback(event); }},
+    Event,
     document: {documentElement: {}},
     localStorage: {setItem() {}}, crypto: {randomUUID: () => 'session-change'},
   });
@@ -118,6 +119,7 @@ function harness({language = 'fr', explicitChoice = false} = {}) {
   return {
     requests, take, dispatch, flush,
     home: () => nodes(tree).find(node => node.type === components.Home),
+    staff: () => nodes(tree).find(node => node.type === components.Staff),
     find: predicate => nodes(tree).find(predicate),
     startup: () => !!nodes(tree).find(node => node.props?.className === 'app-startup'),
     button: label => nodes(tree).find(node => node.type === components.Button && node.props.children === label),
@@ -143,7 +145,7 @@ test('startup normally loads both the account and catalog without another sessio
   assert.equal(app.requests.filter(item => item.path === '/api/session').length, 1);
 });
 
-for (const name of ['storage', 'focus', 'manjeo-session-expired']) {
+for (const name of ['storage', 'focus', 'manjeo-session-expired', 'manjeo-session-changed']) {
   test(`${name} during startup refreshes the account without abandoning the catalog or leaving a spinner`, async () => {
     const app = harness();
     app.dispatch(name); app.dispatch(name);
@@ -375,4 +377,55 @@ test('a checkout profile save that finishes after unmount cannot publish any sta
   request.resolve({user:{...customer('first'), name:'Réponse Tardive'}});
   await refused; await app.flush();
   assert.equal(app.writesAfterUnmount, 0);
+});
+
+test('a server account mismatch rechecks the session even while a profile save holds the mutation lock', async () => {
+  const app = harness(); await settleInitial(app);
+  const save = app.home().props.onSaveProfile({phone:'0694000042'});
+  const refused = assert.rejects(save, /compte connecté a changé/);
+  const request = app.take('/api/profile');
+  assert.equal(request.options.accountId, 'first');
+  app.dispatch('manjeo-session-changed');
+  request.reject(new Error('Le compte connecté a changé. Réessayez.'));
+  app.take('/api/session').resolve({user: customer('current-cookie-owner')});
+  await refused; await app.flush();
+  assert.equal(app.home().props.user.id, 'current-cookie-owner');
+  assert.equal(app.requests.filter(request => request.path === '/api/profile').length, 1);
+});
+
+for (const eventName of ['storage', 'manjeo-session-changed']) {
+  test(`${eventName} during login triggers a final read after the login response can change the cookie`, async () => {
+    const app = harness(); await settleInitial(app, null);
+    app.home().props.onAccount(); await app.flush();
+    const operation = app.find(node => node.type === 'form' && node.props.className === 'account-form').props.onSubmit(event);
+    const login = app.take('/api/login');
+    app.dispatch(eventName);
+    app.take('/api/session').resolve({user: customer('cookie-before-login-response')});
+    await app.flush();
+    login.resolve({user: customer('cookie-after-login-response')});
+    await operation; await app.flush();
+    app.take('/api/session').resolve({user: customer('cookie-after-login-response')});
+    await app.flush();
+    assert.equal(app.home().props.user.id, 'cookie-after-login-response');
+    assert.equal(app.requests.filter(request => request.path === '/api/login').length, 1);
+  });
+}
+
+test('a professional changes only their phone while a fresh name from another device is preserved', async () => {
+  const app = harness();
+  const account = {...customer('admin'), role: 'admin', name: 'Nom initial', phone: '0694000001'};
+  await settleInitial(app, account);
+  app.staff().props.onAccount(); await app.flush();
+  app.find(node => node.props?.name === 'phone').props.onChange({target: {value: '0694000002'}}); await app.flush();
+  app.dispatch('focus');
+  app.take('/api/session').resolve({user: {...account, name: 'Nom actualisé ailleurs'}}); await app.flush();
+  assert.equal(app.find(node => node.props?.name === 'name').props.value, 'Nom actualisé ailleurs');
+  assert.equal(app.find(node => node.props?.name === 'phone').props.value, '0694000002');
+  const save = app.find(node => node.type === 'form' && node.props.className === 'account-form profile-form').props.onSubmit(event);
+  const request = app.take('/api/profile');
+  assert.deepEqual(JSON.parse(request.options.body), {phone: '0694000002'});
+  assert.equal(request.options.accountId, account.id);
+  request.resolve({user: {...account, name: 'Nom actualisé ailleurs', phone: '0694000002'}});
+  await save; await app.flush();
+  assert.equal(app.staff().props.user.name, 'Nom actualisé ailleurs');
 });

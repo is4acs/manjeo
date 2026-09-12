@@ -1,10 +1,16 @@
-import type {AddressCandidate, User} from '../lib/api.ts';
+import type {AddressCandidate, Order, User} from '../lib/api.ts';
 
 export type PromotionContext = { userId?: string; role?: string; restaurantId?: string; city: string; subtotal: number; delivery: number };
 export type PromotionQuote = { context: string; promotion: { code: string; discount: number } };
 export type LocationDraft = {address: string; city: string; details: string};
 export type ProfileLocation = LocationDraft & {userId: string};
 export type CustomerProfileDraft = LocationDraft & {name: string; phone: string; paymentMethod: 'demo' | 'stripe'};
+
+/** Terminal orders keep their accepted conversation; the server controls writing. */
+export function hasOrderConversation(order: Pick<Order, 'status' | 'history'>): boolean {
+  return ['accepted', 'preparing', 'ready', 'picked_up'].includes(order.status) ||
+    ['delivered', 'cancelled'].includes(order.status) && order.history.some(event => event.status === 'accepted');
+}
 
 export function customerProfileDraft(user: User): CustomerProfileDraft {
   return {name: user.name, phone: user.phone || '', address: user.deliveryAddress?.address || '',

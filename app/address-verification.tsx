@@ -47,7 +47,7 @@ export default function AddressVerification({userId, address, city, saved, selec
     const sequence = ++generation.current;
     setBusy(true); setError(''); setCandidates([]);
     try {
-      const result = await api<{candidates: AddressCandidate[]}>('/api/addresses/verify', {method: 'POST', body: JSON.stringify({address: address.trim(), city})});
+      const result = await api<{candidates: AddressCandidate[]}>('/api/addresses/verify', {method: 'POST', accountId:userId, body: JSON.stringify({address: address.trim(), city})});
       if (sequence !== generation.current || currentIdentity.current !== identity) return;
       setCandidates(result.candidates);
       if (!result.candidates.length) setError('Aucun point trouvé. Précisez le numéro et le nom de la rue.');

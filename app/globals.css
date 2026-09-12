@@ -246,10 +246,12 @@ button,input,select,textarea,a,img{transition:background var(--ease),color var(-
 .checkout-heading,.checkout-account-note,.checkout-form{max-width:760px}
 .checkout-heading>p{font-size:15px;color:var(--ink-soft)}
 .eyebrow{font-family:var(--display);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-mute)}
-.checkout-account-note{display:flex;align-items:center;gap:14px;background:var(--cream-2);border:2px solid var(--line);border-radius:20px;padding:16px;margin-bottom:20px}
+.checkout-account-note{display:flex;flex-wrap:wrap;align-items:center;gap:14px;background:var(--cream-2);border:2px solid var(--line);border-radius:20px;padding:16px;margin-bottom:20px}
+.checkout-account-note>div{flex:1 1 200px;min-width:0;overflow-wrap:anywhere}
+.checkout-account-note>svg{flex-shrink:0}
 .checkout-account-note strong{font-size:15px}
 .checkout-account-note p{font-size:13px;color:var(--ink-soft);margin-top:3px}
-.checkout-account-note button{margin-left:auto;font-size:13px;font-weight:700;text-decoration:underline;text-underline-offset:3px;white-space:nowrap;min-height:40px}
+.checkout-account-note button{margin-left:auto;font-size:13px;font-weight:700;text-decoration:underline;text-underline-offset:3px;white-space:normal;max-width:100%;min-height:40px}
 .checkout-form{display:flex;flex-direction:column;gap:26px;padding-bottom:40px}
 .checkout-form section{display:flex;flex-direction:column;gap:14px}
 .checkout-form h2{display:flex;align-items:center;gap:12px;font-size:22px}

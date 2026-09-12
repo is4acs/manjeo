@@ -41,6 +41,7 @@ export default function Application() {
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileNotice, setProfileNotice] = useState("");
   const [profileDraft, setProfileDraft] = useState(emptyProfile);
+  const profileBaseline = useRef(emptyProfile);
   const [requestedRole, setRequestedRole] = useState<Role | null>(null);
   const languageAttempt = useRef("");
   const sessionVersion = useRef(0);
@@ -50,13 +51,24 @@ export default function Application() {
   const mounted = useRef(true);
   const initializing = useRef(true);
   const pendingSessionSync = useRef(false);
+  const pendingAuthSync = useRef(false);
   const mutation = useRef<"" | "auth" | "profile">("");
   currentUser.current = user;
+  useEffect(() => {
+    const before = profileBaseline.current;
+    const fresh = profileOf(user);
+    setProfileDraft(draft => ({
+      name: draft.name === before.name ? fresh.name : draft.name,
+      phone: draft.phone === before.phone ? fresh.phone : draft.phone,
+      language: draft.language === before.language ? fresh.language : draft.language,
+    }));
+    profileBaseline.current = fresh;
+  }, [user?.id, user?.name, user?.phone, user?.language]);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; ++sessionVersion.current; ++sessionRead.current; ++catalogRead.current; }; }, []);
   function notifySessionChange() { try { localStorage.setItem("manjeo-session-change", crypto.randomUUID()); } catch {} }
   function selectDemo(role: Role) { const account = demos.find(item => item.role === role)!; setEmail(account.email); setPassword("ManjeoDemo2026!"); }
   function openAccount(role?: Role) {
-    setAuthError(""); setProfileNotice(""); setProfileDraft(profileOf(currentUser.current));
+    setAuthError(""); setProfileNotice(""); profileBaseline.current = profileOf(currentUser.current); setProfileDraft(profileBaseline.current);
     setRequestedRole(role || null); if (role) selectDemo(role); setAccountOpen(true);
   }
 
@@ -118,14 +130,16 @@ export default function Application() {
         if (changedAccount) { ++sessionVersion.current; setProfileDraft(profileOf(session.user)); setProfileNotice(""); setStaff(!!session.user && session.user.role !== "client"); setAccountOpen(false); }
       } catch { /* Temporary failure keeps the current session; a later focus/poll retries. */ }
     };
-    const onStorage = (event: StorageEvent) => {
-      if (event.key !== "manjeo-session-change") return;
+    const onSessionChanged = () => {
       if (initializing.current) { pendingSessionSync.current = true; return; }
+      // Login/logout can set a cookie after this read. Recheck once they finish.
+      if (mutation.current === 'auth') pendingAuthSync.current = true;
       ++sessionVersion.current; void synchronize(true);
     };
+    const onStorage = (event: StorageEvent) => { if (event.key === "manjeo-session-change") onSessionChanged(); };
     const onFocus = () => { void synchronize(); };
-    window.addEventListener("storage", onStorage); window.addEventListener("focus", onFocus);
-    return () => { window.removeEventListener("storage", onStorage); window.removeEventListener("focus", onFocus); };
+    window.addEventListener("storage", onStorage); window.addEventListener("focus", onFocus); window.addEventListener("manjeo-session-changed", onSessionChanged);
+    return () => { window.removeEventListener("storage", onStorage); window.removeEventListener("focus", onFocus); window.removeEventListener("manjeo-session-changed", onSessionChanged); };
   }, []);
   useEffect(() => { if (user) adoptProfileLanguage(user.language); }, [user?.id, user?.language]);
   async function selectLanguage(value: UILanguage) {
@@ -139,7 +153,7 @@ export default function Application() {
     const version = sessionVersion.current;
     ++sessionRead.current; mutation.current = "profile"; setProfileBusy(true); setAuthError("");
     try {
-      const result = await api<{user:User}>("/api/profile",{method:"PATCH",body:JSON.stringify({language:value})});
+      const result = await api<{user:User}>("/api/profile",{method:"PATCH",accountId:account.id,body:JSON.stringify({language:value})});
       if (!mounted.current || version !== sessionVersion.current || currentUser.current?.id !== account.id || result.user.id !== account.id) return;
       currentUser.current = result.user; setUser(result.user); notifySessionChange();
     } catch {
@@ -160,7 +174,7 @@ export default function Application() {
     const read = ++sessionRead.current;
     mutation.current = 'profile'; setProfileBusy(true);
     try {
-      const result = await api<{user:User}>('/api/profile', {method:'PATCH', body:JSON.stringify(payload)});
+      const result = await api<{user:User}>('/api/profile', {method:'PATCH', accountId:account.id, body:JSON.stringify(payload)});
       if (!mounted.current || sessionVersion.current !== version || sessionRead.current !== read || currentUser.current?.id !== account.id || result.user.id !== account.id) throw new Error('Le compte connecté a changé. Réessayez.');
       currentUser.current = result.user; setUser(result.user); setProfileDraft(profileOf(result.user)); notifySessionChange();
       return result.user;
@@ -169,12 +183,17 @@ export default function Application() {
   async function saveProfile(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (mutation.current || !currentUser.current) return;
+    const payload: Record<string, string> = {};
+    if (profileDraft.name.trim() !== profileBaseline.current.name) payload.name = profileDraft.name.trim();
+    if (profileDraft.phone.trim() !== profileBaseline.current.phone) payload.phone = profileDraft.phone.trim();
+    if (getLanguage() !== currentUser.current.language) payload.language = getLanguage();
+    if (!Object.keys(payload).length) { setProfileNotice("Vos coordonnées sont enregistrées."); return; }
     const userId = currentUser.current.id;
     const version = sessionVersion.current;
     ++sessionRead.current;
     mutation.current = "profile"; setProfileBusy(true); setAuthError(""); setProfileNotice("");
     try {
-      const result = await api<{user: User}>("/api/profile", {method: "PATCH", body: JSON.stringify({name: profileDraft.name.trim(), phone: profileDraft.phone.trim(), language: getLanguage()})});
+      const result = await api<{user: User}>("/api/profile", {method: "PATCH", accountId:userId, body: JSON.stringify(payload)});
       if (!mounted.current || version !== sessionVersion.current || currentUser.current?.id !== userId || result.user.id !== userId) return;
       currentUser.current = result.user; setUser(result.user); setProfileDraft(profileOf(result.user)); setProfileNotice("Vos coordonnées sont enregistrées."); notifySessionChange();
     } catch (error) { if (mounted.current && version === sessionVersion.current && currentUser.current?.id === userId) setAuthError((error as Error).message); }
@@ -197,20 +216,20 @@ export default function Application() {
       currentUser.current = result.user; setUser(result.user); setProfileDraft(profileOf(result.user)); setStaff(result.user.role !== "client"); setAccountOpen(false); setRequestedRole(null); setProfileNotice("");
       notifySessionChange(); void refreshCatalog().catch(() => {});
     } catch (error) { if (mounted.current && version === sessionVersion.current) setAuthError((error as Error).message); }
-    finally { mutation.current = ""; if (mounted.current) setBusy(false); }
+    finally { mutation.current = ""; if (mounted.current) { setBusy(false); if (pendingAuthSync.current) { pendingAuthSync.current = false; window.dispatchEvent(new Event('manjeo-session-changed')); } } }
   }
   async function logout(nextRole?: Role) {
     if (mutation.current) return;
     mutation.current = "auth"; setBusy(true); setAuthError("");
     const version = ++sessionVersion.current;
     try {
-      await api("/api/logout", {method:"POST", body:"{}"});
+      await api("/api/logout", {method:"POST", accountId:currentUser.current?.id, body:"{}"});
       if (!mounted.current || version !== sessionVersion.current) return;
       currentUser.current = null; setUser(null); setStaff(false); setAccountOpen(true); setProfileNotice(""); setProfileDraft(emptyProfile);
       if (nextRole) { selectDemo(nextRole); setRequestedRole(nextRole); }
       notifySessionChange(); void refreshCatalog().catch(() => {});
     } catch (error) { if (mounted.current && version === sessionVersion.current) { setAccountOpen(true); setAuthError((error as Error).message); } }
-    finally { mutation.current = ""; if (mounted.current) setBusy(false); }
+    finally { mutation.current = ""; if (mounted.current) { setBusy(false); if (pendingAuthSync.current) { pendingAuthSync.current = false; window.dispatchEvent(new Event('manjeo-session-changed')); } } }
   }
   if (loading || initialError) return <><LanguageBar onChange={value => chooseLanguage(value)}/><main className="app-startup"><span className="brand">manjéo</span><div className="startup-card"><ShoppingBag size={32}/><h1>{loading ? t("Les bonnes adresses arrivent…") : t("La cuisine se fait attendre")}</h1><p>{loading ? t("Connexion à Manjéo.") : t(initialError)}</p>{initialError && <Button onClick={initialize}>{t("Réessayer")}</Button>}</div></main></>;
   const locked = busy || profileBusy;

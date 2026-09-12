@@ -212,7 +212,8 @@ def membership(db, order, user):
     if user["role"] == "client" and order["customerId"] == user["id"]:
         return "client"
     if user["role"] == "restaurant" and order["restaurantId"] == user["restaurant_id"]:
-        return "restaurant"
+        from .marketplace import kitchen_visible
+        return "restaurant" if kitchen_visible(order) else None
     if user["role"] == "courier" and order.get("courierId") == user["id"]:
         return "courier"
     return None
@@ -366,12 +367,19 @@ def unread_counts(db, user):
         scope, arguments = " AND EXISTS (SELECT 1 FROM order_assignments a WHERE a.order_id = o.id AND a.courier_id = ?)", [user["id"]]
     elif user["role"] != "admin":
         return {}
-    rows = db.execute("""SELECT m.order_id, COUNT(*) AS unread_count
+    # Include the order only for restaurant readers; group by its primary key
+    # rather than its potentially large JSON. One query covers both databases.
+    restaurant = user["role"] == "restaurant"
+    order_data = ", o.data AS order_data" if restaurant else ""
+    group_order = ", o.id" if restaurant else ""
+    rows = db.execute("SELECT m.order_id, COUNT(*) AS unread_count" + order_data + """
         FROM order_messages m JOIN orders o ON o.id = m.order_id
         LEFT JOIN order_message_receipts r ON r.message_id = m.id AND r.user_id = ?
-        WHERE m.sender_id <> ? AND r.message_id IS NULL""" + scope + " GROUP BY m.order_id",
+        WHERE m.sender_id <> ? AND r.message_id IS NULL""" + scope + " GROUP BY m.order_id" + group_order,
         [user["id"], user["id"], *arguments]).fetchall()
-    return {row["order_id"]: row["unread_count"] for row in rows}
+    from .marketplace import kitchen_visible
+    return {row["order_id"]: row["unread_count"] for row in rows
+            if not restaurant or kitchen_visible(json.loads(row["order_data"]))}
 
 
 def translate(handler, db, data):
