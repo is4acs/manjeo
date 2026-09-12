@@ -81,7 +81,17 @@ Trois échéances ont été observées en temps réel :
 
 Le lot consolidé `88b5ec1` passe ensuite le parcours IGN et quatre rôles sur la [seconde Preview](https://manjeo-p4fky8drj-is4acs-projects.vercel.app). Le changement de cookie client → admin y est également testé : refus de la confirmation et du profil avec `session_changed`, aucune commande créée sous l’autre compte, resynchronisation de l’espace et conservation de la tentative d’origine.
 
-Ce commit a été publié sur `main`. La Production `dpl_GC1GfNP3Ea68tHMaP5UcBt3An69h` est associée à [manjeo.vercel.app](https://manjeo.vercel.app). La session existante fonctionne après le déploiement ; les empreintes des profils, cartes et instantanés des six commandes initiales sont inchangées (quatre comptes, six restaurants). Le contrôle public confirme la persistance FR/HT/PT, le menu déroulant vers le bas, l’affichage mobile et la disponibilité du paiement de démonstration, sans exception JavaScript.
+Ce commit a été publié sur `main` avec la Production `dpl_GC1GfNP3Ea68tHMaP5UcBt3An69h`, alors associée à [manjeo.vercel.app](https://manjeo.vercel.app). La session existante fonctionnait après le déploiement ; les empreintes des profils, cartes et instantanés des six commandes initiales étaient inchangées (quatre comptes, six restaurants). Le contrôle public a confirmé la persistance FR/HT/PT, le menu déroulant vers le bas, l’affichage mobile et la disponibilité du paiement de démonstration, sans exception JavaScript.
+
+### Finalisation de l’en-tête
+
+La reprise intègre les changements de `main` jusqu’à `c891a3b`, notamment le retrait du bandeau défilant et les textes d’accueil utilisant « restaurants ». Le correctif `c367354` garde le panier et la langue sur une même ligne, accessible dès 320 pixels. Sur téléphone, l’en-tête se répartit sur deux lignes et conserve l’adresse visible. Un montant de panier long peut être tronqué visuellement ; son libellé accessible conserve le montant complet. Les noms longs des comptes professionnels reviennent à la ligne.
+
+Le test `tests/browser/header-language.test.mjs` couvre les quatre rôles, les trois langues, dix largeurs de 320 à 1 280 pixels, un panier au montant long et des noms proches de la limite de cent caractères. Il vérifie les limites des contrôles, la position du menu sous son bouton, le retour du focus après Échap et la sauvegarde de la langue du compte. Les écritures de ces tests utilisent exclusivement leur base SQLite jetable.
+
+La [Preview de ce correctif](https://manjeo-rn0ixwztq-is4acs-projects.vercel.app) est vérifiée dans Chromium, WebKit et Firefox : trois langues persistantes après rechargement, huit largeurs, menu descendant et aucune exception JavaScript. Les quatre comptes sont aussi consultés à six largeurs sans modifier leur profil ni créer de commande. Les captures à 390 et 1 440 pixels sont examinées visuellement.
+
+L’automatisation de deux heures reste en pause à la demande de l’utilisateur ; cette finalisation ne la réactive pas.
 
 ## Résultats automatisés
 
@@ -89,10 +99,10 @@ Ce commit a été publié sur `main`. La Production `dpl_GC1GfNP3Ea68tHMaP5UcBt3
 | --- | --- |
 | Python 3.12, SQLite et PostgreSQL 16 dédié | 319 tests passés, aucun ignoré |
 | Tests client | 165 passés, aucun ignoré |
-| Parcours navigateur depuis une installation vierge | 42 passés sur Chromium, WebKit et Firefox, aucun ignoré |
+| Parcours navigateur finaux, y compris en-tête et navigation clavier | 54 passés sur Chromium, WebKit et Firefox, aucun ignoré |
 | TypeScript et Vite 8.0.16 | Compilation réussie |
 | Installation `codex-setup.sh` depuis un checkout vierge | Réussie avec Node 22 et Python 3.12 |
-| `codex-check.sh` sans connexion de test PostgreSQL | 170 tests Python exécutés et 145 ignorés comme prévu ; 165 tests client et compilation réussis |
+| `codex-check.sh` final, sans connexion de test PostgreSQL | 172 tests Python exécutés et 147 ignorés comme prévu ; 165 tests client et compilation réussis |
 
 Un essai à graine fixe (`20260912`) exécute aussi 200 actions sur SQLite et les mêmes 200 sur PostgreSQL : créations, replays, acceptations, annulations, affectations, libérations, préparation, retrait et remise. Les résultats sont identiques. Chaque base reçoit 2 200 requêtes HTTP de contrôle, sans erreur 500. Après chaque étape sont revérifiés les montants, instantanés, historique, capacité livreur, projections privées et accès aux fils. Les 403/409 attendus ne sont pas considérés comme des échecs de l’application.
 
