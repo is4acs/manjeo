@@ -2,6 +2,8 @@
 
 Application de commande de repas pour Cayenne, Rémire-Montjoly et Matoury, avec quatre espaces reliés : client, restaurateur, livreur et administration.
 
+Les quatre espaces proposent une interface en **français, créole haïtien (Kreyòl ayisyen) et portugais du Brésil**. Le sélecteur de langue est disponible avant connexion ; le choix est conservé sur l’appareil et peut être enregistré dans le profil.
+
 **Adresse du projet : [https://manjeo.vercel.app](https://manjeo.vercel.app).** Le site s’utilise depuis un ordinateur ou un téléphone, sans lancer de serveur local. Pour reprendre le développement sur un autre Mac, suivre le [guide MacBook](docs/REPRENDRE-SUR-MACBOOK.md).
 
 L’interface et l’API Python sont déployées sur Vercel. Les comptes, menus et commandes sont conservés dans PostgreSQL chez Neon et partagés entre les appareils. Les six restaurants, produits, prix, avis et délais sont fictifs ; les photographies sont illustratives. Le paiement et la livraison restent simulés.
@@ -79,18 +81,20 @@ coordonnées d’une commande déjà confirmée restent celles saisies au moment
   portugais, anglais, espagnol et chinois. Elles sont identifiées comme telles et ne nécessitent
   pas de moteur de traduction après chargement du répertoire. Elles ne constituent pas une garantie
   de justesse ou de fonctionnement hors ligne de l’application.
-- **La traduction du texte libre est optionnelle.** L’API Translator de Chrome fonctionne sur
-  ordinateur, selon les langues disponibles ; son activation se fait par un clic explicite et
-  peut télécharger un modèle. Ouvrir une conversation ne déclenche pas ce téléchargement. Le créole
-  haïtien (`ht`) et le créole guyanais (`gcr`) ne font pas partie des langues actuellement prises en
-  charge par ce moteur. [Documentation Chrome Translator](https://developer.chrome.com/docs/ai/translator-api).
-  Un relais serveur peut être configuré avec `MANJEO_TRANSLATE_URL` et, si nécessaire,
-  `MANJEO_TRANSLATE_KEY` ; il n’est pas configuré dans la démonstration actuelle. Sans traduction
-  disponible, le texte original reste affiché avec une explication et une possibilité de réessayer.
-  Une traduction automatique ne remplace jamais le message d’origine.
+- **Les messages libres reçus sont soumis automatiquement au moteur serveur**, dans la langue
+  choisie par le lecteur. Le serveur contrôle l’accès à la commande et charge le message depuis
+  son identifiant. Le moteur détecte sa langue réelle : un profil français peut écrire en portugais.
+  Une traduction réussie est conservée en cache ; les originaux restent accessibles. Le chat
+  n’utilise pas Chrome Translator et ne télécharge pas de modèle dans le navigateur. Une panne
+  ou un quota atteint laisse l’original visible et permet de réessayer.
+- **Le branchement Vercel AI Gateway est prêt mais son activation reste bloquée.** Les essais
+  fictifs du 12 septembre 2026 ont reçu `403 customer_verification_required` : Vercel demande
+  à l’administrateur d’enregistrer une carte pour débloquer ses crédits gratuits. Aucun achat
+  n’a été effectué, la consommation reste nulle et aucune traduction libre réelle n’a encore
+  été qualifiée. Voir [la configuration, le lien d’activation et le corpus à vérifier](docs/TRADUCTION.md).
 
-Les traductions des réponses rapides doivent être relues par des locuteurs natifs avant une mise en
-service réelle.
+Les traductions de l’interface et des réponses rapides doivent être relues par des locuteurs compétents,
+ainsi que le corpus des traductions automatiques après activation, avant une mise en service réelle.
 
 ## Données et déploiement
 
@@ -103,7 +107,8 @@ Configuration serveur dans les variables d’environnement Vercel :
 - `DATABASE_URL` : connexion PostgreSQL fournie par Neon ; `POSTGRES_URL` est accepté comme alternative.
 - `APP_ORIGIN` : `https://manjeo.vercel.app` pour l’environnement Production.
 - `MANJEO_DB_SCHEMA` : schéma isolé selon l’environnement, notamment `manjeo_preview` pour les essais Preview.
-- `MANJEO_TRANSLATE_URL` et `MANJEO_TRANSLATE_KEY` : relais de traduction facultatif, actuellement non configuré. Il doit accepter une requête HTTPS au format décrit dans le contrat des quatre espaces.
+- `MANJEO_TRANSLATE_PROVIDER` : `auto` par défaut, ou `vercel` pour AI Gateway avec OIDC côté serveur. `MANJEO_TRANSLATE_MODEL` choisit le modèle (`openai/gpt-4.1-mini` par défaut). L’équipe doit d’abord activer son accès ; les identifiants ne vont jamais dans le navigateur.
+- `MANJEO_TRANSLATE_URL` et `MANJEO_TRANSLATE_KEY` : relais LibreTranslate compatible facultatif, actuellement non configuré. Les quotas serveur, les conditions du palier gratuit et le contrat d’autodétection sont détaillés dans [le guide traduction](docs/TRADUCTION.md).
 
 La connexion à la base reste côté serveur : ne pas la préfixer avec `VITE_`, l’ajouter au code ou la publier dans Git. Sur Vercel, une connexion de base manquante provoque une erreur explicite ; l’API ne crée pas de base SQLite temporaire à la place.
 
@@ -124,7 +129,7 @@ bash scripts/codex-setup.sh
 bash scripts/codex-check.sh
 ```
 
-Le setup installe les dépendances verrouillées dans `.venv` et `node_modules`. Le script de vérification utilise le Python du venv et retire les connexions de base de son environnement : il exécute les tests autonomes, TypeScript puis Vite. Les tests couvrent notamment le panier, les promotions, les adresses, les permissions, les cartes, les migrations, les affectations, le code de remise et la messagerie. Les tests SQLite utilisent des bases temporaires. Les tests PostgreSQL sont ignorés par ce script ; signaler cette limite avec les résultats.
+Le setup installe les dépendances verrouillées dans `.venv` et `node_modules`. Le script de vérification utilise le Python du venv et retire les connexions de base de son environnement : il exécute les tests autonomes, TypeScript puis Vite. Les tests couvrent notamment le panier, les promotions, les adresses, les permissions, les cartes, les migrations, les affectations, le code de remise, la messagerie et la traduction. Les tests de traduction simulent le fournisseur : ils vérifient les accès, le cache, les quotas et les erreurs, sans coût ni certification linguistique. Les tests SQLite utilisent des bases temporaires. Les tests PostgreSQL sont ignorés par ce script ; signaler cette limite avec les résultats.
 
 Pour les tests d’intégration PostgreSQL, fournir séparément `MANJEO_TEST_DATABASE_URL` vers une base dédiée, puis lancer la suite correspondante. Elle crée ses propres schémas temporaires. Ne pas utiliser la base du site public.
 

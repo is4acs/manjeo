@@ -91,10 +91,10 @@ button,input,select,textarea,a,img{transition:background var(--ease),color var(-
 
 /* Héros */
 .hero{display:grid;grid-template-columns:1.02fr .98fr;gap:44px;align-items:center;padding:48px 0 44px}
-.hero-copy{display:flex;flex-direction:column;align-items:flex-start;gap:20px}
+.hero-copy{display:flex;flex-direction:column;align-items:flex-start;gap:20px;min-width:0}
 .hero-badge{font-family:var(--display);font-size:12px;text-transform:uppercase;letter-spacing:.08em;background:var(--ink);color:var(--cream);padding:7px 14px;border-radius:999px}
 .hero-copy p{font-size:18px;line-height:1.5;color:var(--ink-soft);max-width:29em;text-wrap:pretty}
-.hero h1{max-width:10em}
+.hero h1{max-width:10em;overflow-wrap:anywhere}
 .hero-address{display:flex;gap:10px;width:100%;max-width:540px;margin-top:4px}
 .hero-address input{flex:1;min-height:54px;font-size:15px;padding:0 20px;border:2px solid var(--ink);border-radius:999px;background:var(--cream-2);color:var(--ink);width:100%}
 .hero-address input::placeholder{color:var(--ink-mute)}
@@ -423,7 +423,7 @@ body:has(.order-bar) .toast,body:has([data-slot=sheet-content]) .toast{bottom:ca
 
 /* Réponses aux largeurs — les titres Archivo Black ne descendent jamais sous 44 px (h1) et 28 px (h2) */
 @media(max-width:1100px){
-.hero{grid-template-columns:1fr;gap:28px;padding:34px 0 32px}
+.hero{grid-template-columns:minmax(0,1fr);gap:28px;padding:34px 0 32px}
 .hero-visual{justify-content:stretch}
 .hero-photo{height:300px}
 .hero-sticker{left:auto;right:18px;top:18px}
@@ -441,7 +441,7 @@ body:has(.order-bar) .toast,body:has([data-slot=sheet-content]) .toast{bottom:ca
 .search-box{width:100%}
 .restaurant-row{grid-template-columns:104px 1fr;gap:16px;padding:12px}
 .restaurant-image{height:88px}
-.restaurant-action{grid-column:1/-1;flex-direction:row;align-items:center;justify-content:space-between}
+.restaurant-action{grid-column:1/-1;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between;min-width:0}
 .restaurant-name{font-size:20px}
 .form-grid{grid-template-columns:1fr}
 .footer-columns{grid-template-columns:1fr 1fr}
@@ -484,3 +484,9 @@ body:has(.order-bar) .toast,body:has([data-slot=sheet-content]) .toast{bottom:ca
 *,*::before,*::after{transition:none!important;animation:none!important;scroll-behavior:auto!important}
 .promise-track{animation:none;transform:none}
 }
+
+/* One language control serves every workspace without resetting its form or basket. */
+.language-bar{background:var(--cream-2);border-bottom:2px solid var(--line);padding:6px 24px;display:flex;justify-content:flex-end}
+.language-bar label{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--ink-soft)}
+.language-bar select{max-width:190px;min-height:36px;border:2px solid var(--ink);border-radius:999px;background:var(--cream);color:var(--ink);font:inherit;padding:4px 12px}
+@media(max-width:480px){.language-bar{padding:5px 12px}.language-bar label{gap:8px}.language-bar label>span{font-size:11px}}

@@ -403,6 +403,10 @@ class Handler(BaseHTTPRequestHandler):
                 response = lookup((query.get("q") or [""])[0], (query.get("city") or [None])[0],
                                   remote=self.state.config.cloud or os.environ.get("MANJEO_ADDRESS_PROVIDER") == "ign")
                 return self.json_response(200, response)
+            if self.command == "POST" and path == "/api/translate":
+                from .translation import translate_request
+                status, response, cookie = translate_request(self, data)
+                return self.json_response(status, response, cookie)
             database = self.state.database
             self.in_write = False
             with database.connect() as db:

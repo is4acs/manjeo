@@ -141,6 +141,9 @@ def initialize_messaging(db):
             db.execute("INSERT INTO user_profiles(user_id, phone, language, updated_at) VALUES (?, ?, ?, ?) "
                        "ON CONFLICT(user_id) DO NOTHING", (user_id, phone, language, now_iso()))
 
+    from .translation import initialize_translation
+    initialize_translation(db)
+
 
 def profile(db, user_id):
     row = db.execute("SELECT phone, language FROM user_profiles WHERE user_id = ?", (user_id,)).fetchone()
@@ -354,48 +357,9 @@ def unread_counts(db, user):
 
 
 def translate(handler, db, data):
-    """Relais vers le moteur configuré par l’exploitant. Aucune URL ne vient de la requête."""
-    import http.client
-    import json
-    import os
-    import urllib.error
-    import urllib.request
-    handler.user(db, {"client", "restaurant", "courier", "admin"})
-    text = text_field(data, "text", 1, 2000)
-    source = data.get("from")
-    target = data.get("to")
-    if not isinstance(source, str) or not isinstance(target, str) or source not in LANGUAGES or target not in LANGUAGES:
-        raise APIError(400, "Langue de départ ou d’arrivée inconnue.")
-    if source == target:
-        return 200, {"text": text, "from": source, "to": target}, None
-    from urllib.parse import urlsplit
-    endpoint = os.environ.get("MANJEO_TRANSLATE_URL", "")
-    try:
-        parsed = urlsplit(endpoint)
-        valid_endpoint = parsed.scheme == "https" and parsed.hostname and not parsed.username and not parsed.password
-        parsed.port
-    except ValueError:
-        valid_endpoint = False
-    if not valid_endpoint:
-        raise APIError(503, "Aucun moteur de traduction n’est configuré sur ce serveur.")
-    payload = {"q": text, "source": source, "target": target, "format": "text"}
-    key = os.environ.get("MANJEO_TRANSLATE_KEY", "")
-    if key:
-        payload["api_key"] = key
-    request = urllib.request.Request(endpoint, data=json.dumps(payload).encode(),
-                                     headers={"Content-Type": "application/json"}, method="POST")
-    try:
-        with urllib.request.urlopen(request, timeout=8) as response:
-            raw = response.read(100_001)
-            if len(raw) > 100_000:
-                raise ValueError("Translation response exceeds limit")
-            result = json.loads(raw.decode())
-    except (OSError, http.client.HTTPException, ValueError):
-        raise APIError(502, "Le moteur de traduction n’a pas répondu.") from None
-    translated = result.get("translatedText") if isinstance(result, dict) else None
-    if not isinstance(translated, str) or not translated.strip():
-        raise APIError(502, "Le moteur de traduction a renvoyé une réponse inattendue.")
-    return 200, {"text": translated[:4000], "from": source, "to": target}, None
+    # The HTTP dispatcher calls this service before opening its normal DB scope.
+    from .translation import translate_request
+    return translate_request(handler, data)
 
 
 def handle_messaging(handler, db, path, data):

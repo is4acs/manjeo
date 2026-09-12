@@ -1,4 +1,5 @@
 "use client";
+import { t } from "@/lib/i18n";
 import { useEffect, useState } from "react";
 import { ArrowRight, Download, LifeBuoy, MapPin, ShoppingBag, Store, Tag } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -63,84 +64,84 @@ export default function SiteFooter({city, cities, onCity, onAccount, onOrders, o
       <div className="footer-columns">
         <div className="footer-brand-column">
           <span className="footer-brand">manjéo</span>
-          <p>La Guyane a bon goût. Vos restos de Cayenne, Rémire-Montjoly et Matoury, livrés chaud.</p>
-          <button className="footer-install" onClick={() => void install()}><Download size={17}/><span><strong>Installer l’application</strong><small>{installer ? "Ajouter manjéo à votre écran d’accueil" : "Application web · pas encore sur Google Play"}</small></span></button>
+          <p>{t("La Guyane a bon goût. Vos restos de Cayenne, Rémire-Montjoly et Matoury, livrés chaud.")}</p>
+          <button className="footer-install" onClick={() => void install()}><Download size={17}/><span><strong>{t("Installer l’application")}</strong><small>{installer ? t("Ajouter manjéo à votre écran d’accueil") : t("Application web · pas encore sur Google Play")}</small></span></button>
         </div>
-        {columns.map(column => <nav key={column.title} aria-label={column.title}>
-          <h2>{column.title}</h2>
+        {columns.map(column => <nav key={column.title} aria-label={t(column.title)}>
+          <h2>{t(column.title)}</h2>
           <ul>{column.links.map(link => <li key={link.label}>
-            <button onClick={link.action}>{link.label}{link.note && <span className="footer-note">{link.note}</span>}</button>
+            <button onClick={link.action}>{t(link.label)}{link.note && <span className="footer-note">{t(link.note)}</span>}</button>
           </li>)}</ul>
         </nav>)}
       </div>
       <div className="footer-legal">
-        <span>© 2026 manjéo · Guyane française</span>
-        <span>Démonstration en ligne · restaurants, prix et livraisons fictifs</span>
-        <a href="https://github.com/is4acs/manjeo" target="_blank" rel="noreferrer noopener">Le code du projet</a>
+        <span>{t("© 2026 manjéo · Guyane française")}</span>
+        <span>{t("Démonstration en ligne · restaurants, prix et livraisons fictifs")}</span>
+        <a href="https://github.com/is4acs/manjeo" target="_blank" rel="noreferrer noopener">{t("Le code du projet")}</a>
       </div>
     </footer>
 
     <Dialog open={panel === "help"} onOpenChange={open => !open && setPanel("")}><DialogContent className="app-dialog">
       <div className="dialog-symbol"><LifeBuoy size={24}/></div>
-      <DialogTitle>Obtenir de l’aide</DialogTitle>
-      <DialogDescription>Cette démonstration est partagée : personne ne cuisine, ne roule ni n’encaisse réellement.</DialogDescription>
+      <DialogTitle>{t("Obtenir de l’aide")}</DialogTitle>
+      <DialogDescription>{t("Cette démonstration est partagée : personne ne cuisine, ne roule ni n’encaisse réellement.")}</DialogDescription>
       <ul className="dialog-list">
-        <li><strong>Passer une commande</strong><span>Connectez-vous avec <code>client@manjeo.test</code>, ajoutez un plat, puis confirmez. Le mot de passe commun est <code>ManjeoDemo2026!</code>.</span></li>
-        <li><strong>Suivre les quatre espaces</strong><span>Le restaurant accepte et prépare, le livreur prend la course puis demande votre code à quatre chiffres, l’administration supervise.</span></li>
-        <li><strong>Une commande a disparu</strong><span>Sans réponse du restaurant dans les dix minutes, elle s’annule d’elle-même et le code promo éventuel vous est rendu.</span></li>
-        <li><strong>Un problème technique</strong><span>Ouvrez un ticket sur le dépôt du projet ; aucun support téléphonique n’existe pour cette démonstration.</span></li>
+        <li><strong>{t("Passer une commande")}</strong><span>{t("Connectez-vous avec {email}, ajoutez un plat, puis confirmez. Le mot de passe commun est {password}.", {email: "client@manjeo.test", password: "ManjeoDemo2026!"})}</span></li>
+        <li><strong>{t("Suivre les quatre espaces")}</strong><span>{t("Le restaurant accepte et prépare, le livreur prend la course puis demande votre code à quatre chiffres, l’administration supervise.")}</span></li>
+        <li><strong>{t("Une commande a disparu")}</strong><span>{t("Sans réponse du restaurant dans les dix minutes, elle s’annule d’elle-même et le code promo éventuel vous est rendu.")}</span></li>
+        <li><strong>{t("Un problème technique")}</strong><span>{t("Ouvrez un ticket sur le dépôt du projet ; aucun support téléphonique n’existe pour cette démonstration.")}</span></li>
       </ul>
     </DialogContent></Dialog>
 
     <Dialog open={panel === "about"} onOpenChange={open => !open && setPanel("")}><DialogContent className="app-dialog">
       <div className="dialog-symbol"><Store size={24}/></div>
-      <DialogTitle>Informations sur manjéo</DialogTitle>
-      <DialogDescription>Un service de livraison de repas imaginé pour Cayenne, réalisé comme démonstration technique.</DialogDescription>
+      <DialogTitle>{t("Informations sur manjéo")}</DialogTitle>
+      <DialogDescription>{t("Un service de livraison de repas imaginé pour Cayenne, réalisé comme démonstration technique.")}</DialogDescription>
       <ul className="dialog-list">
-        <li><strong>Ce qui est réel</strong><span>Le parcours complet : carte modifiable, panier vérifié côté serveur, commandes, affectation des livreurs, code de remise, historique.</span></li>
-        <li><strong>Ce qui est fictif</strong><span>Les six restaurants, leurs cartes, leurs avis, les prix, les délais, les livreurs et tout paiement. Les photographies sont illustratives.</span></li>
-        <li><strong>Zone desservie</strong><span>Cayenne, Rémire-Montjoly et Matoury, en Guyane française. Aucun autre pays n’est ouvert.</span></li>
-        <li><strong>Technique</strong><span>Interface React et Vite, API Python, base PostgreSQL. Le code est public.</span></li>
+        <li><strong>{t("Ce qui est réel")}</strong><span>{t("Le parcours complet : carte modifiable, panier vérifié côté serveur, commandes, affectation des livreurs, code de remise, historique.")}</span></li>
+        <li><strong>{t("Ce qui est fictif")}</strong><span>{t("Les six restaurants, leurs cartes, leurs avis, les prix, les délais, les livreurs et tout paiement. Les photographies sont illustratives.")}</span></li>
+        <li><strong>{t("Zone desservie")}</strong><span>{t("Cayenne, Rémire-Montjoly et Matoury, en Guyane française. Aucun autre pays n’est ouvert.")}</span></li>
+        <li><strong>{t("Technique")}</strong><span>{t("Interface React et Vite, API Python, base PostgreSQL. Le code est public.")}</span></li>
       </ul>
     </DialogContent></Dialog>
 
     <Dialog open={panel === "cities"} onOpenChange={open => !open && setPanel("")}><DialogContent className="app-dialog">
       <div className="dialog-symbol"><MapPin size={24}/></div>
-      <DialogTitle>Où manjéo livre</DialogTitle>
-      <DialogDescription>La démonstration dessert trois communes en Guyane française. Trois communes, une même carte.</DialogDescription>
+      <DialogTitle>{t("Où manjéo livre")}</DialogTitle>
+      <DialogDescription>{t("La démonstration dessert trois communes en Guyane française. Trois communes, une même carte.")}</DialogDescription>
       <div className="city-picker">{cities.map(name => <button key={name} disabled={disabled} className={name === city ? "selected" : ""} aria-pressed={name === city}
         onClick={() => { if (!disabled) { onCity(name); setPanel(""); onNearby(); } }}><MapPin size={16}/>{name}</button>)}</div>
-      <p className="dialog-note">Livraison majorée de 1 € hors Cayenne dans cette démonstration.</p>
+      <p className="dialog-note">{t("Livraison majorée de 1 € hors Cayenne dans cette démonstration.")}</p>
     </DialogContent></Dialog>
 
     <Dialog open={panel === "promotions"} onOpenChange={open => !open && setPanel("")}><DialogContent className="app-dialog">
       <div className="dialog-symbol"><Tag size={24}/></div>
-      <DialogTitle>Les codes du moment</DialogTitle>
-      <DialogDescription>À saisir dans votre panier avant de confirmer. Le montant exact est recalculé par le serveur.</DialogDescription>
-      {promotionsError && <p className="checkout-error" role="alert">{promotionsError}</p>}
+      <DialogTitle>{t("Les codes du moment")}</DialogTitle>
+      <DialogDescription>{t("À saisir dans votre panier avant de confirmer. Le montant exact est recalculé par le serveur.")}</DialogDescription>
+      {promotionsError && <p className="checkout-error" role="alert">{t(promotionsError)}</p>}
       {promotions.length > 0 ? <ul className="promo-catalog">{promotions.map(promotion => <li key={promotion.code}>
         <code>{promotion.code}</code>
-        <span><strong>{promotion.label}</strong><small>{promotion.conditions}</small></span>
-      </li>)}</ul> : !promotionsError && <p className="dialog-note">Aucun code n’est ouvert en ce moment.</p>}
+        <span><strong>{t(promotion.label)}</strong><small>{promotion.conditions.split(" · ").map(part => t(part)).join(" · ")}</small></span>
+      </li>)}</ul> : !promotionsError && <p className="dialog-note">{t("Aucun code n’est ouvert en ce moment.")}</p>}
     </DialogContent></Dialog>
 
     <Dialog open={panel === "install"} onOpenChange={open => !open && setPanel("")}><DialogContent className="app-dialog">
       <div className="dialog-symbol"><Download size={24}/></div>
-      <DialogTitle>Installer manjéo</DialogTitle>
-      <DialogDescription>manjéo est une application web : elle s’installe depuis le navigateur, sans passer par une boutique.</DialogDescription>
+      <DialogTitle>{t("Installer manjéo")}</DialogTitle>
+      <DialogDescription>{t("manjéo est une application web : elle s’installe depuis le navigateur, sans passer par une boutique.")}</DialogDescription>
       <ul className="dialog-list">
-        <li><strong>Android, Chrome</strong><span>Menu du navigateur, puis « Installer l’application » ou « Ajouter à l’écran d’accueil ».</span></li>
-        <li><strong>iPhone, Safari</strong><span>Bouton Partager, puis « Sur l’écran d’accueil ».</span></li>
-        <li><strong>Ordinateur</strong><span>Icône d’installation dans la barre d’adresse de Chrome ou Edge.</span></li>
-        <li><strong>Google Play et App Store</strong><span>Aucune version publiée : utilisez cette démonstration depuis votre navigateur.</span></li>
+        <li><strong>{t("Android, Chrome")}</strong><span>{t("Menu du navigateur, puis « Installer l’application » ou « Ajouter à l’écran d’accueil ».")}</span></li>
+        <li><strong>{t("iPhone, Safari")}</strong><span>{t("Bouton Partager, puis « Sur l’écran d’accueil ».")}</span></li>
+        <li><strong>{t("Ordinateur")}</strong><span>{t("Icône d’installation dans la barre d’adresse de Chrome ou Edge.")}</span></li>
+        <li><strong>{t("Google Play et App Store")}</strong><span>{t("Aucune version publiée : utilisez cette démonstration depuis votre navigateur.")}</span></li>
       </ul>
     </DialogContent></Dialog>
 
     <Dialog open={panel === "grocery"} onOpenChange={open => !open && setPanel("")}><DialogContent className="app-dialog">
       <div className="dialog-symbol"><ShoppingBag size={24}/></div>
-      <DialogTitle>Faire ses courses</DialogTitle>
-      <DialogDescription>L’épicerie n’existe pas encore : manjéo ne livre aujourd’hui que des repas préparés par les six restaurants de la démonstration.</DialogDescription>
-      <Button onClick={() => { setPanel(""); onNearby(); }}>Voir les restaurants ouverts <ArrowRight size={17}/></Button>
+      <DialogTitle>{t("Faire ses courses")}</DialogTitle>
+      <DialogDescription>{t("L’épicerie n’existe pas encore : manjéo ne livre aujourd’hui que des repas préparés par les six restaurants de la démonstration.")}</DialogDescription>
+      <Button onClick={() => { setPanel(""); onNearby(); }}>{t("Voir les restaurants ouverts")} <ArrowRight size={17}/></Button>
     </DialogContent></Dialog>
   </>;
 }

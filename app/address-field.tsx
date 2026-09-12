@@ -1,4 +1,5 @@
 "use client";
+import { t } from "@/lib/i18n";
 import { useEffect, useId, useRef, useState } from "react";
 import { MapPin } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -60,15 +61,15 @@ export default function AddressField({value, city, onChange, onPick, inputProps,
       value={value} onFocus={event => { inputProps?.onFocus?.(event); if (!disabled) setOpen(true); }} onKeyDown={navigate}
       onBlur={event => { inputProps?.onBlur?.(event); if (!box.current?.contains(event.relatedTarget as Node | null)) close(); }}
       onChange={event => { ++sequence.current; setActive(-1); setResult({key: "", addresses: []}); onChange(event.target.value); setOpen(true); inputProps?.onChange?.(event); }}/>
-    {!disabled && open && query.length >= 2 && result.key === queryKey && !suggestions.length && <p className="address-note" role="status">{result.note || "Aucune suggestion pour cette saisie. Vous pouvez écrire votre adresse librement."}</p>}
-    {visible && <ul className="address-list" role="listbox" id={listId} aria-label="Adresses proposées">
+    {!disabled && open && query.length >= 2 && result.key === queryKey && !suggestions.length && <p className="address-note" role="status">{t(result.note || "Aucune suggestion pour cette saisie. Vous pouvez écrire votre adresse librement.")}</p>}
+    {visible && <ul className="address-list" role="listbox" id={listId} aria-label={t("Adresses proposées")}>
       {suggestions.map((suggestion, index) => <li key={suggestion.label + suggestion.city} id={`${listId}-${index}`} role="option"
         aria-selected={index === active} className={index === active ? "active" : ""}>
         <button type="button" tabIndex={-1} onPointerDown={event => event.preventDefault()} onMouseEnter={() => setActive(index)} onClick={() => choose(suggestion)}>
-          <MapPin size={16}/><span><strong>{suggestion.label}</strong><small>{suggestion.city}, Guyane française</small></span>
+          <MapPin size={16}/><span><strong>{suggestion.label}</strong><small>{t("{city}, Guyane française", {city: suggestion.city})}</small></span>
         </button>
       </li>)}
-      <li className="address-note" role="presentation">{result.source === "ign" ? "Suggestions IGN" : "Répertoire de démonstration"} · {suggestions.length} proposition{suggestions.length > 1 ? "s" : ""}{result.note && <span> · {result.note}</span>}</li>
+      <li className="address-note" role="presentation">{t(suggestions.length > 1 ? "{source} · {count} propositions" : "{source} · {count} proposition", {source: t(result.source === "ign" ? "Suggestions IGN" : "Répertoire de démonstration"), count: suggestions.length})}{result.note && <span> · {t(result.note)}</span>}</li>
     </ul>}
   </div>;
 }

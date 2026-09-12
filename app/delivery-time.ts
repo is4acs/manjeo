@@ -1,3 +1,4 @@
+import { t, formatDate } from "../lib/i18n.ts";
 const terminal = new Set(["delivered", "cancelled"]);
 export function remainingSeconds(deadline: string | null | undefined, now = Date.now()): number {
   const target = deadline ? Date.parse(deadline) : NaN;
@@ -8,7 +9,7 @@ export function countdown(seconds: number): string {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
 }
 export function clockLabel(value: string): string {
-  return Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleTimeString("fr-FR", {timeZone: "America/Cayenne", hour: "2-digit", minute: "2-digit"}) : "Horaire indisponible";
+  return Number.isFinite(Date.parse(value)) ? formatDate(value, {hour: "2-digit", minute: "2-digit"}) : t("Horaire indisponible");
 }
 export function isLate(eta: string | null | undefined, status: string, now = Date.now()): boolean {
   return !!eta && Number.isFinite(Date.parse(eta)) && Date.parse(eta) < now && !terminal.has(status);

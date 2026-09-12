@@ -1,3 +1,4 @@
+import { t, tEvent, formatDate } from "@/lib/i18n";
 import { Bike, Check, Clock3, KeyRound } from "lucide-react";
 import { clockLabel, countdown, isLate, useCountdown } from "./deadline";
 import { statusLabels, type Order, type OrderStatus } from "@/lib/api";
@@ -16,22 +17,22 @@ const explanations: Record<OrderStatus, string> = {
 function Countdown({deadline}: {deadline: string}) {
   const seconds = useCountdown(deadline);
   return <p className="tracking-deadline"><Clock3 size={16}/><span>{seconds > 0
-    ? <>Réponse du restaurant sous <strong>{countdown(seconds)}</strong> — sans réponse, la commande s’annule et vous n’êtes pas débité.</>
-    : <>Le délai est écoulé. Nous vérifions la réponse du restaurant.</>}</span></p>;
+    ? <>{t("Réponse du restaurant sous {time} — sans réponse, la commande s’annule et vous n’êtes pas débité.", {time: countdown(seconds)})}</>
+    : <>{t("Le délai est écoulé. Nous vérifions la réponse du restaurant.")}</>}</span></p>;
 }
 
 export default function OrderTracking({order, onCancel}: {order: Order; onCancel?: (order: Order) => void}) {
   const index = steps.indexOf(order.status);
   useCountdown(order.status === "delivered" || order.status === "cancelled" ? null : order.eta);
-  return <section className="customer-tracking" aria-label={`Suivi ${order.id}`}>
-    <p className="tracking-explanation">{order.status === "delivered" && !order.courierId ? "Commande de démonstration terminée." : explanations[order.status]}</p>
+  return <section className="customer-tracking" aria-label={t("Suivi {id}", {id: order.id})}>
+    <p className="tracking-explanation">{order.status === "delivered" && !order.courierId ? t("Commande de démonstration terminée.") : t(explanations[order.status])}</p>
     {order.status === "pending" && order.acceptBy && <Countdown deadline={order.acceptBy}/>}
-    {order.eta && !["delivered", "cancelled"].includes(order.status) && <p className="tracking-deadline"><Clock3 size={16}/><span>Livraison estimée vers <strong>{clockLabel(order.eta)}</strong>{isLate(order.eta, order.status) ? " — le retard est signalé au restaurant et au livreur." : "."}</span></p>}
-    {order.status !== "cancelled" && <ol className="tracking-steps">{steps.map((status, position) => <li key={status} className={position <= index ? "tracking-complete" : ""} aria-current={position === index ? "step" : undefined}><span>{position < index ? <Check size={11}/> : position + 1}</span><small>{statusLabels[status]}</small></li>)}</ol>}
-    {order.courierName && order.status !== "cancelled" && <p className="tracking-courier"><Bike size={18}/><span><strong>{order.courierName}</strong>{order.status === "picked_up" ? " apporte votre commande." : order.status === "delivered" ? " a assuré votre livraison test." : " a pris en charge votre course."}</span></p>}
-    {!order.courierId && ["accepted", "preparing", "ready"].includes(order.status) && <p className="tracking-courier"><Bike size={18}/>En attente de la prise en charge par un livreur.</p>}
-    {order.deliveryCode && order.status === "picked_up" && <div className="delivery-code"><KeyRound size={21}/><div><span>Votre code de remise</span><strong aria-label={`Code de remise ${order.deliveryCode}`}>{order.deliveryCode}</strong><p>Communiquez ce code au livreur uniquement quand vous recevez votre commande.</p></div></div>}
-    {order.status === "pending" && onCancel && <button type="button" className="customer-cancel" onClick={() => onCancel(order)}>Annuler avant acceptation</button>}
-    <details className="tracking-events"><summary>Historique des étapes</summary><ol>{order.history.map((event, eventIndex) => <li key={`${event.date}-${eventIndex}`}><span>{event.label || statusLabels[event.status]}{event.actorName && <small> · {event.actorName}</small>}</span><time dateTime={event.date}>{new Date(event.date).toLocaleTimeString("fr-FR",{timeZone:"America/Cayenne",hour:"2-digit",minute:"2-digit"})}</time></li>)}</ol></details>
+    {order.eta && !["delivered", "cancelled"].includes(order.status) && <p className="tracking-deadline"><Clock3 size={16}/><span>{t(isLate(order.eta, order.status) ? "Livraison estimée vers {time} — le retard est signalé au restaurant et au livreur." : "Livraison estimée vers {time}.", {time: clockLabel(order.eta)})}</span></p>}
+    {order.status !== "cancelled" && <ol className="tracking-steps">{steps.map((status, position) => <li key={status} className={position <= index ? "tracking-complete" : ""} aria-current={position === index ? "step" : undefined}><span>{position < index ? <Check size={11}/> : position + 1}</span><small>{t(statusLabels[status])}</small></li>)}</ol>}
+    {order.courierName && order.status !== "cancelled" && <p className="tracking-courier"><Bike size={18}/><span>{t(order.status === "picked_up" ? "{name} apporte votre commande." : order.status === "delivered" ? "{name} a assuré votre livraison test." : "{name} a pris en charge votre course.", {name: order.courierName})}</span></p>}
+    {!order.courierId && ["accepted", "preparing", "ready"].includes(order.status) && <p className="tracking-courier"><Bike size={18}/>{t("En attente de la prise en charge par un livreur.")}</p>}
+    {order.deliveryCode && order.status === "picked_up" && <div className="delivery-code"><KeyRound size={21}/><div><span>{t("Votre code de remise")}</span><strong aria-label={t("Code de remise {code}", {code: order.deliveryCode})}>{order.deliveryCode}</strong><p>{t("Communiquez ce code au livreur uniquement quand vous recevez votre commande.")}</p></div></div>}
+    {order.status === "pending" && onCancel && <button type="button" className="customer-cancel" onClick={() => onCancel(order)}>{t("Annuler avant acceptation")}</button>}
+    <details className="tracking-events"><summary>{t("Historique des étapes")}</summary><ol>{order.history.map((event, eventIndex) => <li key={`${event.date}-${eventIndex}`}><span>{tEvent(event.label || statusLabels[event.status])}{event.actorName && <small> · {event.actorName}</small>}</span><time dateTime={event.date}>{formatDate(event.date, {hour:"2-digit",minute:"2-digit"})}</time></li>)}</ol></details>
   </section>;
 }
