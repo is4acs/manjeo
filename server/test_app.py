@@ -137,7 +137,8 @@ class AppIntegrationTests(AppTestHarness):
         self.request("GET", "/api/users", role="courier", status=403)
         users = self.request("GET", "/api/users", role="admin")[0]["users"]
         self.assertEqual(len(users), 4)
-        self.assertEqual(set(users[0]), {"id", "email", "name", "role", "restaurantId"})
+        # L’admin voit les coordonnées de supervision ; jamais le sel ni l’empreinte du mot de passe.
+        self.assertEqual(set(users[0]), {"id", "email", "name", "role", "restaurantId", "phone", "language"})
         for role in ("admin", "restaurant", "courier"):
             self.request("POST", "/api/orders", self.order_payload(), role=role, status=403)
         self.request("PATCH", "/api/restaurants/ti-kreol", {"acceptingOrders": False}, role="client", status=403)

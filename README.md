@@ -32,6 +32,22 @@ Le compte restaurateur fourni gère uniquement Ti Kaz Kréol. Choisir cette ense
 
 Un livreur ne peut avoir qu’une course active. Les offres affichent le restaurant et la commune de destination ; les coordonnées de livraison deviennent visibles après affectation. Il peut libérer une course avant le retrait avec un motif. Le client peut annuler une commande encore en attente ; le restaurant ou l’admin peuvent l’annuler avant le retrait. Une livraison terminée ne peut pas être modifiée.
 
+## Direction visuelle
+
+L’interface suit la direction « Punch » : fond crème, un seul jaune en aplat, encre noire pour tout le
+texte, titres Archivo Black en capitales sur Figtree, bordures de 2 px et pastilles. Les jetons sont
+déclarés une seule fois dans `:root` au début de `app/globals.css` ; aucun composant ne doit coder une
+couleur en dur. Les règles complètes, la typographie, les états et les écarts assumés par rapport au
+handoff sont dans [la direction « Punch »](docs/DIRECTION-PUNCH.md).
+
+## Délais, codes promo et adresses
+
+- **Le restaurant a dix minutes pour accepter.** Passé ce délai la commande s’annule d’elle-même, l’historique porte la mention « annulation automatique » et le code promo utilisé est rendu. Le client voit le compte à rebours dans son suivi, le restaurateur le voit sur la commande. L’hébergement n’exécutant aucune tâche de fond, l’expiration est constatée à la première requête qui suit l’échéance.
+- **Une estimation apparaît à l’acceptation** (préparation annoncée + quinze minutes de course). Elle est affichée au client, au restaurateur et au livreur, et le retard est signalé aux trois.
+- **Trois codes de démonstration** : `BIENVENUE` (20 % dès 15 €, une fois par compte), `LIVRAISON` (livraison offerte dès 25 €) et `TIKAZ5` (5 € chez Ti Kaz Kréol dès 20 €). Le code se saisit dans le panier ; la remise affichée n’est qu’un aperçu, le serveur la recalcule à la confirmation et refuse tout total qui ne correspond pas. Un code est rendu quand la commande est annulée.
+- **Un client ne peut pas cumuler plus de cinq commandes en cours**, pour que la démonstration partagée reste lisible.
+- **La saisie d’adresse propose des complétions** pour Cayenne, Rémire-Montjoly et Matoury. Ce répertoire est une liste fixe embarquée dans l’API (`server/addresses.py`), sans appel réseau ni clé : en production, le remplacer par la Base Adresse Nationale, l’interface consomme déjà la même forme de réponse.
+
 ## Modifier la carte
 
 Dans l’espace restaurateur, ouvrir **Ma carte** : créer, renommer et réordonner des catégories ; ajouter ou modifier un produit, sa description, son prix, sa photo, ses allergènes, sa disponibilité et ses groupes d’options. Chaque groupe définit un minimum, un maximum et les suppléments de prix de ses choix. Les produits peuvent être archivés puis restaurés. Les photos JPEG, PNG ou WebP sont enregistrées dans la base après validation et réencodage (1 Mo maximum à l’envoi).
@@ -41,6 +57,28 @@ Les modifications restent un brouillon jusqu’à **Publier la carte**. Si un au
 Une modification ne change jamais le prix ni les options d’une commande déjà confirmée. Un panier contenant un produit modifié demande une actualisation explicite avant de commander ; les produits retirés ou options supprimées doivent être revus. Le serveur vérifie la version, les options, le prix unitaire et le total, puis calcule les montants en centimes. La livraison fictive ajoute 1 € hors Cayenne.
 
 Le restaurant peut aussi modifier sa présentation, son adresse de retrait, son délai et l’ouverture des commandes. Les règles détaillées et les références utilisées sont dans [le contrat des quatre espaces](docs/FOUR-ROLES-CONTRACT.md).
+
+## Coordonnées, messagerie et langues
+
+Chaque compte porte un téléphone et une langue, modifiables depuis **Mon compte** — accessible aussi
+depuis les espaces restaurateur, livreur et administration.
+
+- **Les numéros ne sont ouverts que le temps utile.** Le client joint le restaurant pendant que sa
+  commande est en cours, et le livreur seulement entre le retrait et la remise. Le livreur affecté
+  joint le client et le restaurant. Hors de cette fenêtre, le serveur ne renvoie aucun numéro.
+- **Une conversation est attachée à chaque commande.** Elle s’ouvre à l’acceptation, se ferme une
+  demi-heure après la livraison, et n’est lisible que par le client, le restaurant, le livreur
+  affecté et l’administration. Les messages non lus sont comptés pour chaque rôle.
+- **Chacun écrit dans sa langue.** Un message est conservé tel qu’il a été écrit et traduit à la
+  lecture. Les **réponses rapides** sont traduites à la main en français, créole haïtien, créole
+  guyanais, portugais, anglais, espagnol et chinois : un livreur brésilien qui envoie « Estou a
+  caminho » est lu « Mwen sou wout la » par un client haïtien, sans aucun moteur. Le texte libre
+  passe par le moteur du navigateur (API Translator) quand la paire existe, sinon par un moteur
+  configuré côté serveur (`MANJEO_TRANSLATE_URL`, `MANJEO_TRANSLATE_KEY`). Sans moteur, le message
+  reste dans sa langue et l’interface le dit ; l’original est toujours consultable.
+
+Les traductions des réponses rapides doivent être relues par des locuteurs natifs avant une mise en
+service réelle.
 
 ## Données et déploiement
 

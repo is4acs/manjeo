@@ -3,7 +3,7 @@ import { ArrowRight, Bike, ChefHat, LogOut, ShieldCheck, ShoppingBag, UserRound 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { api, type User, type Role } from "@/lib/api";
+import { api, type LanguageOption, type User, type Role } from "@/lib/api";
 import { type Restaurant } from "@/lib/menu";
 import Home from "./page";
 import Staff from "./staff";
@@ -28,6 +28,9 @@ export default function Application() {
   const [password, setPassword] = useState("ManjeoDemo2026!");
   const [authError, setAuthError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [languages, setLanguages] = useState<LanguageOption[]>([]);
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [profileNotice, setProfileNotice] = useState("");
   const sessionVersion = useRef(0);
   const currentUser = useRef(user);
   currentUser.current = user;
@@ -64,6 +67,27 @@ export default function Application() {
     window.addEventListener("storage", onStorage); window.addEventListener("focus", onFocus);
     return () => { window.removeEventListener("storage", onStorage); window.removeEventListener("focus", onFocus); };
   }, []);
+  // Les langues proposées viennent du serveur : l'interface n'en invente aucune.
+  useEffect(() => {
+    if (!user) return;
+    void api<{languages: LanguageOption[]}>("/api/profile").then(data => setLanguages(data.languages)).catch(() => {});
+  }, [user?.id]);
+  async function saveProfile(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (profileBusy) return;
+    const form = new FormData(event.currentTarget);
+    setProfileBusy(true); setAuthError(""); setProfileNotice("");
+    try {
+      const result = await api<{user: User}>("/api/profile", {method: "PATCH", body: JSON.stringify({
+        name: String(form.get("name") || "").trim(),
+        phone: String(form.get("phone") || "").trim(),
+        language: String(form.get("language") || "fr"),
+      })});
+      setUser(result.user);
+      setProfileNotice("Vos coordonnées sont enregistrées.");
+    } catch (error) { setAuthError((error as Error).message); }
+    finally { setProfileBusy(false); }
+  }
   const refreshCatalog = useCallback(async () => {
     const data = await api<{restaurants: Restaurant[]}>("/api/restaurants");
     setRestaurants(data.restaurants);
@@ -91,22 +115,29 @@ export default function Application() {
     } catch (error) { setAccountOpen(true); setAuthError((error as Error).message); }
     finally { setBusy(false); }
   }
-  if (loading || initialError) return <main className="app-startup"><span className="brand">manjéo✳</span><div className="startup-card"><ShoppingBag size={32}/><h1>{loading ? "Les bonnes adresses arrivent…" : "La cuisine se fait attendre"}</h1><p>{loading ? "Connexion à Manjéo." : initialError}</p>{initialError && <Button className="primary-btn" onClick={initialize}>Réessayer</Button>}</div></main>;
+  if (loading || initialError) return <main className="app-startup"><span className="brand">manjéo</span><div className="startup-card"><ShoppingBag size={32}/><h1>{loading ? "Les bonnes adresses arrivent…" : "La cuisine se fait attendre"}</h1><p>{loading ? "Connexion à Manjéo." : initialError}</p>{initialError && <Button onClick={initialize}>Réessayer</Button>}</div></main>;
   return <>
     {staff && user && user.role !== "client"
-      ? <Staff key={user.id} user={user} onLogout={() => void logout()} onShop={() => {setStaff(false); void refreshCatalog().catch(() => {});}}/>
+      ? <Staff key={user.id} user={user} onLogout={() => void logout()} onAccount={() => {setAuthError("");setProfileNotice("");setAccountOpen(true);}} onShop={() => {setStaff(false); void refreshCatalog().catch(() => {});}}/>
       : <Home user={user} restaurants={restaurants} refreshCatalog={refreshCatalog} onAccount={() => {setAuthError("");setAccountOpen(true);}} onStaff={() => setStaff(true)}/>}
     <Dialog open={accountOpen} onOpenChange={open => {if (!busy) setAccountOpen(open);}}><DialogContent className="app-dialog account-dialog">
       {user ? <>
         <div className="account-symbol"><UserRound size={26}/></div><DialogTitle>Bonjour, {user.name}</DialogTitle><DialogDescription>{roleNames[user.role]} · Démonstration partagée</DialogDescription>
         <div className="account-identity"><strong>{user.email}</strong><span>Votre session est connectée.</span></div>
-        {user.role !== "client" && <Button className="primary-btn" onClick={() => {setAccountOpen(false);setStaff(true);}}>Ouvrir {user.role === "admin" ? "l’administration" : user.role === "courier" ? "mes livraisons" : "mon restaurant"}<ArrowRight size={17}/></Button>}
+        <form className="account-form profile-form" key={user.id} onSubmit={saveProfile}>
+          <label>Nom affiché<Input name="name" defaultValue={user.name} required minLength={2} maxLength={100} autoComplete="name"/></label>
+          <label>Téléphone<Input name="phone" type="tel" defaultValue={user.phone} maxLength={30} autoComplete="tel" placeholder="0694 00 00 00"/><small>Ouvert à vos interlocuteurs uniquement pendant qu’une commande est en cours.</small></label>
+          <label>Langue des messages<select name="language" defaultValue={user.language}>{(languages.length ? languages : [{code: user.language, label: user.language}]).map(option => <option key={option.code} value={option.code}>{option.label}</option>)}</select><small>Vous écrivez dans cette langue ; vos interlocuteurs lisent dans la leur.</small></label>
+          {profileNotice && <p className="account-notice" role="status">{profileNotice}</p>}
+          <Button type="submit" variant="outline" disabled={profileBusy}>{profileBusy ? "Enregistrement…" : "Enregistrer mes coordonnées"}</Button>
+        </form>
+        {user.role !== "client" && <Button onClick={() => {setAccountOpen(false);setStaff(true);}}>Ouvrir {user.role === "admin" ? "l’administration" : user.role === "courier" ? "mes livraisons" : "mon restaurant"}<ArrowRight size={17}/></Button>}
         {authError && <p role="alert" className="account-error">{authError}</p>}
         <Button variant="outline" disabled={busy} onClick={() => void logout()}><LogOut size={16}/>{busy ? "Déconnexion…" : "Se déconnecter / changer de compte"}</Button>
       </> : <>
         <div className="account-symbol"><UserRound size={26}/></div><DialogTitle>Bienvenue à table.</DialogTitle><DialogDescription>Connectez-vous pour commander ou gérer votre activité.</DialogDescription>
         <div className="demo-account-picker" aria-label="Comptes de démonstration">{demos.map(({role,label,email:demoEmail,icon:Icon}) => <button key={role} type="button" aria-pressed={email === demoEmail} onClick={() => {setEmail(demoEmail);setPassword("ManjeoDemo2026!");setAuthError("");}}><Icon size={20}/>{label}</button>)}</div>
-        <form className="account-form" onSubmit={login}><label>Adresse e-mail<Input type="email" name="email" autoComplete="username" required value={email} onChange={event => setEmail(event.target.value)}/></label><label>Mot de passe<Input type="password" name="password" autoComplete="current-password" required value={password} onChange={event => setPassword(event.target.value)}/></label>{authError && <p role="alert" className="account-error">{authError}</p>}<Button className="primary-btn" type="submit" disabled={busy}>{busy ? "Connexion…" : "Se connecter"}<ArrowRight size={17}/></Button></form>
+        <form className="account-form" onSubmit={login}><label>Adresse e-mail<Input type="email" name="email" autoComplete="username" required value={email} onChange={event => setEmail(event.target.value)}/></label><label>Mot de passe<Input type="password" name="password" autoComplete="current-password" required value={password} onChange={event => setPassword(event.target.value)}/></label>{authError && <p role="alert" className="account-error">{authError}</p>}<Button type="submit" disabled={busy}>{busy ? "Connexion…" : "Se connecter"}<ArrowRight size={17}/></Button></form>
         <p className="demo-credentials">4 comptes de démonstration partagés. Mot de passe commun :<br/><code>ManjeoDemo2026!</code></p>
       </>}
     </DialogContent></Dialog>

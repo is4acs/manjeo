@@ -11,6 +11,7 @@ Référence d’implémentation de la démonstration, 12 septembre 2026. Les pai
 - Product conserve `id,name,description,price,group,image?,popular?,available`; ajoute `version:number, archived:boolean, allergens:string, optionGroups:OptionGroup[]`. `large` est une donnée historique : migrer ses choix dans optionGroups, ne plus l’utiliser pour calculer de nouvelles commandes.
 - Restaurant conserve ses champs ; ajoute `menuVersion:number, categories:string[], pickupAddress:string, pickupCity:string`. `from` est recalculé à partir des produits actifs disponibles. Le catalogue public exclut les produits archivés.
 - Order conserve ses champs et instantanés d’articles ; ajoute `courierId:string|null, courierName:string|null, pickupAddress:string, pickupCity:string, deliveryCode?:string`. Statut supplémentaire `picked_up`, libellé « En livraison ». `deliveryCode` n’est fourni qu’au client propriétaire et à l’admin. L’historique accepte `{status,date,label?:string,actorName?:string}`.
+- Order ajoute `acceptBy:string|null` (échéance d’acceptation, effacée dès l’acceptation), `eta:string|null` (estimation posée à l’acceptation), `discount:number`, `promoCode:string|null` et `promoLabel:string`. `total = subtotal + delivery - discount`.
 - CourierProfile : `{id:string,name:string,email:string,online:boolean,activeOrderId:string|null}`.
 - DeliveryOffer : `{id,restaurantId,restaurant,pickupAddress,pickupCity,city,count,status,delivery,date}`. Aucune adresse client, téléphone, nom client, customerId, note ou PIN dans les offres.
 
@@ -28,6 +29,16 @@ Référence d’implémentation de la démonstration, 12 septembre 2026. Les pai
 - Un replay identique du requestId retourne la commande existante avant les contrôles de carte courante, comme dans le MVP. Un replay différent reste 409.
 - `GET /api/orders` : client ses commandes, restaurant ses commandes, admin toutes, courier seulement ses commandes assignées (dont historique terminal), avec projection du PIN selon rôle.
 
+## Délais, promotions et adresses
+
+- **Acceptation sous dix minutes.** À la création, `acceptBy = date + 600 s`. Aucune tâche de fond n’existant sur cet hébergement, l’expiration est constatée paresseusement : toute requête touchant `/api/orders*`, `/api/deliveries` ou `/api/couriers` annule d’abord les commandes `pending` échues, avec un événement d’historique sans `actorName` (« Annulation automatique »), passe l’affectation à `cancelled` et rend le code promo. Une commande expirée ne peut plus être acceptée (409) et disparaît des offres livreur. L’écriture réutilise la transaction en cours (`Handler.ensure_write`), jamais une seconde.
+- **Estimation.** `pending→accepted` pose `eta = maintenant + minutes de préparation + 15 min de course` et efface `acceptBy`. Le dépassement n’est pas un statut : les quatre espaces le déduisent de `eta` et le signalent.
+- **Plafond client.** Un client ne peut pas dépasser cinq commandes non terminées (409) ; une livraison ou une annulation libère la place.
+- `GET /api/promotions` public -> `{promotions:[{code,label,conditions,restaurantId,minimum}]}`, codes actifs, dans leur fenêtre et non épuisés.
+- `POST /api/promotions/check` client : `{code,restaurantId,city,subtotal}` -> `{promotion:{code,label,conditions,discount}}`. Aperçu seulement ; le montant qui fait foi est recalculé à la création.
+- `POST /api/orders` accepte `promoCode:string|null`. Le serveur revalide le code (actif, fenêtre, restaurant, panier minimum, quota par compte et quota global) et recalcule la remise : `percent` sur le sous-total, `amount` plafonné au sous-total, `delivery` égal aux frais. `expectedTotal` doit inclure la remise, sinon 409. L’usage est enregistré dans `promo_uses` et supprimé à l’annulation, automatique comprise.
+- `GET /api/addresses?q=&city=` public -> `{addresses:[{label,number,street,city}]}`, au plus six propositions issues du répertoire fixe de `server/addresses.py` (trois communes). Aucun appel réseau, aucune clé : à remplacer par un géocodeur réel en production, la forme de réponse étant déjà celle attendue par l’interface.
+
 ## Livraison et supervision
 
 - `GET /api/deliveries` courier uniquement -> `{available:DeliveryOffer[],assigned:Order[],profile:CourierProfile}`. Offres acceptées/en préparation/prêtes, non assignées, visibles uniquement lorsque le livreur est en ligne et sans mission active. assigned inclut son historique. Coordonnées client accessibles uniquement pour ses missions assignées ; PIN toujours retiré.
@@ -39,12 +50,19 @@ Référence d’implémentation de la démonstration, 12 septembre 2026. Les pai
 - `PATCH /api/orders/:id` : `{status,reason?,deliveryCode?}` -> `{order}`. Restaurant propriétaire et admin : pending→accepted→preparing→ready. Le restaurant ne peut plus simuler la livraison. Courier assigné : ready→picked_up puis picked_up→delivered avec PIN client exact à 4 chiffres. Admin ne contourne pas le PIN en se faisant livreur. PIN mauvais : 400, 5 échecs en 5 minutes entraînent 429, compteur persistant ; ne pas annuler la transaction qui enregistre l’échec. Client peut annuler pending ; restaurant/admin peuvent annuler avant picked_up, motif obligatoire pour tous (3..250). Historique et capacité mis à jour atomiquement ; aucun saut ou retour de statut. Livrée/annulée terminales.
 - Une affectation reste attachée à une commande annulée pour l’historique, mais ne consomme plus la capacité. Les commandes v1 déjà livrées restent consultables sans affectation inventée.
 
+## Profils, coordonnées et messagerie
+
+- `GET /api/profile` -> `{user, languages}` ; `PATCH /api/profile` accepte `name`, `phone`, `language` et rien d’autre (400 sinon). Le profil vit dans `user_profiles`, jamais dans la table des comptes : aucune migration destructive. `/api/session`, `/api/login` et `/api/users` (admin) rendent `phone` et `language` en plus des champs existants ; le sel et l’empreinte du mot de passe ne sortent jamais.
+- **Fenêtre des coordonnées.** `GET /api/orders/:id/thread` renvoie les fiches contact que le demandeur a le droit de joindre à cet instant. Le client obtient le téléphone du restaurant tant que la commande est active, et celui du livreur seulement de `ready` à `picked_up`. Le livreur affecté obtient le client et le restaurant. Le restaurant obtient le client et son livreur. L’admin voit tout, pour l’assistance. Hors fenêtre le numéro est vide, jamais masqué côté interface seulement.
+- **Fil de discussion.** Il s’ouvre à l’acceptation et se ferme trente minutes après la fin de la commande ; il reste lisible ensuite. `POST /api/orders/:id/messages` accepte `{body}` (1..600) ou `{phraseId}`, 403 pour un tiers, 409 hors fenêtre, 200 messages au maximum par commande. Le livreur n’entre dans le fil qu’une fois la course prise. `GET /api/orders` renvoie `unread` : le nombre de messages non lus par commande, ses propres messages exclus.
+- **Langues.** Chaque message est stocké dans la langue de son auteur (`language`) et jamais réécrit. La traduction se fait à la lecture, chez le destinataire, dans cet ordre : livre de phrases (`GET /api/phrases`, réponses rapides traduites à la main dans les sept langues, donc justes hors ligne), moteur du navigateur (API Translator), puis `POST /api/translate` si l’exploitant a configuré `MANJEO_TRANSLATE_URL` (+ `MANJEO_TRANSLATE_KEY`). Sans moteur, l’API répond 503 et l’interface montre l’original en disant qu’aucune traduction n’est disponible. L’original reste accessible d’un clic dans tous les cas.
+
 ## Interfaces et validation
 
-- Restaurant : commandes/carte, éditeur produits et catégories, groupes/options/prix/photos/allergènes, archivage/restauration, publication explicite, adresse/temps de préparation, livreur identifié quand assigné.
-- Livreur : disponibilité, offres, mission courante, collecte conditionnée au statut prêt, livraison avec code demandé au client, libération motivée avant retrait, historique.
+- Restaurant : échéance d’acceptation et retard affichés sur chaque commande, remise visible dans le récapitulatif, commandes/carte, éditeur produits et catégories, groupes/options/prix/photos/allergènes, archivage/restauration, publication explicite, adresse/temps de préparation, livreur identifié quand assigné.
+- Livreur : heure de livraison attendue et retard sur la mission, disponibilité, offres, mission courante, collecte conditionnée au statut prêt, livraison avec code demandé au client, libération motivée avant retrait, historique.
 - Admin : vue globale et filtres, quatre types de comptes, état et capacité livreurs, assignation/réassignation/libération motivées, carte des restaurants, annulations motivées.
-- Client : options dynamiques, panier détectant la carte périmée, mise à jour explicite, suivi cuisine/retrait/livraison, livreur et code de remise visibles, annulation avant acceptation.
+- Client : saisie d’adresse assistée (clavier et lecteur d’écran), code promo vérifié avant commande et revalidé quand le panier change, compte à rebours d’acceptation, estimation de livraison, options dynamiques, panier détectant la carte périmée, mise à jour explicite, suivi cuisine/retrait/livraison, livreur et code de remise visibles, annulation avant acceptation.
 - Contrôles serveur systématiques, migrations non destructives SQLite/PG, double attribution impossible, sessions isolées, PIN et données d’offres filtrés, conflits visibles sans perdre le brouillon. Prévisualisation et tests dans des schémas isolés avant publication main.
 
 ## Références de parcours

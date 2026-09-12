@@ -1,0 +1,19 @@
+{
+  "name": "manjéo",
+  "short_name": "manjéo",
+  "description": "Le marché de Cayenne, livré chaud.",
+  "lang": "fr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FFF0DD",
+  "theme_color": "#1B1A17",
+  "icons": [
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-1024.png", "sizes": "1024x1024", "type": "image/png" },
+    { "src": "/icons/icon-maskable-1024.png", "sizes": "1024x1024", "type": "image/png", "purpose": "maskable" }
+  ]
+}

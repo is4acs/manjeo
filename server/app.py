@@ -16,9 +16,11 @@ from datetime import datetime, timezone
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
+# Python ne connaît pas ce type ; sans lui le manifeste part en octet-stream et nosniff le rejette.
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 COOKIE_NAME = "manjeo_session"
 SESSION_SECONDS = 8 * 60 * 60
 PASSWORD_ITERATIONS = 240_000
@@ -392,9 +394,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.serve_static(path)
             data = self.read_json() if self.command in {"POST", "PATCH"} else None
             database = self.state.database
+            self.in_write = False
             with database.connect() as db:
                 if data is not None:
-                    database.begin_write(db)
+                    self.ensure_write(db)
                 match = re.fullmatch(r"/api/images/([a-f0-9]{32})", path)
                 if self.command == "GET" and match:
                     row = db.execute("SELECT content_type, content_base64 FROM menu_images WHERE id = ?", (match[1],)).fetchone()
@@ -422,15 +425,28 @@ class Handler(BaseHTTPRequestHandler):
             traceback.print_exc()
             self.json_response(500, {"error": "Le serveur a rencontré une erreur. Réessayez."})
 
+    def ensure_write(self, db):
+        """Ouvre la transaction d’écriture une seule fois, même si une lecture la déclenche."""
+        if not getattr(self, "in_write", False):
+            self.state.database.begin_write(db)
+            self.in_write = True
+
     def api(self, db, path, data):
-        from .marketplace import handle_marketplace, projected_order
+        from .marketplace import expire_pending_orders, handle_marketplace, projected_order
+        from .messaging import handle_messaging
+        if path.startswith("/api/orders") or path in {"/api/deliveries", "/api/couriers"}:
+            expire_pending_orders(self, db)
+        response = handle_messaging(self, db, path, data)
+        if response is not None:
+            return response
         response = handle_marketplace(self, db, path, data)
         if response is not None:
             return response
         method = self.command
         if method == "GET" and path == "/api/session":
+            from .messaging import profile
             user = self.user(db)
-            return 200, {"user": public_user(user) if user else None}, None
+            return 200, {"user": {**public_user(user), **profile(db, user["id"])} if user else None}, None
         if method == "POST" and path == "/api/login":
             email = text_field(data, "email", 3, 254).lower()
             password = text_field(data, "password", 1, 200)
@@ -457,23 +473,31 @@ class Handler(BaseHTTPRequestHandler):
             token = secrets.token_urlsafe(32)
             db.execute("DELETE FROM sessions WHERE token_hash = ? OR expires_at <= ?", (self.session_hash(), int(time.time())))
             db.execute("INSERT INTO sessions VALUES (?, ?, ?)", (hashlib.sha256(token.encode()).hexdigest(), row["id"], int(time.time()) + SESSION_SECONDS))
-            return 200, {"user": public_user(row)}, self.session_cookie(token, SESSION_SECONDS)
+            from .messaging import profile
+            return 200, {"user": {**public_user(row), **profile(db, row["id"])}}, self.session_cookie(token, SESSION_SECONDS)
         if method == "POST" and path == "/api/logout":
             db.execute("DELETE FROM sessions WHERE token_hash = ?", (self.session_hash(),))
             return 200, {"ok": True}, self.session_cookie()
+        if method == "GET" and path == "/api/addresses":
+            from .addresses import suggest
+            query = parse_qs(urlsplit(self.path).query)
+            return 200, {"addresses": suggest((query.get("q") or [""])[0], (query.get("city") or [None])[0])}, None
         if method == "GET" and path == "/api/restaurants":
             rows = db.execute("SELECT * FROM restaurants ORDER BY sort_order, id").fetchall()
             return 200, {"restaurants": [self.state.database.restaurant(db, row) for row in rows]}, None
         if method == "GET" and path == "/api/users":
             self.user(db, {"admin"})
-            return 200, {"users": [public_user(row) for row in db.execute("SELECT * FROM users ORDER BY id")]}, None
+            from .messaging import profile
+            return 200, {"users": [{**public_user(row), **profile(db, row["id"])} for row in db.execute("SELECT * FROM users ORDER BY id")]}, None
         if method == "GET" and path == "/api/orders":
             user = self.user(db, {"client", "restaurant", "courier", "admin"})
             clause, args = (" WHERE customer_id = ?", (user["id"],)) if user["role"] == "client" else ((" WHERE restaurant_id = ?", (user["restaurant_id"],)) if user["role"] == "restaurant" else ("", ()))
             if user["role"] == "courier":
                 clause, args = " WHERE id IN (SELECT order_id FROM order_assignments WHERE courier_id = ?)", (user["id"],)
+            from .messaging import unread_counts
             rows = db.execute("SELECT data FROM orders" + clause + " ORDER BY created_at DESC, id DESC", args)
-            return 200, {"orders": [projected_order(json.loads(row["data"]), user) for row in rows]}, None
+            return 200, {"orders": [projected_order(json.loads(row["data"]), user) for row in rows],
+                         "unread": unread_counts(db, user)}, None
         if method == "POST" and path == "/api/orders":
             return self.create_order(db, data)
         match = re.fullmatch(r"/api/restaurants/([A-Za-z0-9-]+)/products/([A-Za-z0-9-]+)", path)
@@ -496,7 +520,8 @@ class Handler(BaseHTTPRequestHandler):
         raise APIError(404, "Cette ressource API n’existe pas.")
 
     def create_order(self, db, data):
-        from .marketplace import selected_price
+        from .marketplace import ACCEPTANCE_SECONDS, selected_price, shifted
+        from .promotions import evaluate, normalized_code, record_use
         user = self.user(db, {"client"})
         request_id = text_field(data, "requestId", 36, 36)
         try:
@@ -514,6 +539,10 @@ class Handler(BaseHTTPRequestHandler):
         # a changed menu price or turn a previous fixed option into a new choice.
         if type(data.get("expectedTotal")) is not int:
             raise APIError(409, "La carte a évolué. Rechargez la page et mettez votre panier à jour avant de commander.")
+        running = db.execute("SELECT COUNT(*) FROM orders JOIN order_assignments ON orders.id = order_assignments.order_id "
+                             "WHERE customer_id = ? AND state NOT IN ('delivered','cancelled')", (user["id"],)).fetchone()[0]
+        if running >= 5:
+            raise APIError(409, "Vous avez déjà cinq commandes en cours dans cette démonstration. Terminez-les ou annulez-en une.")
         restaurant_id = text_field(data, "restaurantId", 1, 80)
         row = db.execute("SELECT * FROM restaurants WHERE id = ?", (restaurant_id,)).fetchone()
         if not row:
@@ -567,7 +596,11 @@ class Handler(BaseHTTPRequestHandler):
             raise APIError(400, "Le panier est limité à 100 articles pour cette démonstration.")
         subtotal = sum(item["price"] * item["quantity"] for item in items)
         delivery = restaurant["delivery"] + (0 if city == "Cayenne" else 100)
-        if data["expectedTotal"] != subtotal + delivery:
+        code = normalized_code(data.get("promoCode"), required=False)
+        promo, discount = (None, 0)
+        if code:
+            promo, discount = evaluate(db, code, user, restaurant_id, subtotal, delivery)
+        if data["expectedTotal"] != subtotal + delivery - discount:
             raise APIError(409, "Le total a changé. Vérifiez votre panier avant de confirmer la commande.")
         stamp = now_iso()
         order = {
@@ -575,7 +608,10 @@ class Handler(BaseHTTPRequestHandler):
             "restaurantId": restaurant_id, "restaurant": restaurant["name"],
             "customerId": user["id"], "customerName": customer_name,
             "phone": phone, "address": address, "city": city, "details": details, "notes": notes,
-            "status": "pending", "subtotal": subtotal, "delivery": delivery, "total": subtotal + delivery,
+            "status": "pending", "subtotal": subtotal, "delivery": delivery,
+            "discount": discount, "total": subtotal + delivery - discount,
+            "promoCode": promo["code"] if promo else None, "promoLabel": promo["label"] if promo else "",
+            "acceptBy": shifted(stamp, ACCEPTANCE_SECONDS), "eta": None,
             "count": count, "date": stamp, "updatedAt": stamp, "items": items,
             "history": [{"status": "pending", "date": stamp}],
             "courierId": None, "courierName": None,
@@ -584,6 +620,7 @@ class Handler(BaseHTTPRequestHandler):
         }
         db.execute("INSERT INTO orders VALUES (?, ?, ?, ?, ?, ?, ?)", (order["id"], user["id"], restaurant_id, request_id, request_hash, stamp, json.dumps(order, ensure_ascii=False)))
         db.execute("INSERT INTO order_assignments(order_id, courier_id, state) VALUES (?, ?, ?)", (order["id"], None, "pending"))
+        record_use(db, order, user)
         return 201, {"order": order}, None
 
     def serve_static(self, path):
