@@ -33,7 +33,7 @@ class CloudConfigurationTests(unittest.TestCase):
             self.assertIsInstance(database, app.Database)
             self.assertEqual(Path(database.path), path)
             with database.connect() as connection:
-                self.assertEqual(connection.execute("SELECT COUNT(*) FROM users").fetchone()[0], 3)
+                self.assertEqual(connection.execute("SELECT COUNT(*) FROM users").fetchone()[0], 4)
 
     def test_explicit_cloud_state_also_requires_durable_database(self):
         with patch.dict(os.environ, {}, clear=True), patch.object(app, "Database") as local_database:
@@ -57,7 +57,7 @@ class CloudTransportTests(unittest.TestCase):
         config = app.AppConfig(cloud=True, app_origin="https://" + self.HOST,
                                allowed_hosts={self.HOST, self.PREVIEW_HOST})
         self.server = app.ManjeoServer(("127.0.0.1", 0), self.database, static, config=config)
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread = threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True)
         self.thread.start()
         self.port = self.server.server_port
 

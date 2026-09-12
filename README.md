@@ -1,20 +1,21 @@
 # manjéo — Démonstration en ligne
 
-Application de commande de repas pour Cayenne, Rémire-Montjoly et Matoury, avec un espace client, un espace restaurateur et une administration.
+Application de commande de repas pour Cayenne, Rémire-Montjoly et Matoury, avec quatre espaces reliés : client, restaurateur, livreur et administration.
 
 **Adresse du projet : [https://manjeo.vercel.app](https://manjeo.vercel.app).** Le site s’utilise depuis un ordinateur ou un téléphone, sans lancer de serveur local. Pour reprendre le développement sur un autre Mac, suivre le [guide MacBook](docs/REPRENDRE-SUR-MACBOOK.md).
 
 L’interface et l’API Python sont déployées sur Vercel. Les comptes, menus et commandes sont conservés dans PostgreSQL chez Neon et partagés entre les appareils. Les six restaurants, produits, prix, avis et délais sont fictifs ; les photographies sont illustratives. Le paiement et la livraison restent simulés.
 
-## Trois comptes pour tester
+## Quatre comptes pour tester
 
 Mot de passe commun : **`ManjeoDemo2026!`**
 
 | Rôle | Adresse de connexion | Accès |
 | --- | --- | --- |
 | Client | `client@manjeo.test` | Catalogue, panier, commande et historique du compte |
-| Restaurateur | `restaurant@manjeo.test` | Commandes et produits de **Ti Kaz Kréol** |
-| Administrateur | `admin@manjeo.test` | Vue globale des commandes, restaurants et comptes |
+| Restaurateur | `restaurant@manjeo.test` | Commandes, carte et réglages de **Ti Kaz Kréol** |
+| Livreur | `livreur@manjeo.test` | Disponibilité, offres, retrait et remise avec code client |
+| Administrateur | `admin@manjeo.test` | Commandes, cartes, comptes et affectation des livreurs |
 
 Ces comptes de démonstration sont partagés entre les testeurs : saisir uniquement un nom, un téléphone et une adresse fictifs. Le rôle est vérifié côté serveur. Les mots de passe sont hachés ; les sessions utilisent des cookies HttpOnly et Secure en ligne.
 
@@ -22,19 +23,30 @@ Ces comptes de démonstration sont partagés entre les testeurs : saisir uniquem
 
 1. Ouvrir le site et se connecter avec le compte client. Choisir **Ti Kaz Kréol** et ajouter un poulet boucané au panier.
 2. Renseigner des coordonnées fictives et une commune, puis confirmer la commande test. Conserver son numéro.
-3. Se déconnecter et ouvrir le compte restaurateur. Retrouver la commande, l’accepter, puis faire avancer les étapes de préparation et de livraison simulée.
-4. Ouvrir le compte administrateur pour retrouver la même commande dans la vue globale.
-5. Revenir au compte client : l’historique affiche son état courant. On peut aussi ouvrir ce compte sur un autre appareil pour retrouver les commandes de la base en ligne.
+3. Se connecter au compte restaurateur. Accepter la commande, démarrer la préparation et la marquer **Prête au retrait**.
+4. Se connecter au compte livreur, activer sa disponibilité et prendre cette course. Le retrait est possible lorsque le restaurant l’a marquée prête.
+5. Après le retrait, ouvrir le suivi côté client pour lire son code à quatre chiffres. Dans l’espace livreur, saisir ce code pour confirmer la remise fictive. Le restaurant et le livreur ne peuvent pas lire le code dans l’API.
+6. L’admin retrouve la commande, son livreur et les événements. Il peut affecter ou réaffecter une course avant son retrait avec un motif ; il ne peut pas valider une livraison à la place du livreur.
 
-Le compte restaurateur fourni gère uniquement Ti Kaz Kréol. Choisir cette enseigne pour tester le traitement complet. Le catalogue comprend aussi Smash Club, Bowl Tropical, Ciao Cayenne, Crispy Kaz et La Marée Cayennaise.
+Le compte restaurateur fourni gère uniquement Ti Kaz Kréol. Choisir cette enseigne pour tester le traitement complet. Le catalogue comprend aussi Smash Club, Bowl Tropical, Ciao Cayenne, Crispy Kaz et La Marée Cayennaise. Les commandes confirmées sont visibles depuis un autre appareil avec le même compte.
 
-Les grandes portions ajoutent 2 € sur les produits compatibles. La livraison fictive ajoute 1 € hors Cayenne. Le serveur contrôle les produits et options et recalcule les montants en centimes.
+Un livreur ne peut avoir qu’une course active. Les offres affichent le restaurant et la commune de destination ; les coordonnées de livraison deviennent visibles après affectation. Il peut libérer une course avant le retrait avec un motif. Le client peut annuler une commande encore en attente ; le restaurant ou l’admin peuvent l’annuler avant le retrait. Une livraison terminée ne peut pas être modifiée.
+
+## Modifier la carte
+
+Dans l’espace restaurateur, ouvrir **Ma carte** : créer, renommer et réordonner des catégories ; ajouter ou modifier un produit, sa description, son prix, sa photo, ses allergènes, sa disponibilité et ses groupes d’options. Chaque groupe définit un minimum, un maximum et les suppléments de prix de ses choix. Les produits peuvent être archivés puis restaurés. Les photos JPEG, PNG ou WebP sont enregistrées dans la base après validation et réencodage (1 Mo maximum à l’envoi).
+
+Les modifications restent un brouillon jusqu’à **Publier la carte**. Si un autre onglet publie entre-temps, un conflit empêche l’écrasement et permet de conserver le brouillon pour le comparer à la nouvelle carte. L’admin dispose du même éditeur pour tous les restaurants.
+
+Une modification ne change jamais le prix ni les options d’une commande déjà confirmée. Un panier contenant un produit modifié demande une actualisation explicite avant de commander ; les produits retirés ou options supprimées doivent être revus. Le serveur vérifie la version, les options, le prix unitaire et le total, puis calcule les montants en centimes. La livraison fictive ajoute 1 € hors Cayenne.
+
+Le restaurant peut aussi modifier sa présentation, son adresse de retrait, son délai et l’ouverture des commandes. Les règles détaillées et les références utilisées sont dans [le contrat des quatre espaces](docs/FOUR-ROLES-CONTRACT.md).
 
 ## Données et déploiement
 
-La base Neon dédiée au projet utilise le schéma PostgreSQL `manjeo`. Les trois comptes et le catalogue initial sont créés lors de l’initialisation d’une base vide. Les commandes sont conservées entre les déploiements Vercel. Les prévisualisations utilisent le schéma distinct `manjeo_preview` (`MANJEO_DB_SCHEMA` dans l’environnement Preview), pour séparer leurs essais de la démonstration principale.
+La base Neon dédiée au projet utilise le schéma PostgreSQL `manjeo`. Les quatre comptes et le catalogue initial sont créés à l’initialisation. Les migrations ajoutent le rôle livreur et les nouveaux champs aux bases existantes sans remplacer les cartes modifiées, comptes, sessions ou commandes. Les commandes sont conservées entre les déploiements Vercel. Les prévisualisations utilisent le schéma distinct `manjeo_preview` (`MANJEO_DB_SCHEMA` dans l’environnement Preview), pour séparer leurs essais de la démonstration principale.
 
-La branche **`main`** du dépôt [is4acs/manjeo](https://github.com/is4acs/manjeo/tree/main) déclenche les déploiements Production de Vercel. Les branches `codex/…`, dont `codex/database-roles-mvp`, servent au travail et aux déploiements Preview. Tester la Preview, puis intégrer les changements validés dans `main` et pousser cette branche pour publier sur `manjeo.vercel.app`. Vérifier le résultat du déploiement avant de tester la nouvelle version en Production.
+La branche **`main`** du dépôt [is4acs/manjeo](https://github.com/is4acs/manjeo/tree/main) déclenche les déploiements Production de Vercel. Les branches `codex/…`, dont `codex/four-roles-menu-delivery`, servent au travail et aux déploiements Preview. Tester la Preview, puis intégrer les changements validés dans `main` et pousser cette branche pour publier sur `manjeo.vercel.app`. Vérifier le résultat du déploiement avant de tester la nouvelle version en Production.
 
 Configuration serveur dans les variables d’environnement Vercel :
 
@@ -49,15 +61,18 @@ Les anciens essais SQLite de l’ordinateur ne sont pas importés dans Neon. La 
 
 ## Modifier et vérifier le code
 
-Prérequis : Git, Node.js 22.13 ou supérieur avec npm, et Python 3.12 recommandé pour travailler avec le backend PostgreSQL. Cloner le dépôt dans un dossier hors iCloud et ouvrir ce dossier dans Codex ; voir le [guide MacBook](docs/REPRENDRE-SUR-MACBOOK.md).
+Prérequis : Git, Node.js 22.13 ou supérieur avec npm, et Python 3.12 pour le backend et le traitement des photos. Cloner le dépôt dans un dossier hors iCloud et ouvrir ce dossier dans Codex ; voir le [guide MacBook](docs/REPRENDRE-SUR-MACBOOK.md).
 
 ```sh
 npm install
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 npm test
 npm run build:vercel
 ```
 
-Le build vérifie les types TypeScript, puis génère l’interface avec Vite. Les tests SQLite utilisent des bases temporaires. Les tests d’intégration PostgreSQL nécessitent une connexion de test séparée, fournie par `MANJEO_TEST_DATABASE_URL`, et les dépendances de `requirements.txt`. Ne pas utiliser la base de démonstration en ligne comme base de test.
+Le build vérifie les types TypeScript, puis génère l’interface avec Vite. Les tests couvrent le panier client, les permissions, la carte, les migrations, les conflits d’affectation et le code de remise. Les tests SQLite utilisent des bases temporaires. Les tests d’intégration PostgreSQL nécessitent une connexion de test séparée, fournie par `MANJEO_TEST_DATABASE_URL`, et les dépendances de `requirements.txt`. Ne pas utiliser la base de démonstration en ligne comme base de test.
 
 Pour installer les dépendances Python dans un environnement dédié :
 
@@ -69,7 +84,7 @@ python3.12 -m venv .venv
 
 ## Option : développement local avec SQLite
 
-Le mode local permet des essais indépendants de la démonstration en ligne. Sans variable `DATABASE_URL` ni `POSTGRES_URL`, le serveur local utilise `.data/manjeo.sqlite3`, exclue de Git. Python 3.9 ou supérieur suffit pour ce mode SQLite.
+Le mode local permet des essais indépendants de la démonstration en ligne. Sans variable `DATABASE_URL` ni `POSTGRES_URL`, le serveur local utilise `.data/manjeo.sqlite3`, exclue de Git. Utiliser aussi l’environnement Python 3.12 et les dépendances ci-dessus pour disposer du traitement des photos.
 
 ```sh
 npm run build

@@ -2,7 +2,7 @@
 
 ## Utiliser le site
 
-Ouvrir **[https://manjeo.vercel.app](https://manjeo.vercel.app)** sur le MacBook. Aucun clone, installation ou serveur localhost n’est nécessaire pour commander ou utiliser les espaces restaurateur et administrateur.
+Ouvrir **[https://manjeo.vercel.app](https://manjeo.vercel.app)** sur le MacBook. Aucun clone, installation ou serveur localhost n’est nécessaire pour commander ou utiliser les espaces restaurateur, livreur et administrateur.
 
 Les comptes et commandes sont conservés dans la base PostgreSQL Neon commune au site. Le même compte retrouve donc son historique depuis chaque appareil. Les comptes sont partagés pour la démonstration : utiliser uniquement des coordonnées fictives.
 
@@ -12,6 +12,7 @@ Mot de passe commun : **`ManjeoDemo2026!`**
 | --- | --- |
 | Client | `client@manjeo.test` |
 | Restaurateur Ti Kaz Kréol | `restaurant@manjeo.test` |
+| Livreur | `livreur@manjeo.test` |
 | Administration | `admin@manjeo.test` |
 
 ## Continuer le développement dans Codex
@@ -19,7 +20,7 @@ Mot de passe commun : **`ManjeoDemo2026!`**
 La version de référence se trouve sur la branche **`main`** du dépôt [is4acs/manjeo](https://github.com/is4acs/manjeo/tree/main). Vercel publie automatiquement cette branche en Production. Les modifications se préparent sur des branches `codex/…`, avec une Preview pour les tester avant publication.
 
 1. Installer ou ouvrir l’application desktop sur le MacBook, se connecter au même compte ChatGPT et choisir **Codex**. [Guide officiel OpenAI](https://learn.chatgpt.com/docs/quickstart).
-2. Prévoir Git et Node.js 22.13 ou supérieur avec npm. Python 3.12 est recommandé pour modifier et tester le backend PostgreSQL.
+2. Prévoir Git et Node.js 22.13 ou supérieur avec npm. Python 3.12 est utilisé pour le backend PostgreSQL et le traitement des photos.
 3. Dans le Terminal du MacBook, cloner le code dans un dossier hors iCloud :
 
 ```sh
@@ -31,7 +32,7 @@ git clone --branch main https://github.com/is4acs/manjeo.git
 4. Dans Codex, ouvrir **`~/Developer/manjeo`** avec **⌘ O**. [Raccourcis officiels](https://learn.chatgpt.com/docs/reference/commands).
 5. Commencer une tâche avec ce message :
 
-> Lis README.md et docs/REPRENDRE-SUR-MACBOOK.md. Reprends le projet Manjéo à partir de main. Le site de référence est https://manjeo.vercel.app : React, API Python sur Vercel et PostgreSQL Neon, avec les espaces client, restaurateur et admin. Vérifie l’état Git et récupère les changements distants en conservant mon travail local. Pour mes prochaines modifications, travaille sur une branche codex/, teste le code et sa Preview Vercel. La publication du site passe par l’intégration des changements validés dans main. N’ajoute aucune connexion de base secrète au dépôt.
+> Lis README.md et docs/REPRENDRE-SUR-MACBOOK.md. Reprends le projet Manjéo à partir de main. Le site de référence est https://manjeo.vercel.app : React, API Python sur Vercel et PostgreSQL Neon, avec les espaces client, restaurateur, livreur et admin. Lis aussi docs/FOUR-ROLES-CONTRACT.md pour les règles des cartes, affectations et livraisons. Vérifie l’état Git et récupère les changements distants en conservant mon travail local. Pour mes prochaines modifications, travaille sur une branche codex/, teste le code et sa Preview Vercel. La publication du site passe par l’intégration des changements validés dans main. N’ajoute aucune connexion de base secrète au dépôt.
 
 Le site en ligne continue à fonctionner sans laisser un terminal ouvert sur le MacBook. Un clone sert à modifier le code ; il ne donne pas automatiquement accès aux variables secrètes du projet Vercel.
 

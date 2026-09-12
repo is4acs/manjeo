@@ -16,6 +16,8 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from server.test_marketplace import MarketplaceContracts
+
 try:
     from . import app, test_app
 except ImportError:
@@ -26,7 +28,7 @@ TEST_DATABASE_URL = os.environ.get("MANJEO_TEST_DATABASE_URL")
 
 
 @unittest.skipUnless(TEST_DATABASE_URL, "MANJEO_TEST_DATABASE_URL absent : PostgreSQL non testé")
-class PostgresIntegrationTests(test_app.AppIntegrationTests):
+class PostgresIntegrationTests(MarketplaceContracts, test_app.AppIntegrationTests):
     def setUp(self):
         try:
             from .postgres import PostgresDatabase
@@ -45,7 +47,7 @@ class PostgresIntegrationTests(test_app.AppIntegrationTests):
         (static / "index.html").write_text("<html>Manjéo test</html>")
         self.server = app.ManjeoServer(("127.0.0.1", 0), self.database, static,
                                       config=app.AppConfig(cloud=False))
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread = threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True)
         self.thread.start()
         self.addCleanup(self.close_server)
         self.port = self.server.server_port
@@ -107,7 +109,7 @@ class PostgresIntegrationTests(test_app.AppIntegrationTests):
         with reloaded.connect() as connection:
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM orders").fetchone()[0], 1)
             self.assertEqual(connection.execute("SELECT accepting_orders FROM restaurants WHERE id = 'ti-kreol'").fetchone()[0], 0)
-            self.assertEqual(connection.execute("SELECT COUNT(*) FROM users").fetchone()[0], 3)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM users").fetchone()[0], 4)
         self.server.database = reloaded
         self.server.application = app.AppState(reloaded, app.AppConfig(cloud=False))
         order = self.request("GET", "/api/orders", role="client")[0]["orders"][0]
@@ -137,8 +139,19 @@ class PostgresIntegrationTests(test_app.AppIntegrationTests):
         with databases[0].connect() as connection:
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM restaurants").fetchone()[0], 6)
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM products").fetchone()[0], 24)
-            self.assertEqual(connection.execute("SELECT COUNT(*) FROM users").fetchone()[0], 3)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM users").fetchone()[0], 4)
             self.assertEqual(connection.execute("SELECT available FROM products WHERE id = 'kreol-poulet'").fetchone()[0], 0)
+
+    def test_write_locks_are_scoped_to_each_schema(self):
+        # No second schema or table needs to be created: this connection only
+        # acquires an advisory lock. It must remain independent of our held lock.
+        other = copy.copy(self.database)
+        other.schema = "manjeo_test_" + uuid.uuid4().hex
+        with self.database.connect() as first:
+            self.database.begin_write(first)
+            with other.connect() as second:
+                second.execute("SET LOCAL lock_timeout = '750ms'")
+                other.begin_write(second)
 
     def test_failed_login_limit_survives_instances_and_expires(self):
         invalid = {"email": "client@manjeo.test", "password": "wrong"}

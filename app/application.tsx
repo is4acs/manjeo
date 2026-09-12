@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowRight, ChefHat, LogOut, ShieldCheck, ShoppingBag, UserRound } from "lucide-react";
+import { ArrowRight, Bike, ChefHat, LogOut, ShieldCheck, ShoppingBag, UserRound } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,9 +12,10 @@ import "./accounts.css";
 const demos = [
   { role: "client", label: "Client", email: "client@manjeo.test", icon: ShoppingBag },
   { role: "restaurant", label: "Restaurant", email: "restaurant@manjeo.test", icon: ChefHat },
+  { role: "courier", label: "Livreur", email: "livreur@manjeo.test", icon: Bike },
   { role: "admin", label: "Admin", email: "admin@manjeo.test", icon: ShieldCheck },
 ] as const;
-const roleNames: Record<Role, string> = { client: "Espace client", restaurant: "Espace restaurateur", admin: "Administration" };
+const roleNames: Record<Role, string> = { client: "Espace client", restaurant: "Espace restaurateur", courier: "Espace livreur", admin: "Administration" };
 
 export default function Application() {
   const [user, setUser] = useState<User | null>(null);
@@ -66,6 +67,7 @@ export default function Application() {
   const refreshCatalog = useCallback(async () => {
     const data = await api<{restaurants: Restaurant[]}>("/api/restaurants");
     setRestaurants(data.restaurants);
+    return data.restaurants;
   }, []);
   async function login(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (busy) return; setBusy(true); setAuthError("");
@@ -92,20 +94,20 @@ export default function Application() {
   if (loading || initialError) return <main className="app-startup"><span className="brand">manjéo✳</span><div className="startup-card"><ShoppingBag size={32}/><h1>{loading ? "Les bonnes adresses arrivent…" : "La cuisine se fait attendre"}</h1><p>{loading ? "Connexion à Manjéo." : initialError}</p>{initialError && <Button className="primary-btn" onClick={initialize}>Réessayer</Button>}</div></main>;
   return <>
     {staff && user && user.role !== "client"
-      ? <Staff user={user} onLogout={() => void logout()} onShop={() => {setStaff(false); void refreshCatalog().catch(() => {});}}/>
+      ? <Staff key={user.id} user={user} onLogout={() => void logout()} onShop={() => {setStaff(false); void refreshCatalog().catch(() => {});}}/>
       : <Home user={user} restaurants={restaurants} refreshCatalog={refreshCatalog} onAccount={() => {setAuthError("");setAccountOpen(true);}} onStaff={() => setStaff(true)}/>}
     <Dialog open={accountOpen} onOpenChange={open => {if (!busy) setAccountOpen(open);}}><DialogContent className="app-dialog account-dialog">
       {user ? <>
         <div className="account-symbol"><UserRound size={26}/></div><DialogTitle>Bonjour, {user.name}</DialogTitle><DialogDescription>{roleNames[user.role]} · Démonstration partagée</DialogDescription>
         <div className="account-identity"><strong>{user.email}</strong><span>Votre session est connectée.</span></div>
-        {user.role !== "client" && <Button className="primary-btn" onClick={() => {setAccountOpen(false);setStaff(true);}}>Ouvrir {user.role === "admin" ? "l’administration" : "mon restaurant"}<ArrowRight size={17}/></Button>}
+        {user.role !== "client" && <Button className="primary-btn" onClick={() => {setAccountOpen(false);setStaff(true);}}>Ouvrir {user.role === "admin" ? "l’administration" : user.role === "courier" ? "mes livraisons" : "mon restaurant"}<ArrowRight size={17}/></Button>}
         {authError && <p role="alert" className="account-error">{authError}</p>}
         <Button variant="outline" disabled={busy} onClick={() => void logout()}><LogOut size={16}/>{busy ? "Déconnexion…" : "Se déconnecter / changer de compte"}</Button>
       </> : <>
         <div className="account-symbol"><UserRound size={26}/></div><DialogTitle>Bienvenue à table.</DialogTitle><DialogDescription>Connectez-vous pour commander ou gérer votre activité.</DialogDescription>
         <div className="demo-account-picker" aria-label="Comptes de démonstration">{demos.map(({role,label,email:demoEmail,icon:Icon}) => <button key={role} type="button" aria-pressed={email === demoEmail} onClick={() => {setEmail(demoEmail);setPassword("ManjeoDemo2026!");setAuthError("");}}><Icon size={20}/>{label}</button>)}</div>
         <form className="account-form" onSubmit={login}><label>Adresse e-mail<Input type="email" name="email" autoComplete="username" required value={email} onChange={event => setEmail(event.target.value)}/></label><label>Mot de passe<Input type="password" name="password" autoComplete="current-password" required value={password} onChange={event => setPassword(event.target.value)}/></label>{authError && <p role="alert" className="account-error">{authError}</p>}<Button className="primary-btn" type="submit" disabled={busy}>{busy ? "Connexion…" : "Se connecter"}<ArrowRight size={17}/></Button></form>
-        <p className="demo-credentials">3 comptes de démonstration partagés. Mot de passe commun :<br/><code>ManjeoDemo2026!</code></p>
+        <p className="demo-credentials">4 comptes de démonstration partagés. Mot de passe commun :<br/><code>ManjeoDemo2026!</code></p>
       </>}
     </DialogContent></Dialog>
   </>;

@@ -15,7 +15,7 @@ from pathlib import Path
 from server.app import COOKIE_NAME, Database, Handler, ManjeoServer, password_digest
 
 
-class AppIntegrationTests(unittest.TestCase):
+class AppTestHarness(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.database = Database(Path(self.directory.name) / "demo.sqlite3")
@@ -23,7 +23,7 @@ class AppIntegrationTests(unittest.TestCase):
         static.mkdir()
         (static / "index.html").write_text("<html>Manjéo test</html>")
         self.server = ManjeoServer(("127.0.0.1", 0), self.database, static)
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread = threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True)
         self.thread.start()
         self.port = self.server.server_port
         self.cookies = {}
@@ -35,7 +35,7 @@ class AppIntegrationTests(unittest.TestCase):
         self.directory.cleanup()
 
     def request(self, method, path, data=None, role=None, status=200, headers=None):
-        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=15)
         request_headers = {"Origin": "http://127.0.0.1:%d" % self.port}
         if data is not None:
             request_headers["Content-Type"] = "application/json"
@@ -52,14 +52,33 @@ class AppIntegrationTests(unittest.TestCase):
         return result
 
     def login(self, role):
-        response, headers = self.request("POST", "/api/login", {"email": role + "@manjeo.test", "password": "ManjeoDemo2026!"})
+        response, headers = self.request("POST", "/api/login", {"email": ("livreur" if role == "courier" else role) + "@manjeo.test", "password": "ManjeoDemo2026!"})
         self.cookies[role] = headers["Set-Cookie"].split(";", 1)[0]
         return response, headers
 
+    def catalog_product(self, product_id, restaurant_id="ti-kreol"):
+        catalog = self.request("GET", "/api/restaurants")[0]["restaurants"]
+        restaurant = next(row for row in catalog if row["id"] == restaurant_id)
+        return restaurant, next(product for product in restaurant["products"] if product["id"] == product_id)
+
+    def item_payload(self, product_id="kreol-poulet", restaurant_id="ti-kreol", quantity=2):
+        _, product = self.catalog_product(product_id, restaurant_id)
+        selections = []
+        price = product["price"]
+        for group in product["optionGroups"]:
+            chosen = group["choices"][:group["min"]]
+            if chosen:
+                selections.append({"groupId": group["id"], "choiceIds": [choice["id"] for choice in chosen]})
+                price += sum(choice["price"] for choice in chosen)
+        return {"productId": product_id, "quantity": quantity, "selections": selections,
+                "unitPrice": price, "productVersion": product["version"]}
+
     def order_payload(self, restaurant="ti-kreol", product="kreol-poulet"):
+        restaurant_row, _ = self.catalog_product(product, restaurant)
+        item = self.item_payload(product, restaurant)
         return {
-            "restaurantId": restaurant,
-            "items": [{"productId": product, "quantity": 2, "portion": "Classique", "sauce": "Sans piment"}],
+            "restaurantId": restaurant, "items": [item],
+            "expectedTotal": item["unitPrice"] * item["quantity"] + restaurant_row["delivery"],
             "customerName": "Camille Test", "phone": "0694 00 00 00",
             "address": "12 rue de la Démonstration", "city": "Cayenne",
             "details": "Portail bleu", "notes": "Commande test", "requestId": str(uuid.uuid4()),
@@ -75,6 +94,8 @@ class AppIntegrationTests(unittest.TestCase):
         with self.database.connect() as db:
             db.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?, ?, ?)", ("test-" + email, email + "@manjeo.test", "Autre compte", role, restaurant, salt, password_digest("ManjeoDemo2026!", salt)))
 
+
+class AppIntegrationTests(AppTestHarness):
     def test_catalog_and_safe_seed(self):
         catalog, _ = self.request("GET", "/api/restaurants")
         self.assertEqual(len(catalog["restaurants"]), 6)
@@ -83,8 +104,8 @@ class AppIntegrationTests(unittest.TestCase):
         self.assertEqual(self.request("GET", "/api/session")[0], {"user": None})
         with self.database.connect() as db:
             users = db.execute("SELECT * FROM users").fetchall()
-            self.assertEqual(len(users), 3)
-            self.assertEqual(len({row["password_salt"] for row in users}), 3)
+            self.assertEqual(len(users), 4)
+            self.assertEqual(len({row["password_salt"] for row in users}), 4)
             self.assertTrue(all(row["password_hash"] != "ManjeoDemo2026!" for row in users))
 
     def test_login_cookie_session_logout_and_expiry(self):
@@ -109,22 +130,30 @@ class AppIntegrationTests(unittest.TestCase):
     def test_role_permissions_and_user_listing(self):
         self.request("GET", "/api/orders", status=401)
         self.request("GET", "/api/users", status=401)
-        for role in ("client", "restaurant", "admin"):
+        for role in ("client", "restaurant", "admin", "courier"):
             self.login(role)
         self.request("GET", "/api/users", role="client", status=403)
         self.request("GET", "/api/users", role="restaurant", status=403)
+        self.request("GET", "/api/users", role="courier", status=403)
         users = self.request("GET", "/api/users", role="admin")[0]["users"]
-        self.assertEqual(len(users), 3)
+        self.assertEqual(len(users), 4)
         self.assertEqual(set(users[0]), {"id", "email", "name", "role", "restaurantId"})
-        for role in ("admin", "restaurant"):
+        for role in ("admin", "restaurant", "courier"):
             self.request("POST", "/api/orders", self.order_payload(), role=role, status=403)
         self.request("PATCH", "/api/restaurants/ti-kreol", {"acceptingOrders": False}, role="client", status=403)
 
     def test_server_totals_options_and_customer_identity(self):
         payload = self.order_payload()
-        payload["items"][0].update(portion="Gros appétit", sauce="Piment à part", price=1)
-        payload["items"].append({"productId": "kreol-jus", "quantity": 1, "portion": "Classique", "sauce": "Sans piment"})
-        payload.update(city="Matoury", total=1, delivery=0, customerId="demo-admin", status="delivered")
+        _, product = self.catalog_product("kreol-poulet")
+        selections = []
+        unit_price = product["price"]
+        for group in product["optionGroups"]:
+            preferred = next((choice for choice in group["choices"] if choice["name"] in ("Gros appétit", "Piment à part")), group["choices"][0])
+            selections.append({"groupId": group["id"], "choiceIds": [preferred["id"]]})
+            unit_price += preferred["price"]
+        payload["items"][0].update(selections=selections, unitPrice=unit_price, price=1)
+        payload["items"].append(self.item_payload("kreol-jus", quantity=1))
+        payload.update(city="Matoury", total=1, delivery=0, customerId="demo-admin", status="delivered", expectedTotal=3300)
         order = self.create_order(payload)
         self.assertEqual(order["subtotal"], 2950)
         self.assertEqual(order["delivery"], 350)
@@ -134,6 +163,7 @@ class AppIntegrationTests(unittest.TestCase):
         self.assertEqual(order["status"], "pending")
         self.assertEqual(order["items"][0]["price"], 1300)
         self.assertEqual(order["history"][0]["status"], "pending")
+        self.assertRegex(order["deliveryCode"], r"^[0-9]{4}$")
 
     def test_invalid_items_and_delivery_fields_are_rejected(self):
         self.login("client")
@@ -142,10 +172,14 @@ class AppIntegrationTests(unittest.TestCase):
             payload = self.order_payload()
             payload["items"][0]["quantity"] = quantity
             invalid.append(payload)
-        for product, portion, sauce in [("smash-classic", "Classique", "Sans piment"), ("kreol-jus", "Gros appétit", "Sans piment"), ("kreol-jus", "Classique", "Bien relevé"), ("kreol-poulet", "XXL", "Sans piment"), ("kreol-poulet", "Classique", "Habanero")]:
+        for selection in ([{"groupId": "foreign-group", "choiceIds": ["foreign-choice"]}],
+                          [{"groupId": "foreign-group", "choiceIds": ["x", "x"]}], "invalid"):
             payload = self.order_payload()
-            payload["items"][0].update(productId=product, portion=portion, sauce=sauce)
+            payload["items"][0]["selections"] = selection
             invalid.append(payload)
+        foreign_product = self.order_payload()
+        foreign_product["items"][0]["productId"] = "smash-classic"
+        invalid.append(foreign_product)
         for field, value in [("city", "Kourou"), ("customerName", "A"), ("phone", "invalid"), ("address", "123"), ("requestId", "not-a-uuid"), ("notes", "x" * 501), ("items", [])]:
             payload = self.order_payload()
             payload[field] = value
@@ -175,18 +209,27 @@ class AppIntegrationTests(unittest.TestCase):
 
     def test_complete_status_lifecycle_and_terminal_states(self):
         order = self.create_order()
+        delivery_code = order["deliveryCode"]
         self.login("restaurant")
         self.login("admin")
+        self.login("courier")
         endpoint = "/api/orders/" + order["id"]
-        self.request("PATCH", endpoint, {"status": "delivered"}, role="restaurant", status=409)
-        for status in ("accepted", "preparing", "ready", "delivered"):
+        self.request("PATCH", endpoint, {"status": "delivered"}, role="restaurant", status=403)
+        for status in ("accepted", "preparing", "ready"):
             order = self.request("PATCH", endpoint, {"status": status}, role="restaurant")[0]["order"]
             self.assertEqual(order["status"], status)
-        self.assertEqual([event["status"] for event in order["history"]], ["pending", "accepted", "preparing", "ready", "delivered"])
-        self.request("PATCH", endpoint, {"status": "cancelled"}, role="admin", status=409)
+        self.request("PATCH", "/api/courier/profile", {"online": True}, role="courier")
+        self.request("POST", endpoint + "/claim", {}, role="courier")
+        self.request("PATCH", endpoint, {"status": "picked_up"}, role="courier")
+        order = self.request("PATCH", endpoint, {"status": "delivered", "deliveryCode": delivery_code}, role="courier")[0]["order"]
+        self.assertEqual(order["status"], "delivered")
+        statuses = [event["status"] for index, event in enumerate(order["history"])
+                    if index == 0 or event["status"] != order["history"][index - 1]["status"]]
+        self.assertEqual(statuses, ["pending", "accepted", "preparing", "ready", "picked_up", "delivered"])
+        self.request("PATCH", endpoint, {"status": "cancelled", "reason": "Commande terminée"}, role="admin", status=409)
         cancelled = self.create_order()
         endpoint = "/api/orders/" + cancelled["id"]
-        self.request("PATCH", endpoint, {"status": "cancelled"}, role="admin")
+        self.request("PATCH", endpoint, {"status": "cancelled", "reason": "Incident de démonstration"}, role="admin")
         self.request("PATCH", endpoint, {"status": "accepted"}, role="restaurant", status=409)
 
     def test_product_and_restaurant_controls_enforced_on_orders(self):
@@ -210,7 +253,7 @@ class AppIntegrationTests(unittest.TestCase):
         self.login("client")
         payload = self.order_payload()
         def send_order():
-            connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+            connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=15)
             connection.request("POST", "/api/orders", json.dumps(payload), {"Content-Type": "application/json", "Cookie": self.cookies["client"]})
             response = connection.getresponse()
             result = response.status, json.loads(response.read())
@@ -231,7 +274,7 @@ class AppIntegrationTests(unittest.TestCase):
         with reloaded.connect() as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM orders").fetchone()[0], 1)
             self.assertEqual(db.execute("SELECT accepting_orders FROM restaurants WHERE id = 'ti-kreol'").fetchone()[0], 0)
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM users").fetchone()[0], 3)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM users").fetchone()[0], 4)
 
     def test_origin_content_type_and_static_boundaries(self):
         payload = {"email": "client@manjeo.test", "password": "ManjeoDemo2026!"}

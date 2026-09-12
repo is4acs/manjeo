@@ -1,17 +1,21 @@
-export type Role = "client" | "restaurant" | "admin";
+export type Role = "client" | "restaurant" | "courier" | "admin";
 export type User = { id: string; email: string; name: string; role: Role; restaurantId: string | null };
-export type OrderStatus = "pending" | "accepted" | "preparing" | "ready" | "delivered" | "cancelled";
+export type OrderStatus = "pending" | "accepted" | "preparing" | "ready" | "picked_up" | "delivered" | "cancelled";
 export type Order = {
   id: string; restaurantId: string; restaurant: string; customerId: string;
   customerName: string; phone: string; address: string; city: string; details: string; notes: string;
   status: OrderStatus; subtotal: number; delivery: number; total: number; count: number;
   date: string; updatedAt: string;
+  courierId: string | null; courierName: string | null;
+  pickupAddress: string; pickupCity: string; deliveryCode?: string;
   items: { productId: string; name: string; option: string; price: number; quantity: number }[];
-  history: { status: OrderStatus; date: string }[];
+  history: { status: OrderStatus; date: string; label?: string; actorName?: string }[];
 };
+export type CourierProfile = { id: string; name: string; email: string; online: boolean; activeOrderId: string | null };
+export type DeliveryOffer = Pick<Order, "id" | "restaurantId" | "restaurant" | "pickupAddress" | "pickupCity" | "city" | "count" | "status" | "delivery" | "date">;
 export const statusLabels: Record<OrderStatus, string> = {
   pending: "En attente", accepted: "Acceptée", preparing: "En préparation",
-  ready: "Prête à livrer", delivered: "Livrée (test)", cancelled: "Annulée",
+  ready: "Prête au retrait", picked_up: "En livraison", delivered: "Livrée (test)", cancelled: "Annulée",
 };
 export class ApiError extends Error {
   constructor(message: string, public status: number) { super(message); }

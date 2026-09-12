@@ -26,8 +26,9 @@ CITIES = {"Cayenne", "Rémire-Montjoly", "Matoury"}
 TRANSITIONS = {
     "pending": {"accepted", "cancelled"},
     "accepted": {"preparing", "cancelled"},
-    "preparing": {"ready"},
-    "ready": {"delivered"},
+    "preparing": {"ready", "cancelled"},
+    "ready": {"picked_up", "cancelled"},
+    "picked_up": {"delivered"},
     "delivered": set(),
     "cancelled": set(),
 }
@@ -152,7 +153,7 @@ class Database:
                 );
                 CREATE TABLE IF NOT EXISTS users (
                     id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE COLLATE NOCASE,
-                    name TEXT NOT NULL, role TEXT NOT NULL CHECK (role IN ('client','restaurant','admin')),
+                    name TEXT NOT NULL, role TEXT NOT NULL CHECK (role IN ('client','restaurant','admin','courier')),
                     restaurant_id TEXT REFERENCES restaurants(id),
                     password_salt TEXT NOT NULL, password_hash TEXT NOT NULL
                 );
@@ -174,12 +175,31 @@ class Database:
                 );
                 CREATE INDEX IF NOT EXISTS login_attempts_key ON login_attempts(key_hash, attempted_at);
             """)
+            # SQLite cannot alter a CHECK constraint. Rebuild only users while
+            # foreign keys are temporarily disabled, keeping every ID and row.
+            users_sql = db.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'").fetchone()[0]
+            needs_roles_migration = "'courier'" not in users_sql
+            if needs_roles_migration:
+                db.execute("PRAGMA foreign_keys = OFF")
             # Preserve existing local databases from the first MVP.
             for table in ("restaurants", "products"):
                 if "sort_order" not in {row["name"] for row in db.execute("PRAGMA table_info(" + table + ")")}:
                     db.execute("ALTER TABLE " + table + " ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
             self.begin_write(db)
+            if needs_roles_migration:
+                db.execute("""CREATE TABLE users_v2 (
+                    id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                    name TEXT NOT NULL, role TEXT NOT NULL CHECK (role IN ('client','restaurant','admin','courier')),
+                    restaurant_id TEXT REFERENCES restaurants(id),
+                    password_salt TEXT NOT NULL, password_hash TEXT NOT NULL
+                )""")
+                db.execute("INSERT INTO users_v2 SELECT * FROM users")
+                db.execute("DROP TABLE users")
+                db.execute("ALTER TABLE users_v2 RENAME TO users")
             self.seed(db)
+            self.initialize_marketplace(db)
+            if db.execute("PRAGMA foreign_key_check").fetchone():
+                raise RuntimeError("Database migration failed its foreign key check")
 
     def begin_write(self, db):
         db.execute("BEGIN IMMEDIATE")
@@ -187,14 +207,17 @@ class Database:
     def seed(self, db):
         for position, source in enumerate(json.loads(self.catalog_path.read_text())):
             restaurant = {key: value for key, value in source.items() if key not in ("products", "acceptingOrders")}
-            db.execute("INSERT INTO restaurants(id, data, sort_order) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET sort_order = excluded.sort_order", (restaurant["id"], json.dumps(restaurant, ensure_ascii=False), position))
+            if db.execute("SELECT id FROM restaurants WHERE id = ?", (restaurant["id"],)).fetchone():
+                continue
+            db.execute("INSERT INTO restaurants(id, data, sort_order) VALUES (?, ?, ?) ON CONFLICT(id) DO NOTHING", (restaurant["id"], json.dumps(restaurant, ensure_ascii=False), position))
             for product_position, item in enumerate(source["products"]):
                 product = {key: value for key, value in item.items() if key != "available"}
-                db.execute("INSERT INTO products(id, restaurant_id, data, sort_order) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET sort_order = excluded.sort_order", (product["id"], restaurant["id"], json.dumps(product, ensure_ascii=False), product_position))
+                db.execute("INSERT INTO products(id, restaurant_id, data, sort_order) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO NOTHING", (product["id"], restaurant["id"], json.dumps(product, ensure_ascii=False), product_position))
         for user_id, email, name, role, restaurant_id in [
             ("demo-client", "client@manjeo.test", "Camille Test", "client", None),
             ("demo-restaurant", "restaurant@manjeo.test", "Ti Kaz Kréol", "restaurant", "ti-kreol"),
             ("demo-admin", "admin@manjeo.test", "Admin Manjéo", "admin", None),
+            ("demo-courier", "livreur@manjeo.test", "Alex Livraison", "courier", None),
         ]:
             if db.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone():
                 continue
@@ -203,16 +226,25 @@ class Database:
         db.execute("DELETE FROM sessions WHERE expires_at <= ?", (int(time.time()),))
         db.execute("DELETE FROM login_attempts WHERE attempted_at <= ?", (int(time.time()) - 300,))
 
+    def initialize_marketplace(self, db):
+        from .marketplace import initialize_marketplace
+        initialize_marketplace(db)
+
     @staticmethod
     def product(row):
         return {**json.loads(row["data"]), "available": bool(row["available"])}
 
     def restaurant(self, db, row):
-        return {
+        products = [self.product(item) for item in db.execute("SELECT * FROM products WHERE restaurant_id = ? ORDER BY sort_order, id", (row["id"],))]
+        products = [product for product in products if not product.get("archived", False)]
+        result = {
             **json.loads(row["data"]),
             "acceptingOrders": bool(row["accepting_orders"]),
-            "products": [self.product(item) for item in db.execute("SELECT * FROM products WHERE restaurant_id = ? ORDER BY sort_order, id", (row["id"],))],
+            "products": products,
         }
+        available = [product["price"] for product in products if product["available"]]
+        result["from"] = min(available) if available else 0
+        return result
 
 
 class ManjeoServer(ThreadingHTTPServer):
@@ -258,8 +290,10 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             raise APIError(400, "Requête invalide.")
-        if not 0 < length <= 64_000:
-            raise APIError(413 if length > 64_000 else 400, "Taille de requête invalide.")
+        path = urlsplit(self.path).path
+        limit = 1_500_000 if re.fullmatch(r"/api/restaurants/[A-Za-z0-9-]+/(?:images|menu)", path) else 64_000
+        if not 0 < length <= limit:
+            raise APIError(413 if length > limit else 400, "Taille de requête invalide.")
         try:
             data = json.loads(self.rfile.read(length).decode("utf-8"))
         except (ValueError, UnicodeDecodeError):
@@ -361,6 +395,22 @@ class Handler(BaseHTTPRequestHandler):
             with database.connect() as db:
                 if data is not None:
                     database.begin_write(db)
+                match = re.fullmatch(r"/api/images/([a-f0-9]{32})", path)
+                if self.command == "GET" and match:
+                    row = db.execute("SELECT content_type, content_base64 FROM menu_images WHERE id = ?", (match[1],)).fetchone()
+                    if not row:
+                        raise APIError(404, "Image introuvable.")
+                    import base64
+                    body = base64.b64decode(row["content_base64"])
+                    self.send_response(200)
+                    self.send_header("Content-Type", row["content_type"])
+                    self.send_header("Content-Length", str(len(body)))
+                    self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+                    self.send_header("X-Content-Type-Options", "nosniff")
+                    self.send_header("Content-Security-Policy", "default-src 'none'; sandbox")
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
                 status, response, cookie = self.api(db, path, data)
             self.json_response(status, response, cookie)
         except APIError as error:
@@ -373,6 +423,10 @@ class Handler(BaseHTTPRequestHandler):
             self.json_response(500, {"error": "Le serveur a rencontré une erreur. Réessayez."})
 
     def api(self, db, path, data):
+        from .marketplace import handle_marketplace, projected_order
+        response = handle_marketplace(self, db, path, data)
+        if response is not None:
+            return response
         method = self.command
         if method == "GET" and path == "/api/session":
             user = self.user(db)
@@ -414,49 +468,35 @@ class Handler(BaseHTTPRequestHandler):
             self.user(db, {"admin"})
             return 200, {"users": [public_user(row) for row in db.execute("SELECT * FROM users ORDER BY id")]}, None
         if method == "GET" and path == "/api/orders":
-            user = self.user(db, {"client", "restaurant", "admin"})
+            user = self.user(db, {"client", "restaurant", "courier", "admin"})
             clause, args = (" WHERE customer_id = ?", (user["id"],)) if user["role"] == "client" else ((" WHERE restaurant_id = ?", (user["restaurant_id"],)) if user["role"] == "restaurant" else ("", ()))
+            if user["role"] == "courier":
+                clause, args = " WHERE id IN (SELECT order_id FROM order_assignments WHERE courier_id = ?)", (user["id"],)
             rows = db.execute("SELECT data FROM orders" + clause + " ORDER BY created_at DESC, id DESC", args)
-            return 200, {"orders": [json.loads(row["data"]) for row in rows]}, None
+            return 200, {"orders": [projected_order(json.loads(row["data"]), user) for row in rows]}, None
         if method == "POST" and path == "/api/orders":
             return self.create_order(db, data)
-        match = re.fullmatch(r"/api/orders/([A-Za-z0-9-]+)", path)
-        if method == "PATCH" and match:
-            user = self.user(db, {"restaurant", "admin"})
-            row = db.execute("SELECT * FROM orders WHERE id = ?", (match[1],)).fetchone()
-            if not row:
-                raise APIError(404, "Commande introuvable.")
-            if user["role"] == "restaurant" and user["restaurant_id"] != row["restaurant_id"]:
-                raise APIError(403, "Vous ne pouvez traiter que les commandes de votre restaurant.")
-            order = json.loads(row["data"])
-            status = data.get("status")
-            if not isinstance(status, str) or status not in TRANSITIONS[order["status"]]:
-                raise APIError(409, "Ce changement de statut n’est pas autorisé.")
-            order["status"] = status
-            order["updatedAt"] = now_iso()
-            order["history"].append({"status": status, "date": order["updatedAt"]})
-            db.execute("UPDATE orders SET data = ? WHERE id = ?", (json.dumps(order, ensure_ascii=False), order["id"]))
-            return 200, {"order": order}, None
-        match = re.fullmatch(r"/api/restaurants/([A-Za-z0-9-]+)(?:/products/([A-Za-z0-9-]+))?", path)
+        match = re.fullmatch(r"/api/restaurants/([A-Za-z0-9-]+)/products/([A-Za-z0-9-]+)", path)
         if method == "PATCH" and match:
             restaurant = self.managed_restaurant(db, match[1])
-            if match[2]:
-                if type(data.get("available")) is not bool:
-                    raise APIError(400, "La disponibilité doit être vraie ou fausse.")
-                row = db.execute("SELECT * FROM products WHERE id = ? AND restaurant_id = ?", (match[2], match[1])).fetchone()
-                if not row:
-                    raise APIError(404, "Produit introuvable dans ce restaurant.")
-                db.execute("UPDATE products SET available = ? WHERE id = ?", (int(data["available"]), match[2]))
-                return 200, {"product": {**self.state.database.product(row), "available": data["available"]}}, None
-            if type(data.get("acceptingOrders")) is not bool:
-                raise APIError(400, "L’ouverture des commandes doit être vraie ou fausse.")
-            db.execute("UPDATE restaurants SET accepting_orders = ? WHERE id = ?", (int(data["acceptingOrders"]), match[1]))
-            result = self.state.database.restaurant(db, restaurant)
-            result["acceptingOrders"] = data["acceptingOrders"]
-            return 200, {"restaurant": result}, None
+            if set(data) != {"available"} or type(data.get("available")) is not bool:
+                raise APIError(400, "La disponibilité doit être vraie ou fausse.")
+            row = db.execute("SELECT * FROM products WHERE id = ? AND restaurant_id = ?", (match[2], match[1])).fetchone()
+            if not row:
+                raise APIError(404, "Produit introuvable dans ce restaurant.")
+            product = self.state.database.product(row)
+            if product["available"] != data["available"]:
+                product["available"] = data["available"]
+                product["version"] += 1
+                db.execute("UPDATE products SET available = ?, data = ? WHERE id = ?", (int(product["available"]), json.dumps({key: value for key, value in product.items() if key != "available"}, ensure_ascii=False), match[2]))
+                restaurant_data = json.loads(restaurant["data"])
+                restaurant_data["menuVersion"] += 1
+                db.execute("UPDATE restaurants SET data = ? WHERE id = ?", (json.dumps(restaurant_data, ensure_ascii=False), match[1]))
+            return 200, {"product": product}, None
         raise APIError(404, "Cette ressource API n’existe pas.")
 
     def create_order(self, db, data):
+        from .marketplace import selected_price
         user = self.user(db, {"client"})
         request_id = text_field(data, "requestId", 36, 36)
         try:
@@ -470,6 +510,10 @@ class Handler(BaseHTTPRequestHandler):
             if existing["request_hash"] != request_hash:
                 raise APIError(409, "Cet identifiant correspond déjà à une autre commande.")
             return 200, {"order": json.loads(existing["data"])}, None
+        # Old clients must explicitly refresh their basket; never silently adopt
+        # a changed menu price or turn a previous fixed option into a new choice.
+        if type(data.get("expectedTotal")) is not int:
+            raise APIError(409, "La carte a évolué. Rechargez la page et mettez votre panier à jour avant de commander.")
         restaurant_id = text_field(data, "restaurantId", 1, 80)
         row = db.execute("SELECT * FROM restaurants WHERE id = ?", (restaurant_id,)).fetchone()
         if not row:
@@ -501,25 +545,30 @@ class Handler(BaseHTTPRequestHandler):
             if not product_row["available"]:
                 raise APIError(409, "Un produit de votre panier est indisponible.")
             product = json.loads(product_row["data"])
+            if product.get("archived"):
+                raise APIError(409, "Un produit de votre panier a été retiré de la carte.")
             quantity = item.get("quantity")
             if type(quantity) is not int or not 1 <= quantity <= 20:
                 raise APIError(400, "La quantité doit être comprise entre 1 et 20.")
-            portion = item.get("portion")
-            sauce = item.get("sauce")
-            if portion not in ("Classique", "Gros appétit") or sauce not in ("Sans piment", "Piment à part", "Bien relevé"):
-                raise APIError(400, "Une option de produit est invalide.")
-            if not product.get("large") and (portion != "Classique" or sauce != "Sans piment"):
-                raise APIError(400, "Ce produit ne propose pas ces options.")
-            item_key = (product_id, portion, sauce)
+            if type(item.get("productVersion")) is not int or item["productVersion"] != product["version"] or type(item.get("unitPrice")) is not int:
+                raise APIError(409, "Un produit a changé. Mettez votre panier à jour et confirmez les nouveaux choix.")
+            price, label, selections = selected_price(product, item.get("selections"))
+            if item["unitPrice"] != price:
+                raise APIError(409, "Le prix d’un produit a changé. Mettez votre panier à jour.")
+            item_key = (product_id, json.dumps(selections, sort_keys=True))
             if item_key in seen:
                 raise APIError(400, "Regroupez les quantités des produits identiques.")
             seen.add(item_key)
-            items.append({"productId": product_id, "name": product["name"], "option": portion + " · " + sauce, "price": product["price"] + (200 if portion == "Gros appétit" else 0), "quantity": quantity})
+            items.append({"productId": product_id, "name": product["name"], "option": label,
+                          "price": price, "quantity": quantity, "selections": selections,
+                          "productVersion": product["version"]})
         count = sum(item["quantity"] for item in items)
         if count > 100:
             raise APIError(400, "Le panier est limité à 100 articles pour cette démonstration.")
         subtotal = sum(item["price"] * item["quantity"] for item in items)
         delivery = restaurant["delivery"] + (0 if city == "Cayenne" else 100)
+        if data["expectedTotal"] != subtotal + delivery:
+            raise APIError(409, "Le total a changé. Vérifiez votre panier avant de confirmer la commande.")
         stamp = now_iso()
         order = {
             "id": "MJ-" + uuid.uuid4().hex[:12].upper(),
@@ -529,8 +578,12 @@ class Handler(BaseHTTPRequestHandler):
             "status": "pending", "subtotal": subtotal, "delivery": delivery, "total": subtotal + delivery,
             "count": count, "date": stamp, "updatedAt": stamp, "items": items,
             "history": [{"status": "pending", "date": stamp}],
+            "courierId": None, "courierName": None,
+            "pickupAddress": restaurant["pickupAddress"], "pickupCity": restaurant["pickupCity"],
+            "deliveryCode": "%04d" % secrets.randbelow(10_000),
         }
         db.execute("INSERT INTO orders VALUES (?, ?, ?, ?, ?, ?, ?)", (order["id"], user["id"], restaurant_id, request_id, request_hash, stamp, json.dumps(order, ensure_ascii=False)))
+        db.execute("INSERT INTO order_assignments(order_id, courier_id, state) VALUES (?, ?, ?)", (order["id"], None, "pending"))
         return 201, {"order": order}, None
 
     def serve_static(self, path):

@@ -70,8 +70,9 @@ class PostgresDatabase(Database):
 
     def begin_write(self, db):
         # The MVP deliberately preserves SQLite's serialized writes. The lock is
-        # shared across function instances and releases on commit or rollback.
-        db.execute("SELECT pg_advisory_xact_lock(?)", (self.WRITE_LOCK,))
+        # shared across function instances of one schema and releases on commit
+        # or rollback. Isolated QA schemas must not block production traffic.
+        db.execute("SELECT pg_advisory_xact_lock(?, hashtext(?))", (self.WRITE_LOCK, self.schema))
 
     def initialize(self):
         with self.raw_connection() as connection:
@@ -94,7 +95,7 @@ class PostgresDatabase(Database):
                 )""",
                 """CREATE TABLE IF NOT EXISTS users (
                     id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE,
-                    name TEXT NOT NULL, role TEXT NOT NULL CHECK (role IN ('client','restaurant','admin')),
+                    name TEXT NOT NULL, role TEXT NOT NULL CHECK (role IN ('client','restaurant','admin','courier')),
                     restaurant_id TEXT REFERENCES restaurants(id),
                     password_salt TEXT NOT NULL, password_hash TEXT NOT NULL
                 )""",
@@ -118,4 +119,11 @@ class PostgresDatabase(Database):
                 "CREATE INDEX IF NOT EXISTS login_attempts_key ON login_attempts(key_hash, attempted_at)",
             ):
                 db.execute(statement)
+            # Replacing the previous check leaves users, sessions and order
+            # references intact and runs under the shared migration lock.
+            constraint = db.execute("SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conrelid = 'users'::regclass AND conname = 'users_role_check'").fetchone()
+            if constraint and "courier" not in constraint["definition"]:
+                db.execute("ALTER TABLE users DROP CONSTRAINT users_role_check")
+                db.execute("ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('client','restaurant','admin','courier'))")
             self.seed(db)
+            self.initialize_marketplace(db)
