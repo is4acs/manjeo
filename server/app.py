@@ -1,4 +1,4 @@
-"""Local Manjéo demo API and static website; Python standard library only."""
+"""Manjéo demo API: SQLite locally, PostgreSQL behind Vercel Functions."""
 import argparse
 import hashlib
 import hmac
@@ -9,6 +9,7 @@ import re
 import secrets
 import sqlite3
 import time
+import threading
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -50,6 +51,61 @@ class APIError(Exception):
         self.message = message
 
 
+class AppConfig:
+    """Explicit deployment boundaries; forwarded headers never authorize a host."""
+
+    def __init__(self, cloud=None, app_origin=None, allowed_hosts=None):
+        self.cloud = os.environ.get("VERCEL") == "1" if cloud is None else cloud
+        self.secure_cookie = bool(self.cloud)
+        self.allowed_hosts = set()
+        if self.cloud:
+            origin = app_origin or os.environ.get("APP_ORIGIN", "https://manjeo.vercel.app")
+            parsed = urlsplit(origin)
+            if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.path not in ("", "/") or parsed.query or parsed.fragment:
+                raise APIError(503, "L’origine HTTPS de l’application est mal configurée.")
+            self.allowed_hosts.add(parsed.netloc.lower())
+            for variable in ("VERCEL_URL", "VERCEL_BRANCH_URL", "VERCEL_PROJECT_PRODUCTION_URL"):
+                value = os.environ.get(variable, "").strip().lower()
+                if value:
+                    self.allowed_hosts.add(value)
+            if allowed_hosts:
+                self.allowed_hosts.update(host.lower() for host in allowed_hosts)
+            for host in self.allowed_hosts:
+                # A strict hostname, optionally with an explicit HTTPS port; no wildcards.
+                if not re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[0-9]{1,5})?", host):
+                    raise APIError(503, "Un domaine autorisé de l’application est mal configuré.")
+
+
+def create_database_from_environment(cloud=None):
+    cloud = os.environ.get("VERCEL") == "1" if cloud is None else cloud
+    dsn = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
+    if dsn:
+        try:
+            from .postgres import PostgresDatabase
+        except ImportError:
+            raise APIError(503, "Le connecteur de la base de données est indisponible.") from None
+        return PostgresDatabase(dsn)
+    if cloud:
+        raise APIError(503, "La base de données en ligne n’est pas encore configurée.")
+    return Database(os.environ.get("MANJEO_DB", str(ROOT / ".data/manjeo.sqlite3")))
+
+
+class AppState:
+    def __init__(self, database=None, config=None):
+        self._database = database
+        self.config = config or AppConfig()
+        self._database_lock = threading.Lock()
+
+    @property
+    def database(self):
+        if self._database is None:
+            with self._database_lock:
+                if self._database is None:
+                    # A failed initialization is not cached, allowing recovery after a transient outage.
+                    self._database = create_database_from_environment(cloud=self.config.cloud)
+        return self._database
+
+
 def text_field(data, field, minimum=0, maximum=500):
     value = data.get(field, "")
     if not isinstance(value, str) or not minimum <= len(value.strip()) <= maximum:
@@ -58,6 +114,8 @@ def text_field(data, field, minimum=0, maximum=500):
 
 
 class Database:
+    row_order = "sort_order"
+
     def __init__(self, path, catalog_path=None):
         self.path = str(path)
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
@@ -84,11 +142,13 @@ class Database:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS restaurants (
                     id TEXT PRIMARY KEY, data TEXT NOT NULL,
-                    accepting_orders INTEGER NOT NULL DEFAULT 1 CHECK (accepting_orders IN (0,1))
+                    accepting_orders INTEGER NOT NULL DEFAULT 1 CHECK (accepting_orders IN (0,1)),
+                    sort_order INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE TABLE IF NOT EXISTS products (
                     id TEXT PRIMARY KEY, restaurant_id TEXT NOT NULL REFERENCES restaurants(id),
-                    data TEXT NOT NULL, available INTEGER NOT NULL DEFAULT 1 CHECK (available IN (0,1))
+                    data TEXT NOT NULL, available INTEGER NOT NULL DEFAULT 1 CHECK (available IN (0,1)),
+                    sort_order INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE TABLE IF NOT EXISTS users (
                     id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -109,23 +169,39 @@ class Database:
                 );
                 CREATE INDEX IF NOT EXISTS orders_customer ON orders(customer_id, created_at);
                 CREATE INDEX IF NOT EXISTS orders_restaurant ON orders(restaurant_id, created_at);
+                CREATE TABLE IF NOT EXISTS login_attempts (
+                    key_hash TEXT NOT NULL, attempted_at INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS login_attempts_key ON login_attempts(key_hash, attempted_at);
             """)
-            for source in json.loads(self.catalog_path.read_text()):
-                restaurant = {key: value for key, value in source.items() if key not in ("products", "acceptingOrders")}
-                db.execute("INSERT OR IGNORE INTO restaurants(id, data) VALUES (?, ?)", (restaurant["id"], json.dumps(restaurant, ensure_ascii=False)))
-                for item in source["products"]:
-                    product = {key: value for key, value in item.items() if key != "available"}
-                    db.execute("INSERT OR IGNORE INTO products(id, restaurant_id, data) VALUES (?, ?, ?)", (product["id"], restaurant["id"], json.dumps(product, ensure_ascii=False)))
-            for user_id, email, name, role, restaurant_id in [
-                ("demo-client", "client@manjeo.test", "Camille Test", "client", None),
-                ("demo-restaurant", "restaurant@manjeo.test", "Ti Kaz Kréol", "restaurant", "ti-kreol"),
-                ("demo-admin", "admin@manjeo.test", "Admin Manjéo", "admin", None),
-            ]:
-                if db.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone():
-                    continue
-                salt = secrets.token_hex(16)
-                db.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?, ?, ?)", (user_id, email, name, role, restaurant_id, salt, password_digest("ManjeoDemo2026!", salt)))
-            db.execute("DELETE FROM sessions WHERE expires_at <= ?", (int(time.time()),))
+            # Preserve existing local databases from the first MVP.
+            for table in ("restaurants", "products"):
+                if "sort_order" not in {row["name"] for row in db.execute("PRAGMA table_info(" + table + ")")}:
+                    db.execute("ALTER TABLE " + table + " ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
+            self.begin_write(db)
+            self.seed(db)
+
+    def begin_write(self, db):
+        db.execute("BEGIN IMMEDIATE")
+
+    def seed(self, db):
+        for position, source in enumerate(json.loads(self.catalog_path.read_text())):
+            restaurant = {key: value for key, value in source.items() if key not in ("products", "acceptingOrders")}
+            db.execute("INSERT INTO restaurants(id, data, sort_order) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET sort_order = excluded.sort_order", (restaurant["id"], json.dumps(restaurant, ensure_ascii=False), position))
+            for product_position, item in enumerate(source["products"]):
+                product = {key: value for key, value in item.items() if key != "available"}
+                db.execute("INSERT INTO products(id, restaurant_id, data, sort_order) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET sort_order = excluded.sort_order", (product["id"], restaurant["id"], json.dumps(product, ensure_ascii=False), product_position))
+        for user_id, email, name, role, restaurant_id in [
+            ("demo-client", "client@manjeo.test", "Camille Test", "client", None),
+            ("demo-restaurant", "restaurant@manjeo.test", "Ti Kaz Kréol", "restaurant", "ti-kreol"),
+            ("demo-admin", "admin@manjeo.test", "Admin Manjéo", "admin", None),
+        ]:
+            if db.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone():
+                continue
+            salt = secrets.token_hex(16)
+            db.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING", (user_id, email, name, role, restaurant_id, salt, password_digest("ManjeoDemo2026!", salt)))
+        db.execute("DELETE FROM sessions WHERE expires_at <= ?", (int(time.time()),))
+        db.execute("DELETE FROM login_attempts WHERE attempted_at <= ?", (int(time.time()) - 300,))
 
     @staticmethod
     def product(row):
@@ -135,22 +211,27 @@ class Database:
         return {
             **json.loads(row["data"]),
             "acceptingOrders": bool(row["accepting_orders"]),
-            "products": [self.product(item) for item in db.execute("SELECT * FROM products WHERE restaurant_id = ? ORDER BY rowid", (row["id"],))],
+            "products": [self.product(item) for item in db.execute("SELECT * FROM products WHERE restaurant_id = ? ORDER BY sort_order, id", (row["id"],))],
         }
 
 
 class ManjeoServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address, database, static_dir=None):
+    def __init__(self, address, database, static_dir=None, config=None):
         self.database = database
+        self.application = AppState(database, config)
         self.static_dir = Path(static_dir or ROOT / "dist").resolve()
-        self.login_failures = {}
         super().__init__(address, Handler)
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "ManjeoLocal/1.0"
+    server_version = "Manjeo/1.0"
+
+    @property
+    def state(self):
+        application = getattr(self, "application", None)
+        return application if application is not None else self.server.application
 
     def log_message(self, format, *args):
         # The URL contains no credentials or customer details.
@@ -189,17 +270,43 @@ class Handler(BaseHTTPRequestHandler):
 
     def check_origin(self):
         host = self.headers.get("Host", "")
+        if not host or any(char in host for char in ("/", "@", "\\", ",", " ", "\t", "\r", "\n")):
+            raise APIError(403, "Domaine de la requête refusé.")
         try:
             hostname = urlsplit("http://" + host).hostname
         except ValueError:
             hostname = None
-        if hostname not in ("127.0.0.1", "localhost", "::1") or any(char in host for char in ("/", "@", "\\")):
-            raise APIError(403, "Cette démonstration est accessible en local uniquement.")
+        config = self.state.config
+        if config.cloud:
+            if host.lower() not in config.allowed_hosts:
+                raise APIError(403, "Domaine de la requête refusé.")
+            scheme = "https"
+        else:
+            if hostname not in ("127.0.0.1", "localhost", "::1"):
+                raise APIError(403, "Cette démonstration est accessible en local uniquement.")
+            scheme = "http"
         origin = self.headers.get("Origin")
-        if origin and origin != "http://" + host:
+        if origin and origin != scheme + "://" + host:
             raise APIError(403, "Origine de la requête refusée.")
         if self.headers.get("Sec-Fetch-Site") == "cross-site":
             raise APIError(403, "Origine de la requête refusée.")
+
+    def session_cookie(self, token="", max_age=0):
+        result = "%s=%s; HttpOnly; SameSite=Strict; Path=/; Max-Age=%s" % (COOKIE_NAME, token, max_age)
+        return result + ("; Secure" if self.state.config.secure_cookie else "")
+
+    def login_address(self):
+        address = self.client_address[0]
+        if self.state.config.cloud:
+            # Vercel overwrites this value at the trusted edge. Ignore it in local mode.
+            address = self.headers.get("x-vercel-forwarded-for", address).split(",", 1)[0].strip()
+        return address
+
+    def login_key(self, email):
+        return hashlib.sha256((self.login_address() + "|" + email).encode()).hexdigest()
+
+    def login_ip_key(self):
+        return hashlib.sha256(("ip|" + self.login_address()).encode()).hexdigest()
 
     def session_hash(self):
         cookie = SimpleCookie()
@@ -230,18 +337,18 @@ class Handler(BaseHTTPRequestHandler):
         return row
 
     def do_GET(self):
-        self.handle_request()
+        self.dispatch_api()
 
     def do_POST(self):
-        self.handle_request()
+        self.dispatch_api()
 
     def do_PATCH(self):
-        self.handle_request()
+        self.dispatch_api()
 
     def do_OPTIONS(self):
         self.json_response(403, {"error": "Les requêtes depuis une autre origine sont refusées."})
 
-    def handle_request(self):
+    def dispatch_api(self):
         try:
             self.check_origin()
             path = urlsplit(self.path).path
@@ -250,9 +357,10 @@ class Handler(BaseHTTPRequestHandler):
                     raise APIError(405, "Méthode non autorisée.")
                 return self.serve_static(path)
             data = self.read_json() if self.command in {"POST", "PATCH"} else None
-            with self.server.database.connect() as db:
+            database = self.state.database
+            with database.connect() as db:
                 if data is not None:
-                    db.execute("BEGIN IMMEDIATE")
+                    database.begin_write(db)
                 status, response, cookie = self.api(db, path, data)
             self.json_response(status, response, cookie)
         except APIError as error:
@@ -270,38 +378,45 @@ class Handler(BaseHTTPRequestHandler):
             user = self.user(db)
             return 200, {"user": public_user(user) if user else None}, None
         if method == "POST" and path == "/api/login":
-            key = self.client_address[0]
-            failures = [stamp for stamp in self.server.login_failures.get(key, []) if stamp > time.time() - 300]
-            self.server.login_failures[key] = failures
-            if len(failures) >= 20:
-                raise APIError(429, "Trop de tentatives. Réessayez dans cinq minutes.")
             email = text_field(data, "email", 3, 254).lower()
             password = text_field(data, "password", 1, 200)
-            row = db.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+            key = self.login_key(email)
+            ip_key = self.login_ip_key()
+            stamp = int(time.time())
+            db.execute("DELETE FROM login_attempts WHERE attempted_at <= ?", (stamp - 300,))
+            failures = db.execute("SELECT COUNT(*) FROM login_attempts WHERE key_hash = ?", (key,)).fetchone()[0]
+            ip_failures = db.execute("SELECT COUNT(*) FROM login_attempts WHERE key_hash = ?", (ip_key,)).fetchone()[0]
+            if failures >= 20 or ip_failures >= 60:
+                return 429, {"error": "Trop de tentatives. Réessayez dans cinq minutes."}, None
+            row = db.execute("SELECT * FROM users WHERE lower(email) = ?", (email,)).fetchone()
             # An unknown email still incurs the password hashing cost.
             salt = row["password_salt"] if row else "00" * 16
             digest = password_digest(password, salt)
             if not row or not hmac.compare_digest(digest, row["password_hash"]):
-                failures.append(time.time())
-                raise APIError(401, "Adresse e-mail ou mot de passe incorrect.")
-            self.server.login_failures.pop(key, None)
+                db.execute("INSERT INTO login_attempts(key_hash, attempted_at) VALUES (?, ?)", (key, stamp))
+                db.execute("INSERT INTO login_attempts(key_hash, attempted_at) VALUES (?, ?)", (ip_key, stamp))
+                # Return the error normally so the failure survives the transaction commit.
+                return 401, {"error": "Adresse e-mail ou mot de passe incorrect."}, None
+            # A successful login clears this account's failures, not the IP budget;
+            # switching between accounts cannot reset the cross-account throttle.
+            db.execute("DELETE FROM login_attempts WHERE key_hash = ?", (key,))
             token = secrets.token_urlsafe(32)
             db.execute("DELETE FROM sessions WHERE token_hash = ? OR expires_at <= ?", (self.session_hash(), int(time.time())))
             db.execute("INSERT INTO sessions VALUES (?, ?, ?)", (hashlib.sha256(token.encode()).hexdigest(), row["id"], int(time.time()) + SESSION_SECONDS))
-            return 200, {"user": public_user(row)}, "%s=%s; HttpOnly; SameSite=Strict; Path=/; Max-Age=%s" % (COOKIE_NAME, token, SESSION_SECONDS)
+            return 200, {"user": public_user(row)}, self.session_cookie(token, SESSION_SECONDS)
         if method == "POST" and path == "/api/logout":
             db.execute("DELETE FROM sessions WHERE token_hash = ?", (self.session_hash(),))
-            return 200, {"ok": True}, COOKIE_NAME + "=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"
+            return 200, {"ok": True}, self.session_cookie()
         if method == "GET" and path == "/api/restaurants":
-            rows = db.execute("SELECT * FROM restaurants ORDER BY rowid").fetchall()
-            return 200, {"restaurants": [self.server.database.restaurant(db, row) for row in rows]}, None
+            rows = db.execute("SELECT * FROM restaurants ORDER BY sort_order, id").fetchall()
+            return 200, {"restaurants": [self.state.database.restaurant(db, row) for row in rows]}, None
         if method == "GET" and path == "/api/users":
             self.user(db, {"admin"})
-            return 200, {"users": [public_user(row) for row in db.execute("SELECT * FROM users ORDER BY rowid")]}, None
+            return 200, {"users": [public_user(row) for row in db.execute("SELECT * FROM users ORDER BY id")]}, None
         if method == "GET" and path == "/api/orders":
             user = self.user(db, {"client", "restaurant", "admin"})
             clause, args = (" WHERE customer_id = ?", (user["id"],)) if user["role"] == "client" else ((" WHERE restaurant_id = ?", (user["restaurant_id"],)) if user["role"] == "restaurant" else ("", ()))
-            rows = db.execute("SELECT data FROM orders" + clause + " ORDER BY created_at DESC, rowid DESC", args)
+            rows = db.execute("SELECT data FROM orders" + clause + " ORDER BY created_at DESC, id DESC", args)
             return 200, {"orders": [json.loads(row["data"]) for row in rows]}, None
         if method == "POST" and path == "/api/orders":
             return self.create_order(db, data)
@@ -332,11 +447,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not row:
                     raise APIError(404, "Produit introuvable dans ce restaurant.")
                 db.execute("UPDATE products SET available = ? WHERE id = ?", (int(data["available"]), match[2]))
-                return 200, {"product": {**self.server.database.product(row), "available": data["available"]}}, None
+                return 200, {"product": {**self.state.database.product(row), "available": data["available"]}}, None
             if type(data.get("acceptingOrders")) is not bool:
                 raise APIError(400, "L’ouverture des commandes doit être vraie ou fausse.")
             db.execute("UPDATE restaurants SET accepting_orders = ? WHERE id = ?", (int(data["acceptingOrders"]), match[1]))
-            result = self.server.database.restaurant(db, restaurant)
+            result = self.state.database.restaurant(db, restaurant)
             result["acceptingOrders"] = data["acceptingOrders"]
             return 200, {"restaurant": result}, None
         raise APIError(404, "Cette ressource API n’existe pas.")
@@ -443,14 +558,13 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Serveur de démonstration local Manjéo")
+    parser = argparse.ArgumentParser(description="Serveur de démonstration Manjéo")
     parser.add_argument("--port", type=int, default=5173)
     args = parser.parse_args()
-    path = os.environ.get("MANJEO_DB", str(ROOT / ".data/manjeo.sqlite3"))
-    database = Database(path)
+    database = create_database_from_environment()
     server = ManjeoServer(("127.0.0.1", args.port), database)
     print("Manjéo : http://127.0.0.1:%d/" % args.port, flush=True)
-    print("Base SQLite : %s" % Path(path).resolve(), flush=True)
+    print("Base : PostgreSQL" if hasattr(database, "dsn") else "Base SQLite : %s" % Path(database.path).resolve(), flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -460,4 +574,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # Keep the package identity consistent when launched with `python server/app.py`.
+    import sys
+    sys.path.insert(0, str(ROOT))
+    from server.app import main as run
+    run()

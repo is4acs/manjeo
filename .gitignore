@@ -59,3 +59,6 @@ next-env.d.ts
 *.sqlite3-journal
 __pycache__/
 *.py[cod]
+
+# Python development environment
+/.venv/

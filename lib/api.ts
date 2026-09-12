@@ -32,6 +32,6 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     return data as T;
   } catch (error) {
     if (error instanceof ApiError) throw error;
-    throw new Error("Le serveur local ne répond pas. Réessayez dans quelques instants.");
+    throw new Error("Le serveur ne répond pas. Réessayez dans quelques instants.");
   } finally { window.clearTimeout(timer); }
 }

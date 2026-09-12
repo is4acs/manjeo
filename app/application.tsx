@@ -38,7 +38,7 @@ export default function Application() {
     setLoading(true); setInitialError("");
     try {
       const [session, catalog] = await Promise.all([api<{user: User | null}>("/api/session"), api<{restaurants: Restaurant[]}>("/api/restaurants")]);
-      if (!catalog.restaurants.length) throw new Error("Le catalogue est vide. Relancez le serveur local.");
+      if (!catalog.restaurants.length) throw new Error("Le catalogue est indisponible. Réessayez dans quelques instants.");
       setUser(session.user); setStaff(!!session.user && session.user.role !== "client"); setRestaurants(catalog.restaurants);
     } catch (error) { setInitialError((error as Error).message); }
     finally { setLoading(false); }
@@ -89,14 +89,14 @@ export default function Application() {
     } catch (error) { setAccountOpen(true); setAuthError((error as Error).message); }
     finally { setBusy(false); }
   }
-  if (loading || initialError) return <main className="app-startup"><span className="brand">manjéo✳</span><div className="startup-card"><ShoppingBag size={32}/><h1>{loading ? "Les bonnes adresses arrivent…" : "La cuisine se fait attendre"}</h1><p>{loading ? "Connexion à votre démo locale." : initialError}</p>{initialError && <Button className="primary-btn" onClick={initialize}>Réessayer</Button>}</div></main>;
+  if (loading || initialError) return <main className="app-startup"><span className="brand">manjéo✳</span><div className="startup-card"><ShoppingBag size={32}/><h1>{loading ? "Les bonnes adresses arrivent…" : "La cuisine se fait attendre"}</h1><p>{loading ? "Connexion à Manjéo." : initialError}</p>{initialError && <Button className="primary-btn" onClick={initialize}>Réessayer</Button>}</div></main>;
   return <>
     {staff && user && user.role !== "client"
       ? <Staff user={user} onLogout={() => void logout()} onShop={() => {setStaff(false); void refreshCatalog().catch(() => {});}}/>
       : <Home user={user} restaurants={restaurants} refreshCatalog={refreshCatalog} onAccount={() => {setAuthError("");setAccountOpen(true);}} onStaff={() => setStaff(true)}/>}
     <Dialog open={accountOpen} onOpenChange={open => {if (!busy) setAccountOpen(open);}}><DialogContent className="app-dialog account-dialog">
       {user ? <>
-        <div className="account-symbol"><UserRound size={26}/></div><DialogTitle>Bonjour, {user.name}</DialogTitle><DialogDescription>{roleNames[user.role]} · Démonstration locale</DialogDescription>
+        <div className="account-symbol"><UserRound size={26}/></div><DialogTitle>Bonjour, {user.name}</DialogTitle><DialogDescription>{roleNames[user.role]} · Démonstration partagée</DialogDescription>
         <div className="account-identity"><strong>{user.email}</strong><span>Votre session est connectée.</span></div>
         {user.role !== "client" && <Button className="primary-btn" onClick={() => {setAccountOpen(false);setStaff(true);}}>Ouvrir {user.role === "admin" ? "l’administration" : "mon restaurant"}<ArrowRight size={17}/></Button>}
         {authError && <p role="alert" className="account-error">{authError}</p>}
@@ -105,7 +105,7 @@ export default function Application() {
         <div className="account-symbol"><UserRound size={26}/></div><DialogTitle>Bienvenue à table.</DialogTitle><DialogDescription>Connectez-vous pour commander ou gérer votre activité.</DialogDescription>
         <div className="demo-account-picker" aria-label="Comptes de démonstration">{demos.map(({role,label,email:demoEmail,icon:Icon}) => <button key={role} type="button" aria-pressed={email === demoEmail} onClick={() => {setEmail(demoEmail);setPassword("ManjeoDemo2026!");setAuthError("");}}><Icon size={20}/>{label}</button>)}</div>
         <form className="account-form" onSubmit={login}><label>Adresse e-mail<Input type="email" name="email" autoComplete="username" required value={email} onChange={event => setEmail(event.target.value)}/></label><label>Mot de passe<Input type="password" name="password" autoComplete="current-password" required value={password} onChange={event => setPassword(event.target.value)}/></label>{authError && <p role="alert" className="account-error">{authError}</p>}<Button className="primary-btn" type="submit" disabled={busy}>{busy ? "Connexion…" : "Se connecter"}<ArrowRight size={17}/></Button></form>
-        <p className="demo-credentials">3 comptes prêts à tester. Mot de passe commun :<br/><code>ManjeoDemo2026!</code></p>
+        <p className="demo-credentials">3 comptes de démonstration partagés. Mot de passe commun :<br/><code>ManjeoDemo2026!</code></p>
       </>}
     </DialogContent></Dialog>
   </>;

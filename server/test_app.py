@@ -12,10 +12,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-try:
-    from .app import COOKIE_NAME, Database, Handler, ManjeoServer, password_digest
-except ImportError:
-    from app import COOKIE_NAME, Database, Handler, ManjeoServer, password_digest
+from server.app import COOKIE_NAME, Database, Handler, ManjeoServer, password_digest
 
 
 class AppIntegrationTests(unittest.TestCase):
