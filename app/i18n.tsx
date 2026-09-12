@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { Check, ChevronDown, Languages } from 'lucide-react';
+import { Check, ChevronDown } from 'lucide-react';
 import { DropdownMenu } from 'radix-ui';
 import { getLanguage, languageOptions, normalizeLanguage, setLanguageValue, subscribeLanguage, type UILanguage } from '@/lib/i18n';
 import './i18n.css';
@@ -64,10 +64,9 @@ export function LanguageBar({onChange, disabled = false}: {onChange:(value:UILan
   const [open, setOpen] = useState(false);
   const selected = languageOptions.find(option => option.code === language)!;
   useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
-  return <div className="language-bar">
-    <span className="language-caption" aria-hidden="true"><Languages size={16}/><span>Langue · Lang · Idioma</span></span>
+  return <div className="language-selector">
     <DropdownMenu.Root modal={false} open={open} onOpenChange={value => { if (!disabled) setOpen(value); }}>
-      <DropdownMenu.Trigger asChild><button className="language-trigger" type="button" disabled={disabled} aria-label={`${selectorLabel} : ${selected.label}`}><LanguageFlag language={language}/><span lang={selected.tag}>{selected.label}</span><ChevronDown size={16} aria-hidden="true"/></button></DropdownMenu.Trigger>
+      <DropdownMenu.Trigger asChild><button className="language-trigger" type="button" disabled={disabled} aria-label={`${selectorLabel} : ${selected.label}`}><LanguageFlag language={language}/><span className="language-code" aria-hidden="true">{selected.code.toUpperCase()}</span><ChevronDown size={16} aria-hidden="true"/></button></DropdownMenu.Trigger>
       <DropdownMenu.Portal><DropdownMenu.Content className="language-menu" side="bottom" align="end" sideOffset={8} avoidCollisions={false} aria-label={selectorLabel}>
         <DropdownMenu.RadioGroup value={language} onValueChange={value => { const supported = normalizeLanguage(value); if (supported && !disabled) onChange(supported); }}>
           {languageOptions.map(option => <DropdownMenu.RadioItem className="language-option" key={option.code} value={option.code} lang={option.tag}><LanguageFlag language={option.code}/><span>{option.label}</span><DropdownMenu.ItemIndicator className="language-selected"><Check size={17} aria-hidden="true"/></DropdownMenu.ItemIndicator></DropdownMenu.RadioItem>)}

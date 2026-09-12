@@ -5,6 +5,7 @@ import { XIcon } from "lucide-react"
 import { Dialog as SheetPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+import { dialogFocusHandlers } from "@/components/ui/dialog-focus"
 import { t } from "@/lib/i18n"
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
@@ -73,6 +74,7 @@ function SheetContent({
           className
         )}
         {...props}
+        {...dialogFocusHandlers(props)}
       >
         {children}
         {showCloseButton && (

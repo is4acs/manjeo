@@ -92,11 +92,11 @@ function OrderCard({ order, admin, busy, onStatus, couriers, onAssign, onRefund,
   </article>;
 }
 
-export default function Staff(props: { user: User; onLogout: () => void; onShop: () => void; onAccount: () => void }) {
+export default function Staff(props: { user: User; onLogout: () => void; onShop: () => void; onAccount: () => void; languageControl?: React.ReactNode }) {
   return props.user.role === "courier" ? <Courier key={props.user.id} {...props} /> : <StaffDashboard key={props.user.id} {...props} />;
 }
 
-function StaffDashboard({ user, onLogout, onShop, onAccount }: { user: User; onLogout: () => void; onShop: () => void; onAccount: () => void }) {
+function StaffDashboard({ user, onLogout, onShop, onAccount, languageControl }: { user: User; onLogout: () => void; onShop: () => void; onAccount: () => void; languageControl?: React.ReactNode }) {
   const admin = user.role === "admin";
   const [tab, setTab] = useState<StaffTab>("orders");
   const [orders, setOrders] = useState<Order[]>([]);
@@ -228,7 +228,7 @@ function StaffDashboard({ user, onLogout, onShop, onAccount }: { user: User; onL
     <header className="staff-header"><div className="staff-header-inner">
       <button type="button" className="staff-brand" onClick={onShop} aria-label={t("Manjéo, voir la vitrine")}>manjéo<span>•</span></button>
       <span className="staff-space-label">{admin ? <ShieldCheck size={17} /> : <ChefHat size={18} />}{admin ? t("Administration") : t("Espace restaurateur")}</span>
-      <div className="staff-header-actions"><button type="button" className="staff-shop-link" onClick={onShop} aria-label={t("Voir la vitrine")}><ArrowLeft size={15} /><span>{t("Voir la vitrine")}</span></button><button type="button" className="staff-shop-link" onClick={onAccount} aria-label={t("Mon compte")}><UserRound size={15} /><span>{t("Mon compte")}</span></button><button type="button" className="staff-logout" onClick={onLogout} aria-label={t("Déconnexion")}><LogOut size={16} /><span>{t("Déconnexion")}</span></button></div>
+      <div className="staff-header-actions"><button type="button" className="staff-shop-link" onClick={onShop} aria-label={t("Voir la vitrine")}><ArrowLeft size={15} /><span>{t("Voir la vitrine")}</span></button><button type="button" className="staff-shop-link" onClick={onAccount} aria-label={t("Mon compte")}><UserRound size={15} /><span>{t("Mon compte")}</span></button><button type="button" className="staff-logout" onClick={onLogout} aria-label={t("Déconnexion")}><LogOut size={16} /><span>{t("Déconnexion")}</span></button>{languageControl}</div>
     </div></header>
 
     <main className="staff-main">

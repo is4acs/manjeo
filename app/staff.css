@@ -32,3 +32,13 @@
 .staff-app .chat-replies button{border:2px solid var(--ink);border-radius:999px;padding:0 14px}
 .staff-app .chat-replies button:hover:not(:disabled){background:var(--punch)}
 .staff-app .chat-origin button{text-decoration:underline}
+
+/* Compact language control shares the primary header with account actions. */
+.staff-header-actions{gap:16px;min-width:0}
+.staff-header-inner .staff-space-label{min-width:0}
+@media(max-width:760px){
+ .staff-header-inner{padding-top:12px;padding-bottom:12px}
+ .staff-header-actions{flex:0 0 100%;justify-content:flex-end;gap:8px}
+ .staff-header-actions .staff-shop-link,.staff-header-actions .staff-logout{width:40px;min-width:40px;padding:0;min-height:44px}
+ .staff-header-inner .staff-space-label{flex:1;overflow-wrap:anywhere}
+}

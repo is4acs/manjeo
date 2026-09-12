@@ -231,14 +231,15 @@ export default function Application() {
     } catch (error) { if (mounted.current && version === sessionVersion.current) { setAccountOpen(true); setAuthError((error as Error).message); } }
     finally { mutation.current = ""; if (mounted.current) { setBusy(false); if (pendingAuthSync.current) { pendingAuthSync.current = false; window.dispatchEvent(new Event('manjeo-session-changed')); } } }
   }
-  if (loading || initialError) return <><LanguageBar onChange={value => chooseLanguage(value)}/><main className="app-startup"><span className="brand">manjéo</span><div className="startup-card"><ShoppingBag size={32}/><h1>{loading ? t("Les bonnes adresses arrivent…") : t("La cuisine se fait attendre")}</h1><p>{loading ? t("Connexion à Manjéo.") : t(initialError)}</p>{initialError && <Button onClick={initialize}>{t("Réessayer")}</Button>}</div></main></>;
   const locked = busy || profileBusy;
+  const languageControl = <LanguageBar onChange={value => { if (loading || initialError) chooseLanguage(value); else void selectLanguage(value); }} disabled={locked}/>;
+  const startupHeader = <header className="site-header startup-header"><div className="header-inner"><span className="brand">manjéo</span>{languageControl}</div></header>;
+  if (loading || initialError) return <>{startupHeader}<main className="app-startup"><div className="startup-card"><ShoppingBag size={32}/><h1>{loading ? t("Les bonnes adresses arrivent…") : t("La cuisine se fait attendre")}</h1><p>{loading ? t("Connexion à Manjéo.") : t(initialError)}</p>{initialError && <Button onClick={initialize}>{t("Réessayer")}</Button>}</div></main></>;
   const viewer = user ? {...user,language:uiLanguage} : null;
   return <div className="localized-app" onInvalidCapture={localizeInvalid} onInputCapture={clearValidity}>
-    <LanguageBar onChange={value => void selectLanguage(value)} disabled={locked}/>
     {staff && user && user.role !== "client"
-      ? <RouteBoundary key={user.id} onShop={() => setStaff(false)}><Suspense fallback={<main className="app-startup"><span className="brand">manjéo</span><div className="startup-card" role="status"><p>{t("Chargement de votre espace…")}</p></div></main>}><Staff user={viewer!} onLogout={() => void logout()} onAccount={() => openAccount()} onShop={() => {setStaff(false); void refreshCatalog().catch(() => {});}}/></Suspense></RouteBoundary>
-      : <Home user={viewer} onSaveProfile={saveCustomerProfile} restaurants={restaurants} refreshCatalog={refreshCatalog} onAccount={openAccount} onStaff={() => setStaff(true)}/>}
+      ? <RouteBoundary key={user.id} header={startupHeader} onShop={() => setStaff(false)}><Suspense fallback={<>{startupHeader}<main className="app-startup"><div className="startup-card" role="status"><p>{t("Chargement de votre espace…")}</p></div></main></>}><Staff user={viewer!} languageControl={languageControl} onLogout={() => void logout()} onAccount={() => openAccount()} onShop={() => {setStaff(false); void refreshCatalog().catch(() => {});}}/></Suspense></RouteBoundary>
+      : <Home user={viewer} languageControl={languageControl} onSaveProfile={saveCustomerProfile} restaurants={restaurants} refreshCatalog={refreshCatalog} onAccount={openAccount} onStaff={() => setStaff(true)}/>}
     <Dialog open={accountOpen} onOpenChange={open => {if (!locked) setAccountOpen(open);}}><DialogContent className="app-dialog account-dialog">
       {user ? <>
         <div className="account-symbol"><UserRound size={26}/></div><DialogTitle>{t("Bonjour, {name}", {name: user.name})}</DialogTitle><DialogDescription>{t(roleNames[user.role])} · {t("Démonstration partagée")}</DialogDescription>
@@ -257,7 +258,7 @@ export default function Application() {
         <Button variant="outline" disabled={locked} onClick={() => void logout()}><LogOut size={16}/>{busy ? t("Déconnexion…") : t("Se déconnecter / changer de compte")}</Button>
       </> : <>
         <div className="account-symbol"><UserRound size={26}/></div><DialogTitle>{t("Bienvenue à table.")}</DialogTitle><DialogDescription>{requestedRole ? t("Connectez-vous pour ouvrir {space}.", {space: t(roleNames[requestedRole]).toLowerCase()}) : t("Connectez-vous pour commander ou gérer votre activité.")}</DialogDescription>
-        <div className="demo-account-picker" aria-label={t("Comptes de démonstration")}>{demos.map(({role,label,email:demoEmail,icon:Icon}) => <button key={role} type="button" disabled={locked} aria-pressed={email === demoEmail} onClick={() => {selectDemo(role);setRequestedRole(role);setAuthError("");}}><Icon size={20}/>{t(label)}</button>)}</div>
+        <div className="demo-account-picker" role="group" aria-label={t("Comptes de démonstration")}>{demos.map(({role,label,email:demoEmail,icon:Icon}) => <button key={role} type="button" disabled={locked} aria-pressed={email === demoEmail} onClick={() => {selectDemo(role);setRequestedRole(role);setAuthError("");}}><Icon size={20}/>{t(label)}</button>)}</div>
         <form className="account-form" onSubmit={login}><label>{t("Adresse e-mail")}<Input type="email" name="email" autoComplete="username" required disabled={locked} value={email} onChange={event => setEmail(event.target.value)}/></label><label>{t("Mot de passe")}<Input type="password" name="password" autoComplete="current-password" required disabled={locked} value={password} onChange={event => setPassword(event.target.value)}/></label>{authError && <p role="alert" className="account-error">{t(authError)}</p>}<Button type="submit" disabled={locked}>{busy ? t("Connexion…") : t("Se connecter")}<ArrowRight size={17}/></Button></form>
         <p className="demo-credentials">{t("4 comptes de démonstration partagés. Mot de passe commun :")}<br/><code>ManjeoDemo2026!</code></p>
       </>}

@@ -57,7 +57,7 @@ export default function CustomerAccount({user, disabled, onSaveProfile}: {user: 
     <label>{t('Prénom et nom')}<Input value={name} onChange={event => {edited(); setName(event.target.value);}} required minLength={2} maxLength={100} autoComplete="name"/></label>
     <label>{t('Téléphone')}<Input value={phone} onChange={event => {edited(); setPhone(event.target.value);}} type="tel" maxLength={30} autoComplete="tel" placeholder="0694 00 00 00"/></label>
     <h2>{t('Mon adresse habituelle')}</h2>
-    <label>{t('Rue et numéro')}<AddressField value={address} city={city} onChange={value => {edited(); setAddress(value); setCandidate(null);}} onPick={value => {edited(); setCity(value.city); setCandidate(null);}} inputProps={{maxLength: 180, autoComplete: 'street-address'}}/></label>
+    <label>{t('Rue et numéro')}<AddressField value={address} city={city} onChange={value => {edited(); setAddress(value); setCandidate(null);}} onPick={value => {edited(); setCity(value.city); setCandidate(null);}} inputProps={{'aria-label': t('Rue et numéro'), maxLength: 180, autoComplete: 'street-address'}}/></label>
     <label>{t('Commune')}<select value={city} onChange={event => {edited(); setCity(event.target.value); setCandidate(null);}}>{['Cayenne', 'Rémire-Montjoly', 'Matoury'].map(item => <option key={item}>{item}</option>)}</select></label>
     <label>{t('Bâtiment, étage (facultatif)')}<Input value={details} onChange={event => {edited(); setDetails(event.target.value);}} maxLength={300}/></label>
     <AddressVerification userId={user.id} address={address} city={city} saved={user.deliveryAddress} selected={candidate} disabled={disabled || busy} onSelect={value => {edited(); setCandidate(value); setAddress(value.address); setCity(value.city);}}/>

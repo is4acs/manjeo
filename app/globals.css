@@ -26,7 +26,7 @@ h2{font-size:clamp(28px,2.6vw,38px);line-height:1;letter-spacing:-.025em}
 h3{font-size:23px;line-height:1.05;letter-spacing:-.015em}
 h4{font-size:17px;line-height:1.15;letter-spacing:-.01em}
 button,input,select,textarea,a,img{transition:background var(--ease),color var(--ease),border-color var(--ease),opacity var(--ease)}
-:focus-visible{outline:3px solid var(--punch);outline-offset:2px}
+:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
 .site-header :focus-visible,.promise-bar :focus-visible,.order-bar :focus-visible,.cart-heading :focus-visible,.hero-controls :focus-visible{outline-color:var(--cream)}
 ::selection{background:var(--punch);color:var(--ink)}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
@@ -63,12 +63,13 @@ button,input,select,textarea,a,img{transition:background var(--ease),color var(-
 .desktop-nav button{color:var(--cream)}
 .desktop-nav button:hover{color:var(--punch)}
 .desktop-nav button.active{color:var(--punch);font-weight:700}
-.header-actions{margin-left:auto;display:flex;align-items:center;gap:12px;min-width:0}
-.location-button{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--cream);border:2px solid var(--line-on-dark);padding:8px 15px;border-radius:999px;max-width:280px;min-height:40px}
+.header-actions{margin-left:0;display:flex;align-items:center;gap:12px;min-width:0}
+.location-button{margin-left:auto;min-width:0;display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--cream);border:2px solid var(--line-on-dark);padding:8px 15px;border-radius:999px;max-width:280px;min-height:40px}
 .location-button:hover:not(:disabled){border-color:var(--punch)}
 .location-button svg{color:var(--punch)}
 .location-button strong{font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .account-header-button,.account-staff-button{display:inline-flex;align-items:center;gap:8px;font-size:14px;color:var(--cream);min-height:40px}
+.account-header-button span{max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .account-header-button:hover,.account-staff-button:hover{color:var(--punch)}
 .account-staff-button{border:2px solid var(--line-on-dark);border-radius:999px;padding:8px 15px}
 .account-mobile-orders{display:none;width:40px;height:40px;border-radius:50%;border:2px solid var(--line-on-dark);color:var(--cream);place-items:center}
@@ -125,7 +126,7 @@ button,input,select,textarea,a,img{transition:background var(--ease),color var(-
 .search-box{display:flex;align-items:center;gap:8px;background:var(--cream);border:2px solid var(--ink);border-radius:999px;padding:0 16px;min-height:40px;width:250px;color:var(--ink)}
 .search-box input{border:0;background:transparent;font-size:13px!important;padding:0;min-height:36px;width:100%;box-shadow:none}
 .search-box input:focus-visible{outline:none}
-.search-box:focus-within{outline:3px solid var(--punch);outline-offset:2px}
+.search-box:focus-within{outline:3px solid var(--ink);outline-offset:2px}
 .search-box button{display:grid;place-items:center;width:24px;height:24px;border-radius:50%}
 .sort-control{display:flex;flex-wrap:wrap;gap:8px;min-width:0;max-width:100%}
 .sort-control button{font-size:12px;font-weight:600;border:2px solid var(--line-2);color:var(--ink-soft);padding:7px 14px;border-radius:999px;min-height:38px;white-space:nowrap}
@@ -459,12 +460,12 @@ body:has(.order-bar) .toast,body:has([data-slot=sheet-content]) .toast{bottom:ca
 }
 @media(max-width:520px){
 .promise-run{gap:22px;padding-left:22px}
-.header-inner{padding:12px;gap:8px}
+.header-inner{padding:12px;gap:10px;flex-wrap:wrap}
 .header-inner .brand{font-size:20px;margin-right:0;flex:none}
-.header-actions{gap:6px;flex:1;justify-content:flex-end}
-.header-actions .location-button,.account-header-button,.account-mobile-orders{width:40px;height:40px;flex:none;justify-content:center}
-.header-actions .location-button{padding:0;gap:0}
-.header-actions .location-button strong{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.header-actions{gap:8px;flex:0 0 100%;justify-content:flex-end}
+.account-header-button,.account-mobile-orders{width:40px;height:40px;flex:none;justify-content:center}
+.header-inner>.location-button{flex:1;max-width:none;min-height:40px;padding:7px 11px}
+.header-inner>.location-button strong{min-width:0}
 .header-cart{padding:10px 12px;font-size:12px;gap:6px;flex:none;white-space:nowrap}
 .hero-photo{height:230px}
 .hero-sticker{width:88px;height:88px}
@@ -479,8 +480,12 @@ body:has(.order-bar) .toast,body:has([data-slot=sheet-content]) .toast{bottom:ca
 .promo-form [data-slot=button]{width:100%}
 .history-order>.history-icon{display:none}
 }
-@media(max-width:360px){
-.header-cart{width:40px;min-height:40px;padding:0;font-size:0;gap:0;justify-content:center}
+@media(min-width:861px) and (max-width:1100px){
+.header-inner{gap:16px;padding-left:22px;padding-right:22px}
+.desktop-nav{gap:14px}
+.header-inner>.location-button{max-width:160px}
+.account-staff-button{display:none}
+.account-header-button span{max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 }
 @media(prefers-reduced-motion:reduce){
 *,*::before,*::after{transition:none!important;animation:none!important;scroll-behavior:auto!important}
