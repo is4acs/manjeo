@@ -27,7 +27,7 @@ h3{font-size:23px;line-height:1.05;letter-spacing:-.015em}
 h4{font-size:17px;line-height:1.15;letter-spacing:-.01em}
 button,input,select,textarea,a,img{transition:background var(--ease),color var(--ease),border-color var(--ease),opacity var(--ease)}
 :focus-visible{outline:3px solid var(--ink);outline-offset:2px}
-.site-header :focus-visible,.promise-bar :focus-visible,.order-bar :focus-visible,.cart-heading :focus-visible,.hero-controls :focus-visible{outline-color:var(--cream)}
+.site-header :focus-visible,.order-bar :focus-visible,.cart-heading :focus-visible,.hero-controls :focus-visible{outline-color:var(--cream)}
 ::selection{background:var(--punch);color:var(--ink)}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 
@@ -76,14 +76,6 @@ button,input,select,textarea,a,img{transition:background var(--ease),color var(-
 .header-cart{display:inline-flex;align-items:center;gap:9px;font-family:var(--display);font-size:14px;text-transform:uppercase;background:var(--punch);color:var(--ink);padding:11px 18px;border-radius:999px;min-height:44px}
 .header-cart:hover{background:var(--punch-hover)}
 
-/* Bandeau de promesses — marquee lente, statique en mouvement réduit */
-.promise-bar{background:var(--punch);color:var(--ink);overflow:hidden;padding:10px 0;display:flex}
-.promise-track{display:flex;flex:none;animation:promise-scroll 30s linear infinite}
-.promise-bar:hover .promise-track{animation-play-state:paused}
-.promise-run{display:flex;align-items:center;gap:36px;padding-left:36px;flex:none}
-.promise-run>span{font-family:var(--display);font-size:13px;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
-.promise-dot{width:7px;height:7px;border-radius:50%;background:var(--ink);flex:none}
-@keyframes promise-scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 
 /* Gabarit */
 .page-shell{max-width:1240px;margin:auto;padding:0 36px}
@@ -120,7 +112,8 @@ button,input,select,textarea,a,img{transition:background var(--ease),color var(-
 
 /* Bloc « Ouvert maintenant » */
 .restaurants-section{background:var(--cream-2);margin:0 -36px;padding:42px 36px 48px}
-.section-heading{display:flex;align-items:center;flex-wrap:wrap;gap:16px;margin-bottom:22px}
+.section-heading{display:flex;align-items:baseline;flex-wrap:wrap;gap:16px;margin-bottom:22px}
+.section-heading>.section-tools{align-self:center}
 .section-time{font-size:13px;color:var(--ink-mute)}
 .section-tools{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .search-box{display:flex;align-items:center;gap:8px;background:var(--cream);border:2px solid var(--ink);border-radius:999px;padding:0 16px;min-height:40px;width:250px;color:var(--ink)}
@@ -459,17 +452,18 @@ body:has(.order-bar) .toast,body:has([data-slot=sheet-content]) .toast{bottom:ca
 .site-footer>span:last-child{margin-left:0;width:100%}
 }
 @media(max-width:520px){
-.promise-run{gap:22px;padding-left:22px}
-.header-inner{padding:12px;gap:10px;flex-wrap:wrap}
-.header-inner .brand{font-size:20px;margin-right:0;flex:none}
-.header-actions{gap:8px;flex:0 0 100%;justify-content:flex-end}
-.account-header-button,.account-mobile-orders{width:40px;height:40px;flex:none;justify-content:center}
-.header-inner>.location-button{flex:1;max-width:none;min-height:40px;padding:7px 11px}
-.header-inner>.location-button strong{min-width:0}
-.header-cart{padding:10px 12px;font-size:12px;gap:6px;flex:none;white-space:nowrap}
+.header-inner{padding:10px 12px;gap:6px;flex-wrap:nowrap}
+.header-inner .brand{font-size:19px;margin-right:0;flex:none}
+.header-actions{gap:6px;flex:none;margin-left:auto}
+.account-header-button,.account-mobile-orders{width:38px;height:38px;flex:none;justify-content:center}
+.header-inner>.location-button{flex:none;width:38px;height:38px;max-width:none;min-height:38px;padding:0;justify-content:center;gap:0}
+.header-inner>.location-button strong{display:none}
+.header-cart{padding:9px 11px;font-size:12px;gap:6px;flex:none;white-space:nowrap}
+.hero-copy p{font-size:16px}
 .hero-photo{height:230px}
-.hero-sticker{width:88px;height:88px}
-.hero-sticker strong{font-size:19px}
+.hero-sticker{width:92px;height:92px}
+.hero-sticker small{font-size:9px}
+.hero-sticker strong{font-size:17px}
 .cart-heading{padding:22px 64px 16px 18px}
 .cart-body,.cart-foot{padding-left:18px;padding-right:18px}
 .app-dialog{padding:22px 18px;border-radius:20px}
@@ -489,5 +483,4 @@ body:has(.order-bar) .toast,body:has([data-slot=sheet-content]) .toast{bottom:ca
 }
 @media(prefers-reduced-motion:reduce){
 *,*::before,*::after{transition:none!important;animation:none!important;scroll-behavior:auto!important}
-.promise-track{animation:none;transform:none}
 }

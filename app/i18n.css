@@ -14,6 +14,7 @@
 .language-selected{display:flex;align-items:center;margin-left:auto;flex:none}
 .site-header .language-trigger:focus-visible,.staff-header .language-trigger:focus-visible{outline-color:var(--cream)}
 .startup-header .header-inner{justify-content:space-between}
+@media(max-width:380px){ .site-header .language-code{display:none} }
 @media(max-width:520px){
  .language-selector .language-trigger{gap:4px;padding:5px 6px}
  .language-trigger>svg{width:14px;height:14px}
