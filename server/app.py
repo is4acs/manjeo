@@ -19,6 +19,8 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
+# Python ne connaît pas ce type ; sans lui le manifeste part en octet-stream et nosniff le rejette.
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 COOKIE_NAME = "manjeo_session"
 SESSION_SECONDS = 8 * 60 * 60
 PASSWORD_ITERATIONS = 240_000

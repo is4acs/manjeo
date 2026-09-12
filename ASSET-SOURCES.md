@@ -13,6 +13,26 @@ All six source pages explicitly mark the image free under the Unsplash License. 
 | fried-chicken.jpg | Ömer Taha Çetin | https://unsplash.com/photos/a-plate-of-fried-chicken-with-a-side-of-mustard-and-ketchup-KWoq-eLsIEs | https://images.unsplash.com/photo-1730900737724-5b752e1ed3dd?auto=format&fit=crop&w=1400&q=85&fm=jpg |
 | shrimp.jpg | Sofia Paixão | https://unsplash.com/photos/a-plate-of-shrimp-on-a-wooden-table-6zYpIxeZjaM | https://images.unsplash.com/photo-1643968751074-de4434b26edd?auto=format&fit=crop&w=1400&q=85&fm=jpg |
 
+## Icon set
+
+`public/icons/` and `public/site.webmanifest` come from the *Manjeo Refonte* design handoff (direction
+« Punch », retained icon candidate 3a « Le M plein »). They are original artwork produced for this
+project, not stock: an ink `#1B1A17` M on a flat `#FFC93C` ground with an offset `#F5BC22` disc.
+
+| File | Role |
+|---|---|
+| `icons/icon.svg` | source of truth — 256×256, 56 px corners, glyph outlined (no font needed) |
+| `icons/favicon.svg` | vector favicon for 16–32 px: smaller corners, wider M, disc removed |
+| `icons/icon-1024.png` · `icon-512.png` · `icon-192.png` | PWA and store sizes |
+| `icons/icon-180.png` · `icon-120.png` | `apple-touch-icon` |
+| `icons/icon-60.png` · `icon-32.png` · `icon-16.png` | raster favicon fallbacks |
+| `icons/icon-maskable-1024.png` | Android adaptive: yellow edge to edge, glyph inside the 80 % safe zone |
+| `site.webmanifest` | manifest, ink `theme_color` and cream `background_color` |
+
+The PNGs are rendered from the mock-up, the SVG is hand-outlined: **the SVG wins** if they diverge. No
+multi-resolution `favicon.ico` is shipped; assemble one from the 16/32/60 PNGs if a legacy client ever
+needs it. Usage rules are in [docs/DIRECTION-PUNCH.md](docs/DIRECTION-PUNCH.md).
+
 ## Composition notes
 
 - Burger: landscape closeup with dark background, ideal card cover. This is a thick burger with bacon and plantain chips, not a thin smash burger.

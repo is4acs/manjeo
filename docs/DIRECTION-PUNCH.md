@@ -71,6 +71,29 @@ Le bandeau de promesses, le héros et les lignes de liste lisent le catalogue (`
 `lib/api.ts`) : nombre de tables ouvertes, délais, frais de livraison et plat du jour ne sont jamais
 écrits en dur. Les prix restent en centimes et sont formatés par `money()` (`lib/menu.ts`).
 
+## Icône d’application et favicons
+
+Candidate retenue : **3a « Le M plein »** — la marque réduite à sa lettre, M en Archivo Black encre sur
+aplat jaune, avec un disque `#F5BC22` décalé en bas à gauche qui donne la profondeur sans ombre ni
+dégradé. Les fichiers sont dans `public/icons/`, le manifeste en `public/site.webmanifest`, et le
+`<head>` d’`index.html` les déclare (`favicon.svg`, `icon-32.png`, `apple-touch-icon`, manifeste,
+`theme-color` encre). `icons/icon.svg` est la source de vérité : en cas de divergence avec les PNG,
+c’est lui qui fait foi. L’inventaire des fichiers est dans [ASSET-SOURCES.md](../ASSET-SOURCES.md).
+
+Règles d’usage :
+
+- jamais de dégradé, de relief, d’ombre portée ni de photo dans l’icône ;
+- le jaune est toujours le fond, l’encre toujours le glyphe — ne pas inverser ;
+- le M occupe ~56 % de la hauteur : ne pas le rapprocher des bords, la découpe iOS/Android mangerait
+  ses empattements ;
+- le disque `#F5BC22` est décoratif : il peut disparaître aux petites tailles (c’est déjà le cas dans
+  `favicon.svg`) mais ne doit jamais changer de couleur ;
+- sur fond sombre l’icône tient seule — pas de contour, pas de halo ;
+- pas de variante saisonnière, pas de badge « nouveau » incrusté.
+
+Le serveur local déclare `application/manifest+json` pour `.webmanifest` (`server/app.py`) : sans ce
+type, `X-Content-Type-Options: nosniff` ferait rejeter le manifeste par le navigateur.
+
 ## Écarts assumés par rapport au handoff
 
 - « Livraison offerte dès 25 € » est remplacé par le prix de livraison le plus bas du catalogue : la
