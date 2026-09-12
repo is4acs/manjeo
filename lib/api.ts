@@ -12,9 +12,9 @@ export type Order = {
   items: { productId: string; name: string; option: string; price: number; quantity: number }[];
   history: { status: OrderStatus; date: string; label?: string; actorName?: string }[];
 };
-export type ThreadMessage = { id: string; senderRole: Role; senderName: string; body: string; language: string; phraseId: string; date: string };
+export type ThreadMessage = { id: string; senderRole: Role; senderName: string; body: string; language: string; phraseId: string; date: string; mine: boolean };
 export type ContactCard = { role: Role; label: string; name: string; phone: string; language: string; note: string };
-export type Thread = { messages: ThreadMessage[]; contacts: ContactCard[]; viewerRole: Role; language: string; open: boolean };
+export type Thread = { messages: ThreadMessage[]; contacts: ContactCard[]; viewerRole: Role; viewerId: string; language: string; open: boolean };
 export type LanguageOption = { code: string; label: string };
 export type AddressSuggestion = { label: string; number: string; street: string; city: string };
 export type Promotion = { code: string; label: string; conditions: string; discount: number };
@@ -31,19 +31,25 @@ export class ApiError extends Error {
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 15000);
+  const abort = () => controller.abort();
+  if (options.signal?.aborted) controller.abort();
+  else options.signal?.addEventListener("abort", abort, { once: true });
   try {
     const response = await fetch(path, {
-      ...options, credentials: "same-origin", signal: options.signal || controller.signal,
+      ...options, credentials: "same-origin", signal: controller.signal,
       headers: { "Content-Type": "application/json", ...options.headers },
     });
-    const data = await response.json().catch(() => ({ error: "Réponse du serveur illisible." }));
+    const data = await response.json().catch(() => { throw new ApiError("Réponse du serveur illisible. Réessayez.", response.status >= 400 ? response.status : 502); });
     if (!response.ok) {
-      if (response.status === 401 && path !== "/api/login") window.dispatchEvent(new Event("manjeo-session-expired"));
+      if (response.status === 401 && path !== "/api/login" && path !== "/api/session") window.dispatchEvent(new Event("manjeo-session-expired"));
       throw new ApiError(data.error || "La demande n’a pas abouti.", response.status);
     }
     return data as T;
   } catch (error) {
     if (error instanceof ApiError) throw error;
     throw new Error("Le serveur ne répond pas. Réessayez dans quelques instants.");
-  } finally { window.clearTimeout(timer); }
+  } finally {
+    window.clearTimeout(timer);
+    options.signal?.removeEventListener("abort", abort);
+  }
 }

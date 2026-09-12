@@ -4,6 +4,7 @@ Le rabais n'est jamais celui annoncé par le navigateur : il est recalculé ici 
 partir du sous-total que le serveur a lui-même reconstitué depuis la carte.
 """
 import re
+from datetime import datetime, timezone
 
 from .app import APIError, now_iso
 
@@ -59,7 +60,35 @@ def discount_for(promo, subtotal, delivery):
         return min(subtotal * promo["value"] // 100, subtotal)
     if promo["kind"] == "amount":
         return min(promo["value"], subtotal)
-    return delivery
+    if promo["kind"] == "delivery":
+        return delivery
+    raise APIError(409, "Ce code promo n’est pas disponible.")
+
+
+def valid_window(promo, stamp):
+    """Compare instants, not ISO strings with different precision or offsets."""
+    try:
+        times = [datetime.fromisoformat(value.replace("Z", "+00:00"))
+                 for value in (promo["starts_at"], stamp, promo["ends_at"])]
+        if any(moment.tzinfo is None for moment in times):
+            return False
+        start, moment, end = [value.astimezone(timezone.utc) for value in times]
+        return start <= moment <= end
+    except (TypeError, ValueError, AttributeError):
+        return False
+
+
+def valid_terms(promo):
+    # Existing codes may be maintained directly by the operator. An invalid
+    # configuration must never silently become a free-delivery promotion.
+    if promo["kind"] not in KINDS:
+        return False
+    for field in ("value", "minimum", "max_uses", "per_customer"):
+        if type(promo[field]) is not int or promo[field] < 0:
+            return False
+    if promo["kind"] == "percent":
+        return 1 <= promo["value"] <= 100
+    return promo["kind"] != "amount" or promo["value"] > 0
 
 
 def conditions(promo):
@@ -83,7 +112,9 @@ def evaluate(db, code, user, restaurant_id, subtotal, delivery, order_id=None):
     if not promo or not promo["active"]:
         raise APIError(404, "Ce code promo n’existe pas ou n’est plus actif.")
     stamp = now_iso()
-    if not promo["starts_at"] <= stamp <= promo["ends_at"]:
+    if not valid_terms(promo):
+        raise APIError(409, "Ce code promo n’est pas disponible.")
+    if not valid_window(promo, stamp):
         raise APIError(409, "Ce code promo n’est pas valable en ce moment.")
     if promo["restaurant_id"] and promo["restaurant_id"] != restaurant_id:
         raise APIError(409, "Ce code promo ne s’applique pas à ce restaurant.")
@@ -110,7 +141,7 @@ def public_promotions(db):
     stamp = now_iso()
     offers = []
     for promo in db.execute("SELECT * FROM promo_codes WHERE active = 1 ORDER BY minimum, code"):
-        if not promo["starts_at"] <= stamp <= promo["ends_at"]:
+        if not valid_terms(promo) or not valid_window(promo, stamp):
             continue
         if promo["max_uses"] and db.execute("SELECT COUNT(*) FROM promo_uses WHERE code = ?", (promo["code"],)).fetchone()[0] >= promo["max_uses"]:
             continue

@@ -10,7 +10,7 @@
     "build": "python3 scripts/build.py",
     "start": "python3 scripts/start.py",
     "test": "python3 -m unittest discover -s server -p 'test_*.py' && npm run test:client",
-    "test:client": "node --experimental-strip-types --test tests/cart.test.mjs",
+    "test:client": "node --experimental-strip-types --test tests/*.test.mjs",
     "build:vercel": "tsc --noEmit && vite build --config vite.local.config.ts"
   },
   "dependencies": {

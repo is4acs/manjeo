@@ -12,8 +12,9 @@ import OrderTracking from "./order-tracking";
 import AddressField from "./address-field";
 import OrderChat from "./order-chat";
 import SiteFooter from "./site-footer";
+import { promotionContext, quotedDiscount } from "./customer-state";
 
-import { api, statusLabels, type Order, type Promotion, type PublicPromotion, type User } from "@/lib/api";
+import { api, ApiError, statusLabels, type Order, type Promotion, type PublicPromotion, type User, type Role } from "@/lib/api";
 
 type View = "home" | "restaurant" | "checkout" | "success";
 const normalize = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -23,7 +24,7 @@ const pageSize = 4;
 // Les transitions restent fonctionnelles : aucun défilement animé quand le visiteur le refuse.
 const scrollToBlock = (element: HTMLElement | null) => element?.scrollIntoView({behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "start"});
 
-export default function Home({user, restaurants, refreshCatalog, onAccount, onStaff}: {user: User | null; restaurants: Restaurant[]; refreshCatalog: () => Promise<Restaurant[]>; onAccount: () => void; onStaff: () => void}) {
+export default function Home({user, restaurants, refreshCatalog, onAccount, onStaff}: {user: User | null; restaurants: Restaurant[]; refreshCatalog: () => Promise<Restaurant[]>; onAccount: (role?: Role) => void; onStaff: () => void}) {
   const [view, setView] = useState<View>("home");
   const [selectedId, setSelectedId] = useState("ti-kreol");
   const [category, setCategory] = useState("Tout");
@@ -33,6 +34,9 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   const [ready, setReady] = useState(false);
   const [city, setCity] = useState("Cayenne");
   const [address, setAddress] = useState("");
+  const [checkoutName, setCheckoutName] = useState(user?.name || "");
+  const [checkoutPhone, setCheckoutPhone] = useState(user?.phone || "");
+  const contactTouched = useRef({name: false, phone: false});
   const [locationOpen, setLocationOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -54,7 +58,8 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   const [cancelError, setCancelError] = useState("");
   const [visible, setVisible] = useState(pageSize);
   const [promoCode, setPromoCode] = useState("");
-  const [promotion, setPromotion] = useState<Promotion | null>(null);
+  const [quote, setQuote] = useState<{context: string; promotion: Promotion} | null>(null);
+  const [appliedCode, setAppliedCode] = useState("");
   const [promoError, setPromoError] = useState("");
   const [promoBusy, setPromoBusy] = useState(false);
   const [offers, setOffers] = useState<PublicPromotion[]>([]);
@@ -65,8 +70,20 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   const request = useRef({key: "", id: ""});
   const activeUser = useRef(user?.id);
   const orderSequence = useRef(0);
+  const promoSequence = useRef(0);
+  const submittingRef = useRef(false);
+  const cancellingRef = useRef(false);
+  const promoIdentity = useRef({context: "", code: ""});
   activeUser.current = user?.id;
-  useEffect(() => () => { activeUser.current = undefined; ++orderSequence.current; }, []);
+  useEffect(() => () => { activeUser.current = undefined; ++orderSequence.current; ++promoSequence.current; }, []);
+  useEffect(() => {
+    const markRead = (event: Event) => {
+      const detail = (event as CustomEvent<{orderId: string; viewerId: string}>).detail;
+      if (detail?.viewerId === activeUser.current && typeof detail.orderId === "string") setUnread(current => ({...current, [detail.orderId]: 0}));
+    };
+    window.addEventListener("manjeo-thread-read", markRead);
+    return () => window.removeEventListener("manjeo-thread-read", markRead);
+  }, []);
   const loadOrders = useCallback(async () => {
     if (user?.role !== "client") return;
     const userId = user.id;
@@ -85,7 +102,11 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   const subtotal = cart.reduce((sum, line) => sum + line.price * line.quantity, 0);
   const count = cart.reduce((sum, line) => sum + line.quantity, 0);
   const delivery = cartRestaurant ? cartRestaurant.delivery + (city === "Cayenne" ? 0 : 100) : 0;
-  const discount = Math.min(promotion?.discount || 0, subtotal + delivery);
+  const context = promotionContext({userId: user?.id, role: user?.role, restaurantId: cartRestaurant?.id, city, subtotal, delivery});
+  promoIdentity.current = {context, code: appliedCode};
+  const promotion = quote?.context === context && quote.promotion.code === appliedCode ? quote.promotion : null;
+  const promoPending = !!appliedCode && (!promotion || promoBusy);
+  const discount = quotedDiscount(quote, context, appliedCode, subtotal + delivery);
   const total = subtotal + delivery - discount;
   const cartUnavailable = !!cart.length && (!cartRestaurant?.acceptingOrders || cart.some(line => !cartRestaurant.products.find(item => item.id === line.productId)?.available));
   const cartOutdated = cart.some(line => lineNeedsUpdate(line, cartRestaurant?.products.find(item => item.id === line.productId)));
@@ -128,10 +149,16 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   useEffect(() => { if (ready) { try { localStorage.setItem("manjeo-cart-v2", JSON.stringify(cart)); } catch {} } }, [cart, ready]);
   useEffect(() => { if (ready) { try { localStorage.setItem("manjeo-location-v1", JSON.stringify({ city, address })); } catch {} } }, [city, address, ready]);
   useEffect(() => {
-    setOrders([]); setCurrentOrder(null); setOrdersError(""); setOrderError(""); setOrdersLoading(false); setHistoryOpen(false); setSubmitting(false);
-    ++orderSequence.current; setCancelOrder(null); setCancelError(""); setCancelling(false);
+    contactTouched.current = {name: false, phone: false}; setCheckoutName(user?.role === "client" ? user.name : ""); setCheckoutPhone(user?.role === "client" ? user.phone || "" : "");
+    setOrders([]); setUnread({}); setCurrentOrder(null); setOrdersError(""); setOrderError(""); setOrdersLoading(false); setHistoryOpen(false); setSubmitting(false);
+    ++orderSequence.current; ++promoSequence.current; setQuote(null); setAppliedCode(""); setPromoCode(""); setPromoBusy(false); setPromoError(""); setCancelOrder(null); setCancelError(""); setCancelling(false); submittingRef.current = false; cancellingRef.current = false;
     setView(current => current === "success" ? "home" : current);
   }, [user?.id]);
+  useEffect(() => {
+    if (user?.role !== "client") return;
+    if (!contactTouched.current.name) setCheckoutName(user.name);
+    if (!contactTouched.current.phone) setCheckoutPhone(user.phone || "");
+  }, [user?.name, user?.phone, user?.role]);
   useEffect(() => {
     if (user?.role !== "client" || (!historyOpen && view !== "success")) return;
     void loadOrders();
@@ -202,40 +229,46 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
     finally { setUpdatingCart(false); }
   }
   async function checkPromo(code: string, silent = false) {
-    if (!cartRestaurant || !subtotal) return;
-    setPromoBusy(true);
+    if (!context || !cartRestaurant) return;
+    const sequence = ++promoSequence.current;
+    const checkedContext = context;
+    setPromoBusy(true); setPromoError("");
     try {
       const data = await api<{promotion: Promotion}>("/api/promotions/check", {method: "POST", body: JSON.stringify({code, restaurantId: cartRestaurant.id, city, subtotal})});
-      setPromotion(data.promotion); setPromoError("");
+      if (sequence !== promoSequence.current || promoIdentity.current.context !== checkedContext || promoIdentity.current.code !== code) return;
+      setQuote({context: checkedContext, promotion: data.promotion});
       if (!silent) setNotice(`Code ${data.promotion.code} appliqué`);
     } catch (error) {
-      setPromotion(null);
-      setPromoError((error as Error).message);
-    } finally { setPromoBusy(false); }
+      if (sequence !== promoSequence.current || promoIdentity.current.context !== checkedContext || promoIdentity.current.code !== code) return;
+      setQuote(null); setAppliedCode(""); setPromoError((error as Error).message);
+    } finally { if (sequence === promoSequence.current) setPromoBusy(false); }
   }
-  function applyPromo(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const code = promoCode.trim();
-    if (!code || promoBusy || submitting) return;
-    void checkPromo(code);
+  function applyPromo() {
+    const code = promoCode.trim().toUpperCase();
+    if (!code || promoBusy || submittingRef.current) return;
+    if (user?.role !== "client") { setPromoError("Connectez-vous au compte client pour vérifier ce code."); onAccount("client"); return; }
+    ++promoSequence.current; setQuote(null); setAppliedCode(code); setPromoError("");
   }
-  function clearPromo() { setPromotion(null); setPromoCode(""); setPromoError(""); }
-  // Le panier, la commune ou le compte changent : la remise est revérifiée avant d’être affichée.
+  function clearPromo() { ++promoSequence.current; setQuote(null); setAppliedCode(""); setPromoCode(""); setPromoError(""); setPromoBusy(false); }
   useEffect(() => {
-    if (!promotion) return;
-    if (!cart.length) { clearPromo(); return; }
-    const timer = window.setTimeout(() => void checkPromo(promotion.code, true), 250);
-    return () => window.clearTimeout(timer);
+    ++promoSequence.current;
+    if (!appliedCode || !context) { setPromoBusy(false); if (!context && appliedCode) { setQuote(null); setAppliedCode(""); } return; }
+    // No old discount is usable while the destination, account or basket is being checked.
+    setPromoBusy(true);
+    const timer = window.setTimeout(() => void checkPromo(appliedCode, !!quote), 180);
+    return () => { window.clearTimeout(timer); ++promoSequence.current; };
+    // The request is tied to this complete price snapshot; quote updates must not restart it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [promotion?.code, subtotal, city, cartRestaurant?.id, user?.id, cart.length]);
+  }, [appliedCode, context]);
   function renderPromo() {
-    return <div className="promo-block">
-      {promotion ? <div className="promo-applied"><Tag size={16}/><span><strong>{promotion.code}</strong><small>{promotion.label}</small></span><b>− {money(discount)}</b><button type="button" onClick={clearPromo} disabled={submitting}>Retirer</button></div>
-        : <form className="promo-form" onSubmit={applyPromo}>
+    return <div className="promo-block" role="group" aria-label="Code de réduction">
+      {appliedCode ? <div className="promo-applied"><Tag size={16}/><span><strong>{appliedCode}</strong><small>{promoPending ? "Vérification pour ce panier…" : promotion?.label}</small></span><b>{promoPending ? "…" : `− ${money(discount)}`}</b><button type="button" onClick={clearPromo} disabled={submitting}>Retirer</button></div>
+        : <div className="promo-form">
             <Input aria-label="Code promo" placeholder="Code promo" value={promoCode} maxLength={24} disabled={submitting}
+              onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); applyPromo(); } }}
               onChange={event => { setPromoCode(event.target.value.toUpperCase()); setPromoError(""); }}/>
-            <Button type="submit" variant="outline" disabled={promoBusy || submitting || !promoCode.trim()}>{promoBusy ? "Vérification…" : "Appliquer"}</Button>
-          </form>}
+            <Button type="button" variant="outline" onClick={applyPromo} disabled={promoBusy || submitting || !promoCode.trim()}>Appliquer</Button>
+          </div>}
       {promoError && <p className="checkout-error" role="alert">{promoError}</p>}
     </div>;
   }
@@ -243,9 +276,9 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
     setHistoryOpen(false); setCancelOrder(order); setCancelReason(""); setCancelError("");
   }
   async function confirmCancel(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (!cancelOrder || cancelling || user?.role !== "client") return;
+    event.preventDefault(); if (!cancelOrder || cancellingRef.current || user?.role !== "client") return;
     const userId = user.id;
-    setCancelling(true); setCancelError(""); ++orderSequence.current;
+    cancellingRef.current = true; setCancelling(true); setCancelError(""); ++orderSequence.current;
     try {
       const result = await api<{order: Order}>(`/api/orders/${encodeURIComponent(cancelOrder.id)}`, {method:"PATCH", body:JSON.stringify({status:"cancelled", reason:cancelReason.trim()})});
       if (activeUser.current !== userId) return;
@@ -253,16 +286,16 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
       setCurrentOrder(current => current?.id === result.order.id ? result.order : current);
       setCancelOrder(null); setNotice("La commande a été annulée.");
     } catch (error) { if (activeUser.current === userId) setCancelError((error as Error).message); }
-    finally { if (activeUser.current === userId) { setCancelling(false); void loadOrders(); } }
+    finally { if (activeUser.current === userId) { cancellingRef.current = false; setCancelling(false); void loadOrders(); } }
   }
   function renderCartUpdate() {
     return cartOutdated && <div className="cart-update" role="status"><strong>La carte a changé</strong><p>Actualisez les prix et options. Les articles indisponibles ou dont les options ont changé seront retirés ; vous pourrez les choisir à nouveau.</p><button type="button" disabled={updatingCart || submitting} onClick={() => void updateCart()}>{updatingCart ? "Actualisation…" : "Mettre à jour mon panier"}<RefreshCw size={15}/></button></div>;
   }
-  function checkout() { if (cart.length && !cartUnavailable && !cartOutdated && !updatingCart) { setCartOpen(false); setOrderError(""); setView("checkout"); if (!user) onAccount(); } }
+  function checkout() { if (cart.length && !cartUnavailable && !cartOutdated && !updatingCart && !promoPending && !submittingRef.current) { setCartOpen(false); setOrderError(""); setView("checkout"); if (!user) onAccount(); } }
   function openHistory() { if (user?.role === "client") setHistoryOpen(true); else if (user) onStaff(); else onAccount(); }
   async function submitOrder(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!cartRestaurant || submitting || cartUnavailable || cartOutdated || updatingCart) return;
+    if (!cartRestaurant || submittingRef.current || cartUnavailable || cartOutdated || updatingCart || promoPending) return;
     if (user?.role !== "client") { onAccount(); return; }
     const form = new FormData(event.currentTarget);
     const phoneInput = event.currentTarget.elements.namedItem("phone") as HTMLInputElement;
@@ -278,7 +311,7 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
         input.setCustomValidity(message); input.reportValidity(); return;
       }
     }
-    setSubmitting(true); setOrderError("");
+    submittingRef.current = true; setSubmitting(true); setOrderError("");
     const payload = {
       restaurantId: cartRestaurant.id,
       expectedTotal: total,
@@ -299,9 +332,10 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
     } catch (error) {
       if (activeUser.current === user.id) {
         setOrderError((error as Error).message);
+        if (error instanceof ApiError && error.status === 409 && appliedCode) { setQuote(null); void checkPromo(appliedCode, true); }
         void refreshCatalog().catch(() => {});
       }
-    } finally { if (activeUser.current === user.id) setSubmitting(false); }
+    } finally { if (activeUser.current === user.id) { submittingRef.current = false; setSubmitting(false); } }
   }
   useEffect(() => {
     const context = (document as unknown as { modelContext?: { registerTool: (tool: unknown, options: { signal: AbortSignal }) => unknown } }).modelContext;
@@ -355,7 +389,7 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
           <div className="cart-totals"><div><span>Sous-total</span><span>{money(subtotal)}</span></div><div><span>Livraison à {city}</span><span>{money(delivery)}</span></div>{discount > 0 && <div className="promo-line"><span>Remise {promotion?.code}</span><span>− {money(discount)}</span></div>}<div className="total"><strong>Total</strong><strong>{money(total)}</strong></div></div>
         </>}
       </div>
-      {!!cart.length && view !== "checkout" && <div className="cart-foot"><Button disabled={cartUnavailable || cartOutdated || updatingCart} className="cart-checkout" onClick={checkout}>Passer commande · {money(total)}</Button></div>}
+      {!!cart.length && view !== "checkout" && <div className="cart-foot"><Button disabled={submitting || cartUnavailable || cartOutdated || updatingCart || promoPending} className="cart-checkout" onClick={checkout}>Passer commande · {money(total)}</Button></div>}
     </div>;
   }
   return <>
@@ -363,11 +397,11 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
       <button className="brand" aria-label="manjéo, accueil" onClick={() => setView("home")}>manjéo</button>
       <nav className="desktop-nav"><button className={view === "home" || view === "restaurant" ? "active" : ""} onClick={() => setView("home")}>Restaurants</button><button onClick={openHistory}>Mes commandes</button></nav>
       <div className="header-actions">
-        <button disabled={submitting} className="location-button" onClick={() => setLocationOpen(true)}><MapPin size={15}/><strong>{address || `${city}, centre-ville`}</strong></button>
+        <button disabled={submitting} className="location-button" aria-label={`Adresse de livraison : ${address ? `${address}, ${city}` : city}`} onClick={() => setLocationOpen(true)}><MapPin size={15}/><strong>{address ? `${address}, ${city}` : city}</strong></button>
         {user && user.role !== "client" && <button className="account-staff-button" onClick={onStaff}>{user.role === "admin" ? "Administration" : user.role === "courier" ? "Mes livraisons" : "Mon restaurant"}</button>}
-        <button className="account-header-button" onClick={onAccount}><UserRound size={17}/><span>{user ? user.name : "Se connecter"}</span></button>
+        <button className="account-header-button" aria-label={user ? `Mon compte, ${user.name}` : "Se connecter"} onClick={() => onAccount()}><UserRound size={17}/><span>{user ? user.name : "Se connecter"}</span></button>
         <button className="account-mobile-orders" aria-label="Mes commandes" onClick={openHistory}><PackageCheck size={18}/></button>
-        <button className="header-cart" aria-label={`Ouvrir le panier, ${count} article${count > 1 ? "s" : ""}`} onClick={() => setCartOpen(true)}><ShoppingBag size={16}/>{money(total)}</button>
+        <button className="header-cart" aria-label={`Ouvrir le panier, ${count} article${count > 1 ? "s" : ""}, ${money(total)}`} onClick={() => setCartOpen(true)}><ShoppingBag size={16}/>{money(total)}</button>
       </div>
     </div></header>
     {view === "home" && promises.length > 0 && <div className="promise-bar" aria-label="Nos promesses">
@@ -381,7 +415,7 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
               <span className="hero-badge">La Guyane a bon goût</span>
               <h1>Le marché de Cayenne, livré chaud.</h1>
               <p>{restaurants.length} tables du centre, de Rémire-Montjoly et de Matoury. Vous commandez, un livreur du coin passe prendre votre plat et vous le pose chez vous.</p>
-              <form className="hero-address" onSubmit={startOrder}><AddressField value={address} city={city} onChange={setAddress} onPick={suggestion => setCity(suggestion.city)} inputProps={{"aria-label": "Votre adresse de livraison", placeholder: "12 rue Lallouette, Cayenne", maxLength: 180}}/><Button type="submit">Commander</Button></form>
+              <form className="hero-address" onSubmit={startOrder}><AddressField value={address} city={city} onChange={setAddress} onPick={suggestion => setCity(suggestion.city)} inputProps={{disabled: submitting, "aria-label": "Votre adresse de livraison", placeholder: "12 rue Lallouette, Cayenne", maxLength: 180}}/><Button type="submit" disabled={submitting}>Commander</Button></form>
             </div>
             {heroRestaurant && <div className="hero-visual">
               <div className="hero-photo"><img src={heroRestaurant.image} alt={heroRestaurant.imageAlt}/></div>
@@ -395,7 +429,7 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
           </div>
           <section className="restaurants-section" ref={listRef}>
             <div className="section-heading">
-              <h2>{search ? "Résultats" : category === "Tout" ? "Ouvert maintenant" : `Envie de ${category.toLowerCase()} ?`}</h2>
+              <h2>{search ? "Résultats" : category === "Tout" ? "Les restaurants" : `Envie de ${category.toLowerCase()} ?`}</h2>
               <span className="section-time">{filtered.length} adresse{filtered.length > 1 ? "s" : ""} près de vous</span>
               <div className="section-tools">
                 <label className="search-box"><Search size={16}/><Input aria-label="Rechercher un restaurant ou un plat" placeholder="Un resto, un plat, une envie…" value={search} onChange={event => setSearch(event.target.value)}/>{search && <button aria-label="Effacer la recherche" onClick={() => setSearch("")}><X size={14}/></button>}</label>
@@ -453,17 +487,17 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
         {view === "checkout" && cart.length > 0 && <>
           <button className="back-link" onClick={() => { if (cartRestaurant) setSelectedId(cartRestaurant.id); setView("restaurant"); }}><ChevronLeft size={17}/> Continuer mes achats</button>
           <div className="checkout-heading"><span className="eyebrow">Presque à table</span><h1>On vous livre où ?</h1><p>Cette démo est partagée : utilisez des coordonnées fictives.</p></div>
-          <div className="checkout-account-note"><UserRound size={19}/><div><strong>{user?.role === "client" ? `Connecté en tant que ${user.name}` : "Un compte client pour passer commande"}</strong><p>{user?.role === "client" ? "Votre commande sera transmise à l’espace restaurateur de cette démo." : "Utilisez client@manjeo.test pour tester votre première commande."}</p></div><button onClick={onAccount}>{user?.role === "client" ? "Mon compte" : "Se connecter"}</button></div>
+          <div className="checkout-account-note"><UserRound size={19}/><div><strong>{user?.role === "client" ? `Connecté en tant que ${user.name}` : "Un compte client pour passer commande"}</strong><p>{user?.role === "client" ? "Votre commande sera transmise à l’espace restaurateur de cette démo." : "Utilisez client@manjeo.test pour tester votre première commande."}</p></div><button onClick={() => onAccount(user?.role === "client" ? undefined : "client")}>{user?.role === "client" ? "Mon compte" : "Se connecter"}</button></div>
           <form key={user?.id || "guest"} className="checkout-form" onSubmit={submitOrder}>
-            <section><h2><span>1</span> Vos coordonnées</h2><div className="form-grid"><label>Prénom et nom<Input disabled={submitting} defaultValue={user?.role === "client" ? user.name : ""} name="name" onInput={e => e.currentTarget.setCustomValidity("")} autoComplete="name" placeholder="Camille Dupont" required minLength={2} maxLength={80}/></label><label>Téléphone<Input disabled={submitting} name="phone" type="tel" autoComplete="tel" placeholder="0694 00 00 00" required onInput={e => e.currentTarget.setCustomValidity("")}/></label></div></section>
-            <section><h2><span>2</span> Adresse de livraison</h2><label>Rue et numéro<AddressField value={address} city={city} onChange={setAddress} onPick={suggestion => setCity(suggestion.city)} inputProps={{disabled: submitting, name: "address", placeholder: "12 avenue du Général de Gaulle", required: true, minLength: 5, maxLength: 180, onInput: event => event.currentTarget.setCustomValidity("")}}/></label><div className="form-grid"><label>Commune<select disabled={submitting} name="city" value={city} onChange={e => setCity(e.target.value)}>{cities.map(c => <option key={c}>{c}</option>)}</select></label><label>Bâtiment, étage (facultatif)<Input disabled={submitting} name="details" placeholder="Bâtiment A, 2e étage" maxLength={120}/></label></div><label>Instructions de livraison (facultatif)<textarea disabled={submitting} name="notes" placeholder="Un repère pour vous trouver plus facilement…" rows={2} maxLength={300}/></label><div className="delivery-estimate"><Clock3 size={20}/><div><strong>Au plus vite — {cartRestaurant?.minutes} à {(cartRestaurant?.minutes || 25) + 10} min</strong><p>Délai fictif pour tester le parcours.</p></div></div></section>
+            <section><h2><span>1</span> Vos coordonnées</h2><div className="form-grid"><label>Prénom et nom<Input disabled={submitting} value={checkoutName} onChange={event => { contactTouched.current.name = true; setCheckoutName(event.target.value); }} name="name" onInput={e => e.currentTarget.setCustomValidity("")} autoComplete="name" placeholder="Camille Dupont" required minLength={2} maxLength={80}/></label><label>Téléphone<Input disabled={submitting} name="phone" value={checkoutPhone} onChange={event => { contactTouched.current.phone = true; setCheckoutPhone(event.target.value); }} type="tel" autoComplete="tel" placeholder="0694 00 00 00" required onInput={e => e.currentTarget.setCustomValidity("")}/></label></div></section>
+            <section><h2><span>2</span> Adresse de livraison</h2><label>Rue et numéro<AddressField value={address} city={city} onChange={setAddress} onPick={suggestion => setCity(suggestion.city)} inputProps={{disabled: submitting, name: "address", placeholder: "12 avenue du Général de Gaulle", required: true, minLength: 5, maxLength: 180, onInput: event => event.currentTarget.setCustomValidity("")}}/></label><div className="form-grid"><label>Commune<select disabled={submitting} name="city" value={city} onChange={e => setCity(e.target.value)}>{cities.map(c => <option key={c}>{c}</option>)}</select></label><label>Bâtiment, étage (facultatif)<Input disabled={submitting} name="details" placeholder="Bâtiment A, 2e étage" maxLength={120}/></label></div><label>Instructions de livraison (facultatif)<textarea disabled={submitting} name="notes" placeholder="Un repère pour vous trouver plus facilement…" rows={2} maxLength={300}/></label><div className="delivery-estimate"><Clock3 size={20}/><div><strong>Préparation annoncée : {cartRestaurant?.minutes} min</strong><p>Le suivi affichera une estimation de livraison après acceptation par le restaurant.</p></div></div></section>
             <section><h2><span>3</span> Paiement de démonstration</h2><div className="payment-demo"><CreditCard size={23}/><div><strong>Carte de test</strong><p>Aucune carte bancaire requise. Aucun débit.</p></div><Check size={19}/></div></section>
             {renderPromo()}
             <div className="checkout-mobile-total"><span>Total, livraison incluse</span><strong>{money(total)}</strong></div>
             {renderCartUpdate()}
             {orderError && <p className="checkout-error" role="alert">{orderError}</p>}
             {cartUnavailable && <p className="checkout-error" role="alert">Un article ou le restaurant est devenu indisponible. Modifiez votre panier.</p>}
-            <Button className="submit-order" type="submit" disabled={submitting || user?.role !== "client" || cartUnavailable || cartOutdated || updatingCart}>{submitting ? "Confirmation en cours…" : `Confirmer · ${money(total)}`}</Button>
+            <Button className="submit-order" type="submit" disabled={submitting || user?.role !== "client" || cartUnavailable || cartOutdated || updatingCart || promoPending}>{submitting ? "Confirmation en cours…" : `Confirmer · ${money(total)}`}</Button>
             <p className="demo-explanation">Restaurants et produits fictifs. Commande enregistrée dans la démo partagée en ligne, sans paiement ni livraison réelle.</p>
           </form>
         </>}
@@ -478,26 +512,27 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
             <span className="ticket-status">{statusLabels[currentOrder.status]}</span>
             <h2>{currentOrder.restaurant}</h2>
             {currentOrder.items.map((item, index) => <p key={index}>{item.quantity} × {item.name}{item.option && ` (${item.option})`}</p>)}
+            {currentOrder.discount > 0 && <p className="ticket-discount">Code {currentOrder.promoCode} · remise de {money(currentOrder.discount)}</p>}
             <div className="ticket-total"><span>{currentOrder.count} article{currentOrder.count > 1 ? "s" : ""} · Livraison à {currentOrder.city}</span><strong>{money(currentOrder.total)}</strong></div>
             <OrderTracking order={currentOrder} onCancel={requestCancel}/>
           </div>
-          {currentOrder.status !== "pending" && currentOrder.status !== "cancelled" && <OrderChat order={currentOrder} language={user?.language || "fr"}/>}
+          {currentOrder.status !== "pending" && currentOrder.status !== "cancelled" && <OrderChat order={currentOrder} viewerId={user?.id || ""} language={user?.language || "fr"}/>}
           {ordersError && <p className="orders-error" role="alert">{ordersError}</p>}
           <div className="success-info"><PackageCheck size={21}/><p>Testez la préparation depuis le compte restaurant, puis la prise en charge depuis le compte livreur. Votre suivi s’actualise ici. Aucun paiement ni livraison réelle.</p></div>
           <Button onClick={() => setView("home")}>Découvrir d’autres adresses <ArrowRight size={17}/></Button>
           <button className="text-link" onClick={openHistory}>Voir mes commandes test</button>
         </div>}
       </div>
-      <SiteFooter city={city} cities={cities} onCity={setCity} onAccount={onAccount} onOrders={openHistory}
+      <SiteFooter city={city} cities={cities} onCity={nextCity => { if (!submittingRef.current) setCity(nextCity); }} onAccount={onAccount} disabled={submitting} onOrders={openHistory}
         onNearby={() => { setView("home"); setCategory("Tout"); setSearch(""); window.setTimeout(() => scrollToBlock(listRef.current), 0); }}
-        onStaff={() => { if (user && user.role !== "client") onStaff(); else onAccount(); }}/>
+        onStaff={role => { if (user && user.role !== "client" && (!role || user.role === role)) onStaff(); else onAccount(role); }}/>
     </main>
     {count > 0 && (view === "home" || view === "restaurant") && <div className="order-bar">
       <div><small>{count} article{count > 1 ? "s" : ""}</small><strong>{money(total)}</strong></div>
       <Button variant="punch" onClick={() => setCartOpen(true)}>Voir le panier</Button>
     </div>}
     <Sheet open={cartOpen} onOpenChange={setCartOpen}><SheetContent className="cart-sheet"><SheetTitle className="sr-only">Votre panier</SheetTitle><SheetDescription className="sr-only">Articles de votre commande de démonstration.</SheetDescription>{renderCartPanel()}</SheetContent></Sheet>
-    <Dialog open={locationOpen} onOpenChange={setLocationOpen}><DialogContent className="app-dialog"><DialogTitle>Où avez-vous faim ?</DialogTitle><DialogDescription>Choisissez votre zone de livraison pour cette démo.</DialogDescription><form onSubmit={e => { e.preventDefault(); setLocationOpen(false); }} className="location-form"><label>Commune<select value={city} onChange={e => setCity(e.target.value)}>{cities.map(c => <option key={c}>{c}</option>)}</select></label><label>Adresse de livraison<AddressField value={address} city={city} onChange={setAddress} onPick={suggestion => setCity(suggestion.city)} inputProps={{placeholder: "12 rue Lallouette", maxLength: 180}}/></label><p>Cette adresse sert à la livraison et au calcul des frais : elle suit le panier et le formulaire de commande. Livraison majorée de 1 € à Rémire-Montjoly et Matoury dans cette démo.</p><Button type="submit">Valider mon adresse <MapPin size={16}/></Button></form></DialogContent></Dialog>
+    <Dialog open={locationOpen} onOpenChange={open => { if (!submittingRef.current) setLocationOpen(open); }}><DialogContent className="app-dialog"><DialogTitle>Où avez-vous faim ?</DialogTitle><DialogDescription>Choisissez votre zone de livraison pour cette démo.</DialogDescription><form onSubmit={e => { e.preventDefault(); setLocationOpen(false); }} className="location-form"><label>Commune<select disabled={submitting} value={city} onChange={e => setCity(e.target.value)}>{cities.map(c => <option key={c}>{c}</option>)}</select></label><label>Adresse de livraison<AddressField value={address} city={city} onChange={setAddress} onPick={suggestion => setCity(suggestion.city)} inputProps={{disabled: submitting, placeholder: "12 rue Lallouette", maxLength: 180}}/></label><p>Cette adresse sert à la livraison et au calcul des frais : elle suit le panier et le formulaire de commande. Livraison majorée de 1 € à Rémire-Montjoly et Matoury dans cette démo.</p><Button type="submit" disabled={submitting}>Valider mon adresse <MapPin size={16}/></Button></form></DialogContent></Dialog>
     <Dialog open={!!product} onOpenChange={open => { if (!open) setProduct(null); }}><DialogContent className="app-dialog product-dialog">{product && <>{product.image && <img className="dialog-product-image" src={product.image} alt={product.name}/>}<div className="product-dialog-body"><span className="eyebrow">{restaurant.name}</span><DialogTitle>{product.name}</DialogTitle><DialogDescription>{product.description}</DialogDescription>
       <p className="product-allergens"><strong>Allergènes :</strong> {product.allergens || "informations non renseignées dans cette démonstration."}</p>
       {(product.optionGroups || []).map(group => <fieldset key={group.id} className="product-option-group"><legend>{group.name}</legend><p className="option-rule">{group.min === group.max ? `${group.min} choix ${group.min > 1 ? "obligatoires" : "obligatoire"}` : group.min ? `${group.min} à ${group.max} choix` : `Facultatif · jusqu’à ${group.max} choix`}</p><div className="dynamic-options">{group.choices.map(choice => {
@@ -510,7 +545,7 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
       {!selectionsValid(product,selections) && <p className="option-rule" role="status">Complétez les choix obligatoires pour ajouter ce plat.</p>}
     </div></>}</DialogContent></Dialog>
     <Dialog open={!!pending} onOpenChange={open => { if (!open) setPending(null); }}><DialogContent className="app-dialog"><DialogTitle>Une nouvelle bonne adresse ?</DialogTitle><DialogDescription>Une commande se fait auprès d’un seul restaurant. Ajouter ce plat remplacera votre panier de {cartRestaurant?.name}.</DialogDescription><Button onClick={() => { if (pending) addLine(pending, true); setPending(null); }}>Remplacer le panier</Button><Button variant="outline" onClick={() => setPending(null)}>Garder mon panier actuel</Button></DialogContent></Dialog>
-    <Dialog open={historyOpen} onOpenChange={setHistoryOpen}><DialogContent className="app-dialog history-dialog"><DialogTitle>Mes commandes</DialogTitle><DialogDescription>Vos commandes enregistrées en base, avec leur suivi restaurant.</DialogDescription><div className="history-refresh"><span>Mise à jour automatique · 8 s</span><button disabled={ordersLoading} onClick={() => void loadOrders()}><RefreshCw size={14}/>{ordersLoading ? "Actualisation…" : "Actualiser"}</button></div>{ordersError && <p className="orders-error" role="alert">{ordersError}</p>}{orders.length ? <div className="order-history">{orders.map(order => <div className="history-order" key={order.id}><span className="history-icon"><ShoppingBag size={21}/></span><div><strong>{order.restaurant}</strong><p>{order.id} · {new Date(order.date).toLocaleString("fr-FR", {dateStyle:"short",timeStyle:"short"})}</p><span className="order-status" data-status={order.status}>{statusLabels[order.status]}</span><OrderTracking order={order} onCancel={requestCancel}/>{order.status !== "pending" && order.status !== "cancelled" && <button className="text-link" onClick={() => { setCurrentOrder(order); setHistoryOpen(false); setView("success"); }}>Ouvrir la conversation{unread[order.id] ? ` · ${unread[order.id]} non lu${unread[order.id] > 1 ? "s" : ""}` : ""}</button>}<details><summary>Articles commandés et adresse</summary>{order.items.map((item, index) => <p key={index}>{item.quantity} × {item.name}{item.option && ` · ${item.option}`} — {money(item.price * item.quantity)}</p>)}<p className="order-destination">{order.address}, {order.city}<br/>Livraison : {money(order.delivery)}</p>{order.history.map((step,index) => <p key={index}>{step.label || statusLabels[step.status]} · {new Date(step.date).toLocaleTimeString("fr-FR", {hour:"2-digit",minute:"2-digit"})}</p>)}</details></div><b>{money(order.total)}</b></div>)}</div> : ordersLoading ? <p className="orders-loading">Vos commandes arrivent…</p> : !ordersError && <div className="no-orders"><ShoppingBag size={34}/><h3>Votre première envie vous attend.</h3><p>Vos commandes test apparaîtront ici.</p><Button onClick={() => { setHistoryOpen(false); setView("home"); }}>Explorer les restaurants</Button></div>}</DialogContent></Dialog>
+    <Dialog open={historyOpen} onOpenChange={setHistoryOpen}><DialogContent className="app-dialog history-dialog"><DialogTitle>Mes commandes</DialogTitle><DialogDescription>Vos commandes enregistrées en base, avec leur suivi restaurant.</DialogDescription><div className="history-refresh"><span>Mise à jour automatique · 8 s</span><button disabled={ordersLoading} onClick={() => void loadOrders()}><RefreshCw size={14}/>{ordersLoading ? "Actualisation…" : "Actualiser"}</button></div>{ordersError && <p className="orders-error" role="alert">{ordersError}</p>}{orders.length ? <div className="order-history">{orders.map(order => <div className="history-order" key={order.id}><span className="history-icon"><ShoppingBag size={21}/></span><div><strong>{order.restaurant}</strong><p>{order.id} · {new Date(order.date).toLocaleString("fr-FR", {dateStyle:"short",timeStyle:"short",timeZone:"America/Cayenne"})}</p><span className="order-status" data-status={order.status}>{statusLabels[order.status]}</span><OrderTracking order={order} onCancel={requestCancel}/>{order.status !== "pending" && order.status !== "cancelled" && <button className="text-link" onClick={() => { setCurrentOrder(order); setHistoryOpen(false); setView("success"); }}>Ouvrir la conversation{unread[order.id] ? ` · ${unread[order.id]} non lu${unread[order.id] > 1 ? "s" : ""}` : ""}</button>}<details><summary>Articles commandés et adresse</summary>{order.items.map((item, index) => <p key={index}>{item.quantity} × {item.name}{item.option && ` · ${item.option}`} — {money(item.price * item.quantity)}</p>)}<p className="order-destination">{order.address}, {order.city}<br/>Livraison : {money(order.delivery)}{order.discount > 0 && <><br/>Remise {order.promoCode} : − {money(order.discount)}</>}</p>{order.history.map((step,index) => <p key={index}>{step.label || statusLabels[step.status]} · {new Date(step.date).toLocaleTimeString("fr-FR", {timeZone:"America/Cayenne",hour:"2-digit",minute:"2-digit"})}</p>)}</details></div><b>{money(order.total)}</b></div>)}</div> : ordersLoading ? <p className="orders-loading">Vos commandes arrivent…</p> : !ordersError && <div className="no-orders"><ShoppingBag size={34}/><h3>Votre première envie vous attend.</h3><p>Vos commandes test apparaîtront ici.</p><Button onClick={() => { setHistoryOpen(false); setView("home"); }}>Explorer les restaurants</Button></div>}</DialogContent></Dialog>
     <Dialog open={!!cancelOrder} onOpenChange={open => {if (!open && !cancelling) setCancelOrder(null);}}><DialogContent className="app-dialog cancel-dialog"><DialogTitle>Annuler votre commande ?</DialogTitle><DialogDescription>Vous pouvez l’annuler tant que le restaurant ne l’a pas acceptée. Le statut est vérifié au moment de votre demande.</DialogDescription><form onSubmit={confirmCancel}><label>Motif de l’annulation<textarea required minLength={3} maxLength={250} value={cancelReason} onChange={event => setCancelReason(event.target.value)} placeholder="Ex. Je souhaite modifier ma commande"/></label>{cancelError && <p role="alert" className="checkout-error">{cancelError}</p>}<Button type="submit" disabled={cancelling || cancelReason.trim().length < 3}>{cancelling ? "Annulation…" : "Confirmer l’annulation"}</Button></form></DialogContent></Dialog>
     <div className={`toast ${notice ? "visible" : ""}`} role="status" aria-live="polite">{notice && <><span><Check size={15}/></span>{notice}</>}</div>
   </>;

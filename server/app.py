@@ -271,6 +271,10 @@ class Handler(BaseHTTPRequestHandler):
         # The URL contains no credentials or customer details.
         super().log_message(format, *args)
 
+    def log_request(self, code="-", size="-"):
+        # Address suggestions carry delivery details in the query string.
+        self.log_message('"%s %s" %s %s', self.command, urlsplit(self.path).path, code, size)
+
     def json_response(self, status, payload, cookie=None):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
@@ -393,10 +397,16 @@ class Handler(BaseHTTPRequestHandler):
                     raise APIError(405, "Méthode non autorisée.")
                 return self.serve_static(path)
             data = self.read_json() if self.command in {"POST", "PATCH"} else None
+            if self.command == "GET" and path == "/api/addresses":
+                from .addresses import lookup
+                query = parse_qs(urlsplit(self.path).query)
+                response = lookup((query.get("q") or [""])[0], (query.get("city") or [None])[0],
+                                  remote=self.state.config.cloud or os.environ.get("MANJEO_ADDRESS_PROVIDER") == "ign")
+                return self.json_response(200, response)
             database = self.state.database
             self.in_write = False
             with database.connect() as db:
-                if data is not None:
+                if data is not None and path != "/api/translate":
                     self.ensure_write(db)
                 match = re.fullmatch(r"/api/images/([a-f0-9]{32})", path)
                 if self.command == "GET" and match:
@@ -414,7 +424,24 @@ class Handler(BaseHTTPRequestHandler):
                     self.end_headers()
                     self.wfile.write(body)
                     return
-                status, response, cookie = self.api(db, path, data)
+                lifecycle_route = path == "/api/orders" or path.startswith("/api/orders/") or path in {
+                    "/api/deliveries", "/api/couriers", "/api/promotions", "/api/promotions/check",
+                }
+                if lifecycle_route:
+                    from .marketplace import expire_pending_orders
+                    # Expiry is independent of the requested action. A rejected
+                    # acceptance must not resurrect an expired order or its promo.
+                    self.ensure_write(db)
+                    expire_pending_orders(self, db)
+                    db.execute("SAVEPOINT requested_operation")
+                    try:
+                        status, response, cookie = self.api(db, path, data)
+                    except APIError as error:
+                        db.execute("ROLLBACK TO SAVEPOINT requested_operation")
+                        status, response, cookie = error.status, {"error": error.message}, None
+                    db.execute("RELEASE SAVEPOINT requested_operation")
+                else:
+                    status, response, cookie = self.api(db, path, data)
             self.json_response(status, response, cookie)
         except APIError as error:
             self.json_response(error.status, {"error": error.message})
@@ -432,10 +459,8 @@ class Handler(BaseHTTPRequestHandler):
             self.in_write = True
 
     def api(self, db, path, data):
-        from .marketplace import expire_pending_orders, handle_marketplace, projected_order
+        from .marketplace import handle_marketplace, projected_order
         from .messaging import handle_messaging
-        if path.startswith("/api/orders") or path in {"/api/deliveries", "/api/couriers"}:
-            expire_pending_orders(self, db)
         response = handle_messaging(self, db, path, data)
         if response is not None:
             return response
@@ -478,10 +503,6 @@ class Handler(BaseHTTPRequestHandler):
         if method == "POST" and path == "/api/logout":
             db.execute("DELETE FROM sessions WHERE token_hash = ?", (self.session_hash(),))
             return 200, {"ok": True}, self.session_cookie()
-        if method == "GET" and path == "/api/addresses":
-            from .addresses import suggest
-            query = parse_qs(urlsplit(self.path).query)
-            return 200, {"addresses": suggest((query.get("q") or [""])[0], (query.get("city") or [None])[0])}, None
         if method == "GET" and path == "/api/restaurants":
             rows = db.execute("SELECT * FROM restaurants ORDER BY sort_order, id").fetchall()
             return 200, {"restaurants": [self.state.database.restaurant(db, row) for row in rows]}, None
@@ -529,8 +550,9 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError()
         except ValueError:
             raise APIError(400, "L’identifiant de commande est invalide.")
+        request_id = request_id.lower()
         request_hash = hashlib.sha256(json.dumps({key: value for key, value in data.items() if key != "requestId"}, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
-        existing = db.execute("SELECT * FROM orders WHERE customer_id = ? AND request_id = ?", (user["id"], request_id)).fetchone()
+        existing = db.execute("SELECT * FROM orders WHERE customer_id = ? AND lower(request_id) = ?", (user["id"], request_id)).fetchone()
         if existing:
             if existing["request_hash"] != request_hash:
                 raise APIError(409, "Cet identifiant correspond déjà à une autre commande.")

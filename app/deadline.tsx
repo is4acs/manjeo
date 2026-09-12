@@ -1,19 +1,18 @@
 "use client";
 import { useEffect, useState } from "react";
+import { remainingSeconds } from "./delivery-time";
+export { countdown, clockLabel, isLate } from "./delivery-time";
 
-// Échéances partagées par les quatre espaces : acceptation sous dix minutes, puis
-// estimation de livraison. Le serveur reste seul juge ; ceci n'est que l'affichage.
+// The timer is display-only. Transitions and deadline expiry remain server decisions.
 export function useCountdown(deadline: string | null | undefined) {
-  const [left, setLeft] = useState(() => (deadline ? Date.parse(deadline) - Date.now() : 0));
+  const [now, setNow] = useState(Date.now);
   useEffect(() => {
-    if (!deadline) return;
-    setLeft(Date.parse(deadline) - Date.now());
-    const timer = window.setInterval(() => setLeft(Date.parse(deadline) - Date.now()), 1000);
-    return () => window.clearInterval(timer);
+    if (!deadline || !Number.isFinite(Date.parse(deadline))) return;
+    const tick = () => setNow(Date.now());
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    document.addEventListener("visibilitychange", tick);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", tick); };
   }, [deadline]);
-  return deadline ? Math.max(0, Math.round(left / 1000)) : 0;
+  return remainingSeconds(deadline, now);
 }
-
-export const countdown = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-export const clockLabel = (value: string) => new Date(value).toLocaleTimeString("fr-FR", {timeZone: "America/Cayenne", hour: "2-digit", minute: "2-digit"});
-export const isLate = (eta: string | null, status: string) => !!eta && Date.parse(eta) < Date.now() && !["delivered", "cancelled"].includes(status);

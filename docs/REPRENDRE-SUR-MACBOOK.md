@@ -35,7 +35,7 @@ bash scripts/codex-setup.sh
 bash scripts/codex-check.sh
 ```
 
-Aucun secret Neon ou Vercel n’est nécessaire pour installer, compiler et tester le projet. Les tests autonomes exécutent 34 cas Python et 7 cas panier ; 30 tests PostgreSQL restent ignorés sans une base de test dédiée. `AGENTS.md` donne les règles de reprise à l’agent Cloud.
+Aucun secret Neon ou Vercel n’est nécessaire pour installer, compiler et tester le projet. Les tests autonomes couvrent l’API avec SQLite ainsi que le panier, les promotions côté interface et la traduction. Les tests PostgreSQL restent ignorés sans une base de test dédiée ; le compte rendu doit les signaler. `AGENTS.md` donne les règles de reprise à l’agent Cloud.
 
 Une fois l’environnement associé au dépôt, revenir dans l’application et rouvrir « Continuer dans » pour sélectionner Cloud et l’environnement Manjéo. Si la liste n’est pas à jour, rouvrir le projet. Depuis le MacBook, retrouver l’environnement dans Codex Cloud avec le même compte ; les changements de code passent ensuite par GitHub et une branche `codex/…`.
 

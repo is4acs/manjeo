@@ -3,16 +3,16 @@ import { useEffect, useState } from "react";
 import { ArrowRight, Download, LifeBuoy, MapPin, ShoppingBag, Store, Tag } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { api, type PublicPromotion } from "@/lib/api";
+import { api, type PublicPromotion, type Role } from "@/lib/api";
 
 type Panel = "" | "help" | "about" | "cities" | "promotions" | "install" | "grocery";
 type InstallPrompt = Event & { prompt: () => Promise<void> };
 
 // Chaque entrée mène à une destination réelle de l'application. Ce qui n'existe pas
 // encore dans cette démonstration est annoncé comme tel, jamais maquillé en lien mort.
-export default function SiteFooter({city, cities, onCity, onAccount, onOrders, onNearby, onStaff}: {
+export default function SiteFooter({city, cities, onCity, onAccount, onOrders, onNearby, onStaff, disabled = false}: {
   city: string; cities: string[]; onCity: (city: string) => void;
-  onAccount: () => void; onOrders: () => void; onNearby: () => void; onStaff: () => void;
+  onAccount: (role?: Role) => void; onOrders: () => void; onNearby: () => void; onStaff: (role?: Role) => void; disabled?: boolean;
 }) {
   const [panel, setPanel] = useState<Panel>("");
   const [promotions, setPromotions] = useState<PublicPromotion[]>([]);
@@ -33,22 +33,22 @@ export default function SiteFooter({city, cities, onCity, onAccount, onOrders, o
 
   async function install() {
     if (!installer) { setPanel("install"); return; }
-    try { await installer.prompt(); } finally { setInstaller(null); }
+    try { await installer.prompt(); } catch { setPanel("install"); } finally { setInstaller(null); }
   }
 
   const columns: {title: string; links: {label: string; action: () => void; note?: string}[]}[] = [
     {title: "Commander", links: [
       {label: "Restaurants à proximité", action: onNearby},
       {label: "Afficher toutes les villes", action: () => setPanel("cities")},
-      {label: "Tous les pays", action: () => setPanel("cities")},
+      {label: "Zone de livraison", action: () => setPanel("cities")},
       {label: "Promotions", action: () => setPanel("promotions")},
       {label: "Mes commandes", action: onOrders},
     ]},
     {title: "Partenaires", links: [
-      {label: "Ajoutez votre restaurant", action: onAccount},
-      {label: "Devenez coursier-partenaire", action: onAccount},
-      {label: "Créez un compte professionnel", action: onAccount},
-      {label: "Commandes à récupérer à proximité", action: onStaff},
+      {label: "Espace restaurant", action: () => onStaff("restaurant")},
+      {label: "Espace livreur", action: () => onStaff("courier")},
+      {label: "Comptes de démonstration", action: () => onAccount()},
+      {label: "Courses à récupérer", action: () => onStaff("courier")},
     ]},
     {title: "En savoir plus", links: [
       {label: "Obtenir de l’aide", action: () => setPanel("help")},
@@ -107,9 +107,9 @@ export default function SiteFooter({city, cities, onCity, onAccount, onOrders, o
     <Dialog open={panel === "cities"} onOpenChange={open => !open && setPanel("")}><DialogContent className="app-dialog">
       <div className="dialog-symbol"><MapPin size={24}/></div>
       <DialogTitle>Où manjéo livre</DialogTitle>
-      <DialogDescription>Un seul pays desservi : la Guyane française. Trois communes, une même carte.</DialogDescription>
-      <div className="city-picker">{cities.map(name => <button key={name} className={name === city ? "selected" : ""} aria-pressed={name === city}
-        onClick={() => { onCity(name); setPanel(""); onNearby(); }}><MapPin size={16}/>{name}</button>)}</div>
+      <DialogDescription>La démonstration dessert trois communes en Guyane française. Trois communes, une même carte.</DialogDescription>
+      <div className="city-picker">{cities.map(name => <button key={name} disabled={disabled} className={name === city ? "selected" : ""} aria-pressed={name === city}
+        onClick={() => { if (!disabled) { onCity(name); setPanel(""); onNearby(); } }}><MapPin size={16}/>{name}</button>)}</div>
       <p className="dialog-note">Livraison majorée de 1 € hors Cayenne dans cette démonstration.</p>
     </DialogContent></Dialog>
 
@@ -132,7 +132,7 @@ export default function SiteFooter({city, cities, onCity, onAccount, onOrders, o
         <li><strong>Android, Chrome</strong><span>Menu du navigateur, puis « Installer l’application » ou « Ajouter à l’écran d’accueil ».</span></li>
         <li><strong>iPhone, Safari</strong><span>Bouton Partager, puis « Sur l’écran d’accueil ».</span></li>
         <li><strong>Ordinateur</strong><span>Icône d’installation dans la barre d’adresse de Chrome ou Edge.</span></li>
-        <li><strong>Google Play et App Store</strong><span>Aucune version publiée : ne cherchez pas manjéo dans les boutiques, ce serait une contrefaçon.</span></li>
+        <li><strong>Google Play et App Store</strong><span>Aucune version publiée : utilisez cette démonstration depuis votre navigateur.</span></li>
       </ul>
     </DialogContent></Dialog>
 

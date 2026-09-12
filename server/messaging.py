@@ -8,6 +8,9 @@ Deux principes tiennent tout le module :
 """
 import re
 import uuid
+import hashlib
+import json
+from datetime import datetime, timezone
 
 from .app import APIError, now_iso, text_field
 
@@ -21,8 +24,8 @@ LANGUAGES = {
     "es": "Español",
     "zh": "中文",
 }
-# Réponses rapides : traduites une fois à la main, donc parfaitement rendues dans
-# chaque langue sans aucun moteur. C'est ce qui couvre l'essentiel des échanges réels.
+# Réponses rapides : formulations préparées dans les langues proposées.
+# Elles ne constituent pas un moteur de traduction des messages libres.
 PHRASES = {
     "on_my_way": {
         "fr": "Je suis en route, j’arrive dans quelques minutes.",
@@ -113,6 +116,24 @@ def initialize_messaging(db):
         )""",
     ):
         db.execute(statement)
+    db.execute("""CREATE TABLE IF NOT EXISTS order_message_receipts (
+        message_id TEXT NOT NULL REFERENCES order_messages(id),
+        user_id TEXT NOT NULL REFERENCES users(id), PRIMARY KEY (message_id, user_id)
+    )""")
+    db.execute("""CREATE TABLE IF NOT EXISTS order_message_requests (
+        user_id TEXT NOT NULL REFERENCES users(id), request_id TEXT NOT NULL,
+        order_id TEXT NOT NULL REFERENCES orders(id), message_id TEXT NOT NULL REFERENCES order_messages(id),
+        request_hash TEXT NOT NULL, PRIMARY KEY (user_id, request_id)
+    )""")
+    db.execute("CREATE TABLE IF NOT EXISTS messaging_migrations (id TEXT PRIMARY KEY)")
+    if not db.execute("SELECT id FROM messaging_migrations WHERE id = 'message-receipts-v1'").fetchone():
+        # Preserve the previous read state once, then track exact message IDs.
+        # Timestamp-only cursors could swallow a message arriving in the same ms.
+        db.execute("""INSERT INTO order_message_receipts(message_id, user_id)
+            SELECT m.id, r.user_id FROM order_messages m JOIN order_message_reads r
+            ON r.order_id = m.order_id WHERE m.created_at <= r.last_read_at
+            ON CONFLICT(message_id, user_id) DO NOTHING""")
+        db.execute("INSERT INTO messaging_migrations(id) VALUES ('message-receipts-v1')")
     # Coordonnées fictives des comptes de démonstration, posées une seule fois.
     for user_id, phone, language in (("demo-client", "0694 00 00 01", "fr"), ("demo-restaurant", "0694 00 00 02", "fr"),
                                      ("demo-courier", "0694 00 00 03", "ht"), ("demo-admin", "0694 00 00 04", "fr")):
@@ -140,7 +161,7 @@ def update_profile(handler, db, data):
     current = profile(db, user["id"])
     phone = valid_phone(text_field(data, "phone", 0, 30)) if "phone" in data else current["phone"]
     language = data.get("language", current["language"])
-    if language not in LANGUAGES:
+    if not isinstance(language, str) or language not in LANGUAGES:
         raise APIError(400, "Cette langue n’est pas proposée.")
     if "name" in data:
         db.execute("UPDATE users SET name = ? WHERE id = ?", (text_field(data, "name", 2, 100), user["id"]))
@@ -182,14 +203,19 @@ def membership(db, order, user):
 
 
 def thread_open(order):
-    """Le fil s'ouvre à l'acceptation et se ferme une demi-heure après la fin."""
+    """Accepted orders remain writable for thirty minutes after a terminal event."""
     if order["status"] in ACTIVE:
         return True
-    if order["status"] == "pending":
+    if order["status"] not in {"delivered", "cancelled"}:
         return False
-    from datetime import datetime, timezone
-    ended = datetime.fromisoformat(order["updatedAt"].replace("Z", "+00:00"))
-    return (datetime.now(timezone.utc) - ended).total_seconds() < CLOSED_GRACE_SECONDS
+    if not any(event.get("status") == "accepted" for event in order.get("history", [])):
+        return False
+    try:
+        ended = datetime.fromisoformat(order["updatedAt"].replace("Z", "+00:00"))
+        age = (datetime.now(timezone.utc) - ended).total_seconds()
+        return 0 <= age < CLOSED_GRACE_SECONDS
+    except (KeyError, TypeError, ValueError):
+        return False
 
 
 def contact_cards(db, order, viewer):
@@ -199,9 +225,11 @@ def contact_cards(db, order, viewer):
     cards = []
     def card(role, user, label, reachable, note):
         details = profile(db, user["id"])
-        # Le nom complet du client n'est donné qu'aux comptes qui doivent le livrer.
-        cards.append({"role": role, "label": label, "name": user["name"],
-                      "phone": details["phone"] if reachable and details["phone"] else "",
+        # Delivery contact belongs to this order, not to later profile edits.
+        name = order["customerName"] if role == "client" else user["name"]
+        phone = order["phone"] if role == "client" else details["phone"]
+        cards.append({"role": role, "label": label, "name": name,
+                      "phone": phone if reachable and phone else "",
                       "language": details["language"], "note": note})
     for role, user in people.items():
         if role == viewer:
@@ -227,14 +255,15 @@ def contact_cards(db, order, viewer):
     return cards
 
 
-def message_payload(row):
-    return {"id": row["id"], "senderRole": row["sender_role"], "senderName": row["sender_name"],
+def message_payload(row, viewer_id):
+    return {"id": row["id"], "mine": row["sender_id"] == viewer_id, "senderRole": row["sender_role"], "senderName": row["sender_name"],
             "body": row["body"], "language": row["language"], "phraseId": row["phrase_id"],
             "date": row["created_at"]}
 
 
 def read_thread(handler, db, order_id):
     from .marketplace import order_row
+    handler.ensure_write(db)
     user = handler.user(db, {"client", "restaurant", "courier", "admin"})
     _, order = order_row(db, order_id)
     viewer = membership(db, order, user)
@@ -244,22 +273,46 @@ def read_thread(handler, db, order_id):
     db.execute("INSERT INTO order_message_reads(order_id, user_id, last_read_at) VALUES (?, ?, ?) "
                "ON CONFLICT(order_id, user_id) DO UPDATE SET last_read_at = excluded.last_read_at",
                (order_id, user["id"], now_iso()))
-    return 200, {"messages": [message_payload(row) for row in rows],
+    # The write lock keeps this selection identical to the messages returned
+    # above. One insert avoids hundreds of remote round trips on long threads.
+    db.execute("INSERT INTO order_message_receipts(message_id, user_id) "
+               "SELECT id, ? FROM order_messages WHERE order_id = ? "
+               "ON CONFLICT(message_id, user_id) DO NOTHING", (user["id"], order_id))
+    return 200, {"messages": [message_payload(row, user["id"]) for row in rows],
                  "contacts": contact_cards(db, order, viewer),
-                 "viewerRole": viewer, "language": profile(db, user["id"])["language"],
-                 "open": thread_open(order) and viewer != "admin"}, None
+                 "viewerRole": viewer, "viewerId": user["id"], "language": profile(db, user["id"])["language"],
+                 "open": thread_open(order)}, None
 
 
 def post_message(handler, db, order_id, data):
     from .marketplace import order_row
-    user = handler.user(db, {"client", "restaurant", "courier"})
+    user = handler.user(db, {"client", "restaurant", "courier", "admin"})
     _, order = order_row(db, order_id)
     viewer = membership(db, order, user)
     if not viewer:
         raise APIError(403, "Cette conversation ne vous concerne pas.")
+    if set(data) - {"body", "phraseId", "requestId"} or ("body" in data and "phraseId" in data):
+        raise APIError(400, "Envoyez un texte ou une réponse rapide, pas les deux.")
+    phrase_id = data.get("phraseId", "")
+    if not isinstance(phrase_id, str) or ("phraseId" in data and not phrase_id):
+        raise APIError(400, "Ce message rapide n’existe pas.")
+    request_id = data.get("requestId")
+    request_hash = hashlib.sha256(json.dumps({key: value for key, value in data.items() if key != "requestId"}, sort_keys=True).encode()).hexdigest()
+    if request_id is not None:
+        try:
+            if not isinstance(request_id, str) or str(uuid.UUID(request_id)) != request_id.lower():
+                raise ValueError()
+        except (ValueError, AttributeError):
+            raise APIError(400, "L’identifiant du message est invalide.") from None
+        request_id = request_id.lower()
+        existing = db.execute("SELECT * FROM order_message_requests WHERE user_id = ? AND lower(request_id) = ?", (user["id"], request_id)).fetchone()
+        if existing:
+            if existing["order_id"] != order_id or existing["request_hash"] != request_hash:
+                raise APIError(409, "Cet identifiant correspond déjà à un autre message.")
+            message = db.execute("SELECT * FROM order_messages WHERE id = ?", (existing["message_id"],)).fetchone()
+            return 200, {"message": message_payload(message, user["id"])}, None
     if not thread_open(order):
         raise APIError(409, "Cette conversation est close : la commande n’est pas en cours.")
-    phrase_id = data.get("phraseId") or ""
     language = profile(db, user["id"])["language"]
     if phrase_id:
         if phrase_id not in PHRASES:
@@ -274,30 +327,35 @@ def post_message(handler, db, order_id, data):
                "phrase_id": phrase_id, "created_at": now_iso()}
     db.execute("INSERT INTO order_messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                (message["id"], order_id, user["id"], viewer, user["name"], body, language, phrase_id, message["created_at"]))
-    db.execute("INSERT INTO order_message_reads(order_id, user_id, last_read_at) VALUES (?, ?, ?) "
-               "ON CONFLICT(order_id, user_id) DO UPDATE SET last_read_at = excluded.last_read_at",
-               (order_id, user["id"], message["created_at"]))
-    return 201, {"message": message_payload(message)}, None
+    if request_id is not None:
+        db.execute("INSERT INTO order_message_requests VALUES (?, ?, ?, ?, ?)",
+                   (user["id"], request_id, order_id, message["id"], request_hash))
+    # Sending is not an acknowledgement of messages the sender has not read.
+    return 201, {"message": message_payload(message, user["id"])}, None
 
 
 def unread_counts(db, user):
-    """Nombre de messages non lus par commande, pour pastiller les listes."""
-    counts = {}
-    rows = db.execute(
-        "SELECT order_messages.order_id, order_messages.created_at, order_messages.sender_id, order_message_reads.last_read_at "
-        "FROM order_messages LEFT JOIN order_message_reads "
-        "ON order_messages.order_id = order_message_reads.order_id AND order_message_reads.user_id = ?", (user["id"],)).fetchall()
-    for row in rows:
-        if row["sender_id"] == user["id"]:
-            continue
-        if row["last_read_at"] and row["last_read_at"] >= row["created_at"]:
-            continue
-        counts[row["order_id"]] = counts.get(row["order_id"], 0) + 1
-    return counts
+    """Only count messages in orders the current account may still access."""
+    scope, arguments = "", []
+    if user["role"] == "client":
+        scope, arguments = " AND o.customer_id = ?", [user["id"]]
+    elif user["role"] == "restaurant":
+        scope, arguments = " AND o.restaurant_id = ?", [user["restaurant_id"]]
+    elif user["role"] == "courier":
+        scope, arguments = " AND EXISTS (SELECT 1 FROM order_assignments a WHERE a.order_id = o.id AND a.courier_id = ?)", [user["id"]]
+    elif user["role"] != "admin":
+        return {}
+    rows = db.execute("""SELECT m.order_id, COUNT(*) AS unread_count
+        FROM order_messages m JOIN orders o ON o.id = m.order_id
+        LEFT JOIN order_message_receipts r ON r.message_id = m.id AND r.user_id = ?
+        WHERE m.sender_id <> ? AND r.message_id IS NULL""" + scope + " GROUP BY m.order_id",
+        [user["id"], user["id"], *arguments]).fetchall()
+    return {row["order_id"]: row["unread_count"] for row in rows}
 
 
 def translate(handler, db, data):
     """Relais vers le moteur configuré par l’exploitant. Aucune URL ne vient de la requête."""
+    import http.client
     import json
     import os
     import urllib.error
@@ -306,10 +364,19 @@ def translate(handler, db, data):
     text = text_field(data, "text", 1, 2000)
     source = data.get("from")
     target = data.get("to")
-    if source not in LANGUAGES or target not in LANGUAGES:
+    if not isinstance(source, str) or not isinstance(target, str) or source not in LANGUAGES or target not in LANGUAGES:
         raise APIError(400, "Langue de départ ou d’arrivée inconnue.")
+    if source == target:
+        return 200, {"text": text, "from": source, "to": target}, None
+    from urllib.parse import urlsplit
     endpoint = os.environ.get("MANJEO_TRANSLATE_URL", "")
-    if not endpoint.startswith("https://"):
+    try:
+        parsed = urlsplit(endpoint)
+        valid_endpoint = parsed.scheme == "https" and parsed.hostname and not parsed.username and not parsed.password
+        parsed.port
+    except ValueError:
+        valid_endpoint = False
+    if not valid_endpoint:
         raise APIError(503, "Aucun moteur de traduction n’est configuré sur ce serveur.")
     payload = {"q": text, "source": source, "target": target, "format": "text"}
     key = os.environ.get("MANJEO_TRANSLATE_KEY", "")
@@ -319,10 +386,13 @@ def translate(handler, db, data):
                                      headers={"Content-Type": "application/json"}, method="POST")
     try:
         with urllib.request.urlopen(request, timeout=8) as response:
-            result = json.loads(response.read(100_000).decode())
-    except (urllib.error.URLError, ValueError, TimeoutError):
+            raw = response.read(100_001)
+            if len(raw) > 100_000:
+                raise ValueError("Translation response exceeds limit")
+            result = json.loads(raw.decode())
+    except (OSError, http.client.HTTPException, ValueError):
         raise APIError(502, "Le moteur de traduction n’a pas répondu.") from None
-    translated = result.get("translatedText")
+    translated = result.get("translatedText") if isinstance(result, dict) else None
     if not isinstance(translated, str) or not translated.strip():
         raise APIError(502, "Le moteur de traduction a renvoyé une réponse inattendue.")
     return 200, {"text": translated[:4000], "from": source, "to": target}, None

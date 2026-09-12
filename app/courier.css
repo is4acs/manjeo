@@ -8,3 +8,5 @@
 .courier-stop-icon,.courier-history-icon,.courier-bag{background:var(--punch);color:var(--ink)}
 
 .courier-wait.urgent{background:var(--punch);color:var(--ink);border-color:var(--ink)}
+
+.courier-history article{flex-wrap:wrap}.courier-history article>.courier-history-chat{flex-basis:100%;display:grid;gap:14px}.courier-history-chat>.staff-button{justify-self:start}

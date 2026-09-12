@@ -123,7 +123,13 @@ def initialize_marketplace(db):
         order.setdefault("pickupCity", restaurant["pickupCity"])
         if order["status"] not in TERMINAL_STATUSES:
             order.setdefault("deliveryCode", "%04d" % secrets.randbelow(10_000))
-        order.setdefault("acceptBy", shifted(order["date"], ACCEPTANCE_SECONDS))
+        if order["status"] == "pending":
+            if not order.get("acceptBy"):
+                order["acceptBy"] = shifted(order["date"], ACCEPTANCE_SECONDS)
+        else:
+            # A completed acceptance deadline must not reappear on a cold start,
+            # including on orders created before the deadline feature existed.
+            order["acceptBy"] = None
         order.setdefault("eta", None)
         order.setdefault("promoCode", None)
         order.setdefault("promoLabel", "")
@@ -140,13 +146,30 @@ def shifted(stamp, seconds):
     return moment.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def expire_pending_orders(handler, db):
+def acceptance_is_due(order, stamp):
+    if order["status"] != "pending":
+        return False
+    deadline = order.get("acceptBy") or shifted(order["date"], ACCEPTANCE_SECONDS)
+    try:
+        deadline = datetime.fromisoformat(deadline.replace("Z", "+00:00"))
+        current = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        if deadline.tzinfo is None or current.tzinfo is None:
+            raise ValueError("An acceptance deadline must include its time zone")
+        return deadline <= current
+    except (TypeError, ValueError, AttributeError):
+        # Legacy data without a usable deadline retains its original ten-minute
+        # window. Never make a malformed optional field block every order feed.
+        fallback = shifted(order["date"], ACCEPTANCE_SECONDS)
+        return datetime.fromisoformat(fallback.replace("Z", "+00:00")) <= datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+
+
+def expire_pending_orders(handler, db, stamp=None):
     """Le restaurant dispose de dix minutes pour accepter ; ensuite la commande tombe seule.
 
     Aucune tâche de fond n'existe sur cet hébergement : l'expiration est constatée
     à la première lecture ou écriture qui suit l'échéance.
     """
-    stamp = now_iso()
+    stamp = stamp or now_iso()
     late = [row["order_id"] for row in db.execute(
         "SELECT order_id FROM order_assignments WHERE state = 'pending'").fetchall()]
     if not late:
@@ -155,7 +178,7 @@ def expire_pending_orders(handler, db):
     for order_id in late:
         row = db.execute("SELECT data FROM orders WHERE id = ?", (order_id,)).fetchone()
         order = json.loads(row["data"]) if row else None
-        if order and order["status"] == "pending" and order.get("acceptBy", "") <= stamp:
+        if order and acceptance_is_due(order, stamp):
             expired.append(order)
     if not expired:
         return
@@ -163,10 +186,11 @@ def expire_pending_orders(handler, db):
     for order in expired:
         # Un autre appel a pu accepter la commande entre la lecture et le verrou.
         current = json.loads(db.execute("SELECT data FROM orders WHERE id = ?", (order["id"],)).fetchone()["data"])
-        if current["status"] != "pending":
+        if not acceptance_is_due(current, stamp):
             continue
         current["status"] = "cancelled"
-        current["updatedAt"] = now_iso()
+        current["acceptBy"] = None
+        current["updatedAt"] = stamp
         current["history"].append({"status": "cancelled", "date": current["updatedAt"],
                                    "label": "Annulation automatique — le restaurant n’a pas répondu dans les dix minutes"})
         db.execute("UPDATE orders SET data = ? WHERE id = ?", (dumps(current), current["id"]))
@@ -178,6 +202,8 @@ def projected_order(order, user):
     result = copy.deepcopy(order)
     if user["role"] not in {"client", "admin"}:
         result.pop("deliveryCode", None)
+        if order["status"] not in ACTIVE_STATUSES:
+            result["phone"] = ""
     return result
 
 
@@ -416,8 +442,8 @@ def order_row(db, order_id):
     return row, json.loads(row["data"])
 
 
-def save_order(db, order, user, label=None):
-    order["updatedAt"] = now_iso()
+def save_order(db, order, user, label=None, stamp=None):
+    order["updatedAt"] = stamp or now_iso()
     event = {"status": order["status"], "date": order["updatedAt"], "actorName": user["name"]}
     if label:
         event["label"] = label
@@ -517,14 +543,22 @@ def transition_order(handler, db, order_id, data):
             db.execute("DELETE FROM delivery_attempts WHERE order_id = ?", (order_id,))
     else:
         raise APIError(403, "Votre compte ne permet pas ce changement de statut.")
+    transition_stamp = now_iso()
     if target == "accepted":
+        # The deadline may pass after dispatch's initial expiry check. Return
+        # normally so this cancellation and promo refund survive the savepoint.
+        if acceptance_is_due(order, transition_stamp):
+            expire_pending_orders(handler, db, stamp=transition_stamp)
+            return 409, {"error": "Cette commande a expiré : le délai d’acceptation de dix minutes est dépassé."}, None
         # L'estimation n'est posée qu'une fois, à l'acceptation : préparation + course.
         row = db.execute("SELECT data FROM restaurants WHERE id = ?", (order["restaurantId"],)).fetchone()
         minutes = json.loads(row["data"]).get("minutes", 25) if row else 25
-        order["eta"] = shifted(now_iso(), minutes * 60 + COURSE_SECONDS)
+        order["eta"] = shifted(transition_stamp, minutes * 60 + COURSE_SECONDS)
+        order["acceptBy"] = None
+    elif target == "cancelled":
         order["acceptBy"] = None
     order["status"] = target
-    save_order(db, order, user, label)
+    save_order(db, order, user, label, stamp=transition_stamp)
     if target == "cancelled":
         release_use(db, order["id"])
     return 200, {"order": projected_order(order, user)}, None
@@ -555,6 +589,7 @@ def delivery_offer(order):
 
 
 def deliveries(handler, db):
+    from .messaging import unread_counts
     user = handler.user(db, {"courier"})
     profile = courier_profile(db, user)
     assigned = [projected_order(json.loads(row["data"]), user) for row in db.execute("SELECT orders.data FROM orders JOIN order_assignments ON orders.id = order_assignments.order_id WHERE courier_id = ? ORDER BY orders.created_at DESC, orders.id DESC", (user["id"],))]
@@ -562,7 +597,7 @@ def deliveries(handler, db):
     if profile["online"] and not profile["activeOrderId"]:
         for row in db.execute("SELECT orders.data FROM orders JOIN order_assignments ON orders.id = order_assignments.order_id WHERE courier_id IS NULL AND state IN ('accepted','preparing','ready') ORDER BY orders.created_at, orders.id"):
             offers.append(delivery_offer(json.loads(row["data"])))
-    return 200, {"available": offers, "assigned": assigned, "profile": profile}, None
+    return 200, {"available": offers, "assigned": assigned, "profile": profile, "unread": unread_counts(db, user)}, None
 
 
 def handle_marketplace(handler, db, path, data):

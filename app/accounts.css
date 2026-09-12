@@ -25,3 +25,4 @@
 .app-startup{padding:24px 18px}
 .startup-card{padding:60px 5px}
 }
+.profile-fields{border:0;padding:0;margin:0;min-width:0;display:grid;gap:17px}.account-switch-role{border:2px solid var(--ink);border-radius:18px;padding:16px;display:grid;gap:12px;background:var(--punch)}.account-switch-role p{font-size:13px;line-height:1.6;color:var(--ink)}

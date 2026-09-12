@@ -1,11 +1,55 @@
 """Règles métier partagées : expiration, codes promo, estimation et saisie d'adresse."""
+import copy
+import http.client
 import json
+import os
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import patch
 
+from server import app, marketplace, promotions
 from server.test_app import AppTestHarness
 
 
-class BusinessRuleTests(AppTestHarness):
+class BusinessContracts:
+    def stored_order(self, order_id):
+        with self.database.connect() as db:
+            return json.loads(db.execute("SELECT data FROM orders WHERE id = ?", (order_id,)).fetchone()["data"])
+
+    def set_order_fields(self, order_id, **fields):
+        with self.database.connect() as db:
+            self.database.begin_write(db)
+            order = json.loads(db.execute("SELECT data FROM orders WHERE id = ?", (order_id,)).fetchone()["data"])
+            order.update(fields)
+            db.execute("UPDATE orders SET data = ? WHERE id = ?", (json.dumps(order), order_id))
+
+    def parallel_orders(self, requests):
+        barrier = threading.Barrier(len(requests))
+
+        def send(spec):
+            role, payload = spec
+            connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=30)
+            barrier.wait(timeout=10)
+            connection.request("POST", "/api/orders", json.dumps(payload),
+                               {"Content-Type": "application/json", "Cookie": self.cookies[role],
+                                "Origin": "http://127.0.0.1:%d" % self.port})
+            response = connection.getresponse()
+            result = response.status, json.loads(response.read())
+            connection.close()
+            return result
+
+        with ThreadPoolExecutor(max_workers=len(requests)) as executor:
+            return list(executor.map(send, requests))
+
+    def configure_promo(self, code="BIENVENUE", **fields):
+        allowed = {"kind", "value", "minimum", "starts_at", "ends_at", "max_uses", "per_customer", "active"}
+        assert fields and set(fields) <= allowed
+        with self.database.connect() as db:
+            self.database.begin_write(db)
+            db.execute("UPDATE promo_codes SET " + ", ".join(key + " = ?" for key in fields) + " WHERE code = ?",
+                       tuple(fields.values()) + (code,))
+
     def expire(self, order_id):
         """Ramène l'échéance d'acceptation dans le passé, comme le ferait l'attente réelle."""
         with self.database.connect() as db:
@@ -130,6 +174,235 @@ class BusinessRuleTests(AppTestHarness):
         self.assertTrue(all(row["city"] == "Cayenne" for row in suggestions))
         self.assertEqual(self.request("GET", "/api/addresses?q=%20")[0]["addresses"], [])
         self.assertEqual(self.request("GET", "/api/addresses?q=zzzz")[0]["addresses"], [])
+
+    def test_rejected_acceptance_commits_expiry_and_returns_the_promotion(self):
+        order = self.create_order(self.promo_payload("BIENVENUE", 440))
+        self.expire(order["id"])
+        self.login("restaurant")
+        self.request("PATCH", "/api/orders/" + order["id"], {"status": "accepted"}, role="restaurant", status=409)
+        # A GET would conceal the original bug by performing expiry again.
+        persisted = self.stored_order(order["id"])
+        self.assertEqual(persisted["status"], "cancelled")
+        self.assertIsNone(persisted["acceptBy"])
+        self.assertEqual([row["status"] for row in persisted["history"]], ["pending", "cancelled"])
+        with self.database.connect() as db:
+            self.assertEqual(db.execute("SELECT state FROM order_assignments WHERE order_id = ?", (order["id"],)).fetchone()[0], "cancelled")
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM promo_uses WHERE order_id = ?", (order["id"],)).fetchone()[0], 0)
+
+    def test_failed_new_order_rolls_back_only_action_and_keeps_expiry(self):
+        previous = self.create_order(self.promo_payload("BIENVENUE", 440))
+        self.expire(previous["id"])
+        payload = self.promo_payload("BIENVENUE", 440)
+        actual_record = promotions.record_use
+
+        def insert_then_fail(db, order, user):
+            actual_record(db, order, user)
+            raise app.APIError(409, "Conflit simulé après insertion")
+
+        with patch("server.promotions.record_use", insert_then_fail):
+            self.request("POST", "/api/orders", payload, role="client", status=409)
+        self.assertEqual(self.stored_order(previous["id"])["status"], "cancelled")
+        with self.database.connect() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM orders").fetchone()[0], 1)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM promo_uses").fetchone()[0], 0)
+
+    def test_promotion_preview_reclaims_expired_use_without_visiting_orders(self):
+        order = self.create_order(self.promo_payload("BIENVENUE", 440))
+        self.expire(order["id"])
+        preview = self.request("POST", "/api/promotions/check", {"code": "BIENVENUE", "restaurantId": "ti-kreol", "city": "Cayenne", "subtotal": 2200}, role="client")[0]
+        self.assertEqual(preview["promotion"]["discount"], 440)
+        self.assertEqual(self.stored_order(order["id"])["status"], "cancelled")
+        with self.database.connect() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM promo_uses").fetchone()[0], 0)
+
+    def test_public_promotion_list_reclaims_expired_global_quota(self):
+        self.configure_promo(max_uses=1)
+        order = self.create_order(self.promo_payload("BIENVENUE", 440))
+        self.assertNotIn("BIENVENUE", {row["code"] for row in self.request("GET", "/api/promotions")[0]["promotions"]})
+        self.expire(order["id"])
+        self.assertIn("BIENVENUE", {row["code"] for row in self.request("GET", "/api/promotions")[0]["promotions"]})
+        self.assertEqual(self.stored_order(order["id"])["status"], "cancelled")
+
+    def test_promotion_window_compares_actual_instants(self):
+        self.login("client")
+        payload = {"code": "BIENVENUE", "restaurantId": "ti-kreol", "city": "Cayenne", "subtotal": 2200}
+        self.configure_promo(starts_at="2027-05-01T14:00:00+02:00", ends_at="2027-05-01T13:00:00Z")
+        with patch("server.promotions.now_iso", return_value="2027-05-01T12:00:00.500Z"):
+            self.assertEqual(self.request("POST", "/api/promotions/check", payload, role="client")[0]["promotion"]["discount"], 440)
+        self.configure_promo(starts_at="2027-05-01T11:00:00Z", ends_at="2027-05-01T12:00:00Z")
+        with patch("server.promotions.now_iso", return_value="2027-05-01T12:00:00.000Z"):
+            self.request("POST", "/api/promotions/check", payload, role="client")
+        with patch("server.promotions.now_iso", return_value="2027-05-01T12:00:00.001Z"):
+            self.request("POST", "/api/promotions/check", payload, role="client", status=409)
+            self.assertNotIn("BIENVENUE", {row["code"] for row in self.request("GET", "/api/promotions")[0]["promotions"]})
+
+    def test_invalid_operator_promotion_is_never_silently_free_delivery(self):
+        self.login("client")
+        payload = {"code": "BIENVENUE", "restaurantId": "ti-kreol", "city": "Cayenne", "subtotal": 2200}
+        for fields in ({"kind": "unknown"}, {"kind": "percent", "value": 200}, {"value": 20, "max_uses": -1}):
+            self.configure_promo(**fields)
+            self.request("POST", "/api/promotions/check", payload, role="client", status=409)
+            self.assertNotIn("BIENVENUE", {row["code"] for row in self.request("GET", "/api/promotions")[0]["promotions"]})
+
+    def test_deadline_exact_boundary_and_timezone_are_consistent(self):
+        order = self.create_order()
+        self.set_order_fields(order["id"], acceptBy="2027-05-01T14:10:00+02:00")
+        with patch("server.marketplace.now_iso", return_value="2027-05-01T12:09:59.999Z"):
+            self.request("GET", "/api/orders", role="client")
+        self.assertEqual(self.stored_order(order["id"])["status"], "pending")
+        with patch("server.marketplace.now_iso", return_value="2027-05-01T12:10:00.000Z"):
+            self.request("GET", "/api/orders", role="client")
+        self.assertEqual(self.stored_order(order["id"])["status"], "cancelled")
+
+    def test_legacy_null_deadline_does_not_break_order_feed(self):
+        order = self.create_order()
+        self.set_order_fields(order["id"], date="2020-01-01T00:00:00.000Z", acceptBy=None)
+        self.request("GET", "/api/orders", role="client")
+        self.assertEqual(self.stored_order(order["id"])["status"], "cancelled")
+
+    def test_deadline_crossed_during_acceptance_cancels_and_refunds_promo(self):
+        self.login("restaurant")
+        for acceptance_stamp in ("2027-05-01T12:10:00.000Z", "2027-05-01T12:10:00.001Z"):
+            with self.subTest(acceptance_stamp=acceptance_stamp):
+                order = self.create_order(self.promo_payload("BIENVENUE", 440))
+                self.set_order_fields(order["id"], acceptBy="2027-05-01T12:10:00.000Z")
+                with patch("server.marketplace.now_iso", side_effect=["2027-05-01T12:09:59.999Z", acceptance_stamp]):
+                    self.request("PATCH", "/api/orders/" + order["id"], {"status": "accepted"}, role="restaurant", status=409)
+                # Read storage directly: another HTTP read must not conceal a
+                # cancellation rolled back with the failed acceptance action.
+                persisted = self.stored_order(order["id"])
+                self.assertEqual(persisted["status"], "cancelled")
+                self.assertEqual(persisted["updatedAt"], acceptance_stamp)
+                self.assertIsNone(persisted["eta"])
+                self.assertIsNone(persisted["acceptBy"])
+                self.assertEqual([event["status"] for event in persisted["history"]], ["pending", "cancelled"])
+                with self.database.connect() as db:
+                    self.assertEqual(db.execute("SELECT state FROM order_assignments WHERE order_id = ?", (order["id"],)).fetchone()[0], "cancelled")
+                    self.assertEqual(db.execute("SELECT COUNT(*) FROM promo_uses WHERE order_id = ?", (order["id"],)).fetchone()[0], 0)
+
+    def test_accepted_order_restart_never_restores_acceptance_deadline(self):
+        order = self.create_order()
+        self.login("restaurant")
+        accepted = self.request("PATCH", "/api/orders/" + order["id"], {"status": "accepted"}, role="restaurant")[0]["order"]
+        self.assertEqual(accepted["eta"], marketplace.shifted(accepted["updatedAt"], 40 * 60))
+        self.set_order_fields(order["id"], acceptBy=order["acceptBy"])
+        self.database.initialize()
+        persisted = self.stored_order(order["id"])
+        self.assertIsNone(persisted["acceptBy"])
+        self.assertEqual(persisted["eta"], accepted["eta"])
+        self.assertEqual(persisted["items"], order["items"])
+
+    def test_client_capacity_is_atomic_under_concurrent_checkout(self):
+        for _ in range(4):
+            self.create_order()
+        payloads = [self.order_payload(), self.order_payload()]
+        results = self.parallel_orders([("client", payload) for payload in payloads])
+        self.assertEqual(sorted(status for status, _ in results), [201, 409])
+        with self.database.connect() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM order_assignments WHERE state = 'pending'").fetchone()[0], 5)
+
+    def test_per_account_promotion_quota_is_atomic(self):
+        self.login("client")
+        results = self.parallel_orders([("client", self.promo_payload("BIENVENUE", 440)), ("client", self.promo_payload("BIENVENUE", 440))])
+        self.assertEqual(sorted(status for status, _ in results), [201, 409])
+        with self.database.connect() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM promo_uses WHERE code = 'BIENVENUE'").fetchone()[0], 1)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM orders").fetchone()[0], 1)
+
+    def test_global_promotion_quota_is_atomic_between_customers(self):
+        self.configure_promo(max_uses=1, per_customer=0)
+        self.login("client")
+        self.add_test_user("client2", "client")
+        self.login("client2")
+        results = self.parallel_orders([("client", self.promo_payload("BIENVENUE", 440)), ("client2", self.promo_payload("BIENVENUE", 440))])
+        self.assertEqual(sorted(status for status, _ in results), [201, 409])
+        with self.database.connect() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM promo_uses WHERE code = 'BIENVENUE'").fetchone()[0], 1)
+
+    def test_replay_at_capacity_never_consumes_promo_twice_or_revives_cancelled_use(self):
+        payload = self.promo_payload("BIENVENUE", 440)
+        original = self.create_order(payload)
+        for _ in range(4):
+            self.create_order()
+        replay = self.request("POST", "/api/orders", payload, role="client")[0]["order"]
+        self.assertEqual(replay["id"], original["id"])
+        self.request("PATCH", "/api/orders/" + original["id"], {"status": "cancelled", "reason": "Annulation de test"}, role="client")
+        replay = self.request("POST", "/api/orders", payload, role="client")[0]["order"]
+        self.assertEqual(replay["status"], "cancelled")
+        with self.database.connect() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM orders").fetchone()[0], 5)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM promo_uses").fetchone()[0], 0)
+        self.create_order(self.promo_payload("BIENVENUE", 440))
+
+    def test_request_uuid_case_is_idempotent_for_new_and_legacy_orders(self):
+        payload = self.order_payload()
+        payload["requestId"] = "abcdabcd-1234-4abc-a123-abcdabcdabcd"
+        original = self.create_order(payload)
+        upper = copy.deepcopy(payload)
+        upper["requestId"] = payload["requestId"].upper()
+        self.assertEqual(self.request("POST", "/api/orders", upper, role="client")[0]["order"]["id"], original["id"])
+        with self.database.connect() as db:
+            self.database.begin_write(db)
+            db.execute("UPDATE orders SET request_id = ? WHERE id = ?", (upper["requestId"], original["id"]))
+        self.assertEqual(self.request("POST", "/api/orders", payload, role="client")[0]["order"]["id"], original["id"])
+        upper["notes"] += " autre contenu"
+        self.request("POST", "/api/orders", upper, role="client", status=409)
+        with self.database.connect() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM orders").fetchone()[0], 1)
+
+    def test_order_phone_is_open_only_during_staff_contact_window(self):
+        order = self.create_order()
+        self.login("restaurant")
+        self.login("courier")
+        self.login("admin")
+        self.assertEqual(self.request("GET", "/api/orders", role="restaurant")[0]["orders"][0]["phone"], "")
+        self.request("PATCH", "/api/orders/" + order["id"], {"status": "accepted"}, role="restaurant")
+        self.assertEqual(self.request("GET", "/api/orders", role="restaurant")[0]["orders"][0]["phone"], order["phone"])
+        self.request("PATCH", "/api/courier/profile", {"online": True}, role="courier")
+        self.request("POST", "/api/orders/" + order["id"] + "/claim", {}, role="courier")
+        self.assertEqual(self.request("GET", "/api/orders", role="courier")[0]["orders"][0]["phone"], order["phone"])
+        self.request("PATCH", "/api/orders/" + order["id"], {"status": "cancelled", "reason": "Annulation de démonstration"}, role="admin")
+        for role in ("restaurant", "courier"):
+            self.assertEqual(self.request("GET", "/api/orders", role=role)[0]["orders"][0]["phone"], "")
+        delivery_feed = self.request("GET", "/api/deliveries", role="courier")[0]
+        self.assertEqual(delivery_feed["assigned"][0]["phone"], "")
+        self.assertIsInstance(delivery_feed["unread"], dict)
+        for role in ("client", "admin"):
+            self.assertEqual(self.request("GET", "/api/orders", role=role)[0]["orders"][0]["phone"], order["phone"])
+
+
+class BusinessRuleTests(BusinessContracts, AppTestHarness):
+    """Business invariants with temporary SQLite databases."""
+
+
+@unittest.skipUnless(os.environ.get("MANJEO_TEST_DATABASE_URL"), "MANJEO_TEST_DATABASE_URL absent : PostgreSQL non testé")
+class PostgresBusinessRuleTests(BusinessContracts, AppTestHarness):
+    """Same HTTP invariants in disposable schemas of an explicit test database."""
+    from server.test_postgres import PostgresIntegrationTests as _Harness
+    setUp = _Harness.setUp
+    tearDown = _Harness.tearDown
+    close_server = _Harness.close_server
+    drop_owned_schema = _Harness.drop_owned_schema
+
+    def test_statement_timeout_preserves_database_error_and_rolls_back_action(self):
+        order = self.create_order()
+        original_api = app.Handler.api
+
+        def interrupted_action(handler, db, path, data):
+            if path == "/api/orders":
+                db.execute("UPDATE orders SET request_hash = ? WHERE id = ?", ("uncommitted", order["id"]))
+                db.execute("SET LOCAL statement_timeout = '1ms'")
+                db.execute("SELECT pg_sleep(0.02)")
+            return original_api(handler, db, path, data)
+
+        with self.database.connect() as db:
+            original_hash = db.execute("SELECT request_hash FROM orders WHERE id = ?", (order["id"],)).fetchone()[0]
+        with patch.object(app.Handler, "api", interrupted_action):
+            response = self.request("GET", "/api/orders", role="client", status=503)[0]
+        self.assertIn("momentanément indisponible", response["error"])
+        self.assertEqual(self.stored_order(order["id"]), order)
+        with self.database.connect() as db:
+            self.assertEqual(db.execute("SELECT request_hash FROM orders WHERE id = ?", (order["id"],)).fetchone()[0], original_hash)
 
 
 if __name__ == "__main__":

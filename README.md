@@ -42,11 +42,11 @@ handoff sont dans [la direction « Punch »](docs/DIRECTION-PUNCH.md).
 
 ## Délais, codes promo et adresses
 
-- **Le restaurant a dix minutes pour accepter.** Passé ce délai la commande s’annule d’elle-même, l’historique porte la mention « annulation automatique » et le code promo utilisé est rendu. Le client voit le compte à rebours dans son suivi, le restaurateur le voit sur la commande. L’hébergement n’exécutant aucune tâche de fond, l’expiration est constatée à la première requête qui suit l’échéance.
+- **Le restaurant a dix minutes pour accepter.** Après l’échéance, le serveur refuse l’acceptation. L’annulation et la restitution du code promo sont enregistrées lors de la prochaine requête concernant les commandes, livraisons, livreurs ou promotions, y compris si l’action demandée est refusée. Le client et le restaurant voient le compte à rebours. Aucune tâche de fond n’est configurée sur le déploiement Vercel Hobby : sans requête, la base peut encore afficher l’ancien statut jusqu’à la consultation suivante.
 - **Une estimation apparaît à l’acceptation** (préparation annoncée + quinze minutes de course). Elle est affichée au client, au restaurateur et au livreur, et le retard est signalé aux trois.
-- **Trois codes de démonstration** : `BIENVENUE` (20 % dès 15 €, une fois par compte), `LIVRAISON` (livraison offerte dès 25 €) et `TIKAZ5` (5 € chez Ti Kaz Kréol dès 20 €). Le code se saisit dans le panier ; la remise affichée n’est qu’un aperçu, le serveur la recalcule à la confirmation et refuse tout total qui ne correspond pas. Un code est rendu quand la commande est annulée.
+- **Trois codes de démonstration** : `BIENVENUE` (20 % dès 15 €, une fois par compte), `LIVRAISON` (livraison offerte dès 25 €) et `TIKAZ5` (5 € chez Ti Kaz Kréol dès 20 €). Le code se saisit dans le panier ; la remise est revérifiée si le compte, le restaurant, la commune ou les montants changent. Le serveur la recalcule à la confirmation et refuse tout total qui ne correspond pas. Un code est rendu quand la commande est annulée.
 - **Un client ne peut pas cumuler plus de cinq commandes en cours**, pour que la démonstration partagée reste lisible.
-- **La saisie d’adresse propose des complétions** pour Cayenne, Rémire-Montjoly et Matoury. Ce répertoire est une liste fixe embarquée dans l’API (`server/addresses.py`), sans appel réseau ni clé : en production, le remplacer par la Base Adresse Nationale, l’interface consomme déjà la même forme de réponse.
+- **La saisie d’adresse interroge l’IGN en ligne**, dans l’index des adresses issu de la Base Adresse Nationale, pour Cayenne, Rémire-Montjoly et Matoury. Les appels sont bornés et mis en cache. En cas d’indisponibilité, une liste fixe prend le relais avec la mention explicite « Suggestions de démonstration ». Le mode local utilise cette liste par défaut ; `MANJEO_ADDRESS_PROVIDER=ign` active le service distant. La saisie libre reste possible, sans obligation de choisir une suggestion ni garantie qu’un numéro existe. La sélection est explicite et une réponse tardive ne remplace pas ce qui est en cours de saisie. [Service de géocodage IGN](https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/geocodage/).
 
 ## Modifier la carte
 
@@ -60,22 +60,34 @@ Le restaurant peut aussi modifier sa présentation, son adresse de retrait, son 
 
 ## Coordonnées, messagerie et langues
 
-Chaque compte porte un téléphone et une langue, modifiables depuis **Mon compte** — accessible aussi
-depuis les espaces restaurateur, livreur et administration.
+Chaque compte porte un nom, un téléphone et une langue, modifiables depuis **Mon compte**, accessible
+depuis les quatre espaces. Le nom et le téléphone préremplissent la prochaine commande ; les
+coordonnées d’une commande déjà confirmée restent celles saisies au moment de cette commande.
 
-- **Les numéros ne sont ouverts que le temps utile.** Le client joint le restaurant pendant que sa
-  commande est en cours, et le livreur seulement entre le retrait et la remise. Le livreur affecté
-  joint le client et le restaurant. Hors de cette fenêtre, le serveur ne renvoie aucun numéro.
-- **Une conversation est attachée à chaque commande.** Elle s’ouvre à l’acceptation, se ferme une
-  demi-heure après la livraison, et n’est lisible que par le client, le restaurant, le livreur
-  affecté et l’administration. Les messages non lus sont comptés pour chaque rôle.
-- **Chacun écrit dans sa langue.** Un message est conservé tel qu’il a été écrit et traduit à la
-  lecture. Les **réponses rapides** sont traduites à la main en français, créole haïtien, créole
-  guyanais, portugais, anglais, espagnol et chinois : un livreur brésilien qui envoie « Estou a
-  caminho » est lu « Mwen sou wout la » par un client haïtien, sans aucun moteur. Le texte libre
-  passe par le moteur du navigateur (API Translator) quand la paire existe, sinon par un moteur
-  configuré côté serveur (`MANJEO_TRANSLATE_URL`, `MANJEO_TRANSLATE_KEY`). Sans moteur, le message
-  reste dans sa langue et l’interface le dit ; l’original est toujours consultable.
+- **Les numéros suivent la prise en charge.** Le client joint le restaurant de l’acceptation à la
+  livraison, et son livreur dès que la commande est prête puis pendant la livraison. Le livreur
+  affecté joint le client et le restaurant ; le restaurant joint le client et le livreur affecté.
+  Les numéros de ces contacts sont retirés dès la livraison ou l’annulation. L’admin les conserve
+  pour l’assistance ; le client garde les coordonnées de sa propre commande.
+- **Une conversation est attachée à chaque commande.** L’écriture s’ouvre à l’acceptation et reste
+  possible trente minutes après la livraison ou une annulation ultérieure. Une commande annulée
+  avant acceptation n’ouvre pas de conversation. L’historique reste ensuite lisible par le client,
+  le restaurant, le livreur encore affecté et l’administration. Un livreur réaffecté ou ayant libéré
+  la course perd cet accès. Les non-lus sont suivis par compte et une nouvelle tentative d’envoi
+  conserve le même identifiant pour éviter les doublons. Les échanges sont actualisés périodiquement.
+- **Les réponses rapides ont des versions préparées** en français, créole haïtien, créole guyanais,
+  portugais, anglais, espagnol et chinois. Elles sont identifiées comme telles et ne nécessitent
+  pas de moteur de traduction après chargement du répertoire. Elles ne constituent pas une garantie
+  de justesse ou de fonctionnement hors ligne de l’application.
+- **La traduction du texte libre est optionnelle.** L’API Translator de Chrome fonctionne sur
+  ordinateur, selon les langues disponibles ; son activation se fait par un clic explicite et
+  peut télécharger un modèle. Ouvrir une conversation ne déclenche pas ce téléchargement. Le créole
+  haïtien (`ht`) et le créole guyanais (`gcr`) ne font pas partie des langues actuellement prises en
+  charge par ce moteur. [Documentation Chrome Translator](https://developer.chrome.com/docs/ai/translator-api).
+  Un relais serveur peut être configuré avec `MANJEO_TRANSLATE_URL` et, si nécessaire,
+  `MANJEO_TRANSLATE_KEY` ; il n’est pas configuré dans la démonstration actuelle. Sans traduction
+  disponible, le texte original reste affiché avec une explication et une possibilité de réessayer.
+  Une traduction automatique ne remplace jamais le message d’origine.
 
 Les traductions des réponses rapides doivent être relues par des locuteurs natifs avant une mise en
 service réelle.
@@ -90,6 +102,8 @@ Configuration serveur dans les variables d’environnement Vercel :
 
 - `DATABASE_URL` : connexion PostgreSQL fournie par Neon ; `POSTGRES_URL` est accepté comme alternative.
 - `APP_ORIGIN` : `https://manjeo.vercel.app` pour l’environnement Production.
+- `MANJEO_DB_SCHEMA` : schéma isolé selon l’environnement, notamment `manjeo_preview` pour les essais Preview.
+- `MANJEO_TRANSLATE_URL` et `MANJEO_TRANSLATE_KEY` : relais de traduction facultatif, actuellement non configuré. Il doit accepter une requête HTTPS au format décrit dans le contrat des quatre espaces.
 
 La connexion à la base reste côté serveur : ne pas la préfixer avec `VITE_`, l’ajouter au code ou la publier dans Git. Sur Vercel, une connexion de base manquante provoque une erreur explicite ; l’API ne crée pas de base SQLite temporaire à la place.
 
@@ -106,22 +120,16 @@ Le dépôt inclut `AGENTS.md` pour transmettre le contexte à un nouvel agent, `
 Prérequis : Git, Node.js 22.13 ou supérieur avec npm, et Python 3.12 pour le backend et le traitement des photos. Cloner le dépôt dans un dossier hors iCloud et ouvrir ce dossier dans Codex ; voir le [guide MacBook](docs/REPRENDRE-SUR-MACBOOK.md).
 
 ```sh
-npm install
-python3.12 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-npm test
-npm run build:vercel
+bash scripts/codex-setup.sh
+bash scripts/codex-check.sh
 ```
 
-Le build vérifie les types TypeScript, puis génère l’interface avec Vite. Les tests couvrent le panier client, les permissions, la carte, les migrations, les conflits d’affectation et le code de remise. Les tests SQLite utilisent des bases temporaires. Les tests d’intégration PostgreSQL nécessitent une connexion de test séparée, fournie par `MANJEO_TEST_DATABASE_URL`, et les dépendances de `requirements.txt`. Ne pas utiliser la base de démonstration en ligne comme base de test.
+Le setup installe les dépendances verrouillées dans `.venv` et `node_modules`. Le script de vérification utilise le Python du venv et retire les connexions de base de son environnement : il exécute les tests autonomes, TypeScript puis Vite. Les tests couvrent notamment le panier, les promotions, les adresses, les permissions, les cartes, les migrations, les affectations, le code de remise et la messagerie. Les tests SQLite utilisent des bases temporaires. Les tests PostgreSQL sont ignorés par ce script ; signaler cette limite avec les résultats.
 
-Pour installer les dépendances Python dans un environnement dédié :
+Pour les tests d’intégration PostgreSQL, fournir séparément `MANJEO_TEST_DATABASE_URL` vers une base dédiée, puis lancer la suite correspondante. Elle crée ses propres schémas temporaires. Ne pas utiliser la base du site public.
 
 ```sh
-python3.12 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python -m unittest discover -s server -p 'test_*.py'
+env -u DATABASE_URL -u POSTGRES_URL -u VERCEL .venv/bin/python -m unittest discover -s server -p 'test_*.py'
 ```
 
 ## Option : développement local avec SQLite
@@ -129,13 +137,14 @@ python3.12 -m venv .venv
 Le mode local permet des essais indépendants de la démonstration en ligne. Sans variable `DATABASE_URL` ni `POSTGRES_URL`, le serveur local utilise `.data/manjeo.sqlite3`, exclue de Git. Utiliser aussi l’environnement Python 3.12 et les dépendances ci-dessus pour disposer du traitement des photos.
 
 ```sh
+source .venv/bin/activate
 npm run build
 npm start
 ```
 
 Ouvrir [http://127.0.0.1:5173/](http://127.0.0.1:5173/). La commande de build locale utilise un cache hors des dossiers synchronisés pour éviter les blocages iCloud. Garder le terminal ouvert pendant l’utilisation locale ; `Ctrl-C` arrête le serveur.
 
-Pour le rechargement automatique, utiliser `npm install`, puis `npm run dev`. Cette commande lance Vite sur 5173 et l’API Python sur 5174 ; les requêtes `/api` passent par Vite. Arrêter l’autre lanceur local avant de changer de mode, car ils utilisent le même port.
+Pour le rechargement automatique, utiliser `npm run dev` avec le venv activé après le setup. Cette commande lance Vite sur 5173 et l’API Python sur 5174 ; les requêtes `/api` passent par Vite. Arrêter l’autre lanceur local avant de changer de mode, car ils utilisent le même port.
 
 Une base SQLite séparée peut être choisie avec `MANJEO_DB=/chemin/vers/test.sqlite3 npm start`. Les modifications de cette base locale n’affectent pas Neon. Pour recommencer une démo locale, arrêter les serveurs et déplacer `.data` vers une sauvegarde avant de relancer ; conserver les sauvegardes hors de Git.
 
@@ -149,4 +158,4 @@ Une base SQLite séparée peut être choisie avec `MANJEO_DB=/chemin/vers/test.s
 - `scripts/` : lanceurs et compilation pour le travail local.
 - `public/images/` : images locales ; sources et licences dans `ASSET-SOURCES.md`.
 
-Cette application est une démonstration publiée en ligne. Elle ne fournit pas de paiement, d’envoi de messages ou de livraison réelle.
+Cette application est une démonstration publiée en ligne. Sa messagerie interne est partagée entre les comptes de test ; elle ne déclenche aucun SMS, appel automatique, paiement ou déplacement réel.

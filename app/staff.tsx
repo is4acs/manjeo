@@ -26,8 +26,7 @@ function StatusBadge({ status }: { status: OrderStatus }) {
 }
 
 // Le restaurateur voit le temps qu'il lui reste pour accepter, puis son retard éventuel.
-function OrderDeadline({ order }: { order: Order }) {
-  const seconds = useCountdown(order.status === "pending" ? order.acceptBy : null);
+function OrderDeadline({ order, seconds }: { order: Order; seconds: number }) {
   if (order.status === "pending" && order.acceptBy) {
     return <span className={`staff-deadline ${seconds <= 120 ? "urgent" : ""}`}><Clock3 size={14} />{seconds > 0 ? <>À accepter sous <strong>{countdown(seconds)}</strong></> : <>Délai dépassé — annulation en cours</>}</span>;
   }
@@ -35,20 +34,22 @@ function OrderDeadline({ order }: { order: Order }) {
   return <span className={`staff-deadline ${isLate(order.eta, order.status) ? "urgent" : ""}`}><Clock3 size={14} />{isLate(order.eta, order.status) ? <>En retard sur {clockLabel(order.eta)}</> : <>Attendue vers <strong>{clockLabel(order.eta)}</strong></>}</span>;
 }
 
-function OrderCard({ order, admin, busy, onStatus, couriers, onAssign, language, unread }: { order: Order; admin: boolean; busy: boolean; onStatus: (order: Order, status: OrderStatus, reason?: string) => void; couriers: CourierProfile[]; onAssign: (order: Order, courierId: string | null, reason: string) => void; language: string; unread: number }) {
+function OrderCard({ order, admin, busy, onStatus, couriers, onAssign, language, unread, viewerId }: { order: Order; admin: boolean; busy: boolean; onStatus: (order: Order, status: OrderStatus, reason?: string) => void; couriers: CourierProfile[]; onAssign: (order: Order, courierId: string | null, reason: string) => void; language: string; unread: number; viewerId: string }) {
   const next = nextActions[order.status];
+  const seconds = useCountdown(order.status === "pending" ? order.acceptBy : null);
+  const expired = order.status === "pending" && !!order.acceptBy && seconds <= 0;
   const [chatOpen, setChatOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [assignReason, setAssignReason] = useState("");
   const [courierId, setCourierId] = useState(order.courierId ?? "");
-  const canCancel = ["pending", "accepted", "preparing", "ready"].includes(order.status);
+  const canCancel = !expired && ["pending", "accepted", "preparing", "ready"].includes(order.status);
   const canAssign = admin && ["accepted", "preparing", "ready"].includes(order.status);
   useEffect(() => { setCourierId(order.courierId ?? ""); setAssignReason(""); }, [order.courierId]);
   return <article className={`staff-order ${order.status === "pending" ? "staff-order-new" : ""}`}>
     <div className="staff-order-top">
       <div className="staff-order-id"><strong>{order.id}</strong><span>{dateLabel(order.date)}</span></div>
-      <OrderDeadline order={order} />
+      <OrderDeadline order={order} seconds={seconds} />
       <StatusBadge status={order.status} />
     </div>
     <div className="staff-order-body">
@@ -61,7 +62,7 @@ function OrderCard({ order, admin, busy, onStatus, couriers, onAssign, language,
       </div>
       <div className="staff-order-summary">
         <div className="staff-order-price"><span>Total de la commande</span><strong>{money(order.total)}</strong><small>dont {money(order.delivery)} de livraison simulée{order.discount > 0 ? ` · remise ${order.promoCode} de ${money(order.discount)}` : ""}</small></div>
-        {next && <button type="button" className="staff-button staff-button-primary" disabled={busy} onClick={() => onStatus(order, next.status)}>{busy ? "Mise à jour…" : next.label}{!busy && <ArrowRight size={16} />}</button>}
+        {next && <button type="button" className="staff-button staff-button-primary" disabled={busy || expired} onClick={() => onStatus(order, next.status)}>{expired ? "Délai d’acceptation dépassé" : busy ? "Mise à jour…" : next.label}{!busy && !expired && <ArrowRight size={16} />}</button>}
         {canCancel && <button type="button" className="staff-cancel" disabled={busy} onClick={() => setCancelOpen(!cancelOpen)}><X size={14} />Annuler la commande</button>}
         {order.status === "ready" && <p className="staff-order-complete"><Bike size={17} />{order.courierName ? `Retrait attendu par ${order.courierName}` : "En attente d’un livreur"}</p>}
         {order.status === "picked_up" && <p className="staff-order-complete"><Bike size={17} />En livraison avec {order.courierName || "le livreur"}</p>}
@@ -69,16 +70,16 @@ function OrderCard({ order, admin, busy, onStatus, couriers, onAssign, language,
       </div>
     </div>
     {cancelOpen && canCancel && <form className="staff-inline-action staff-action-form" onSubmit={event => { event.preventDefault(); if (cancelReason.trim().length >= 3) onStatus(order, "cancelled", cancelReason.trim()); }}><label>Motif d’annulation<textarea required minLength={3} maxLength={250} value={cancelReason} disabled={busy} onChange={event => setCancelReason(event.target.value)} placeholder="Expliquez le motif au client et à l’équipe." /></label><p>L’annulation est définitive et informe tous les espaces concernés.</p><div><button type="button" className="staff-button" onClick={() => setCancelOpen(false)} disabled={busy}>Garder la commande</button><button type="submit" className="staff-button menu-danger" disabled={busy || cancelReason.trim().length < 3}>Confirmer l’annulation</button></div></form>}
-    {!["pending", "cancelled"].includes(order.status) && <div className="staff-chat">
+    {order.status !== "pending" && (order.status !== "cancelled" || order.history.some(event => event.status === "accepted")) && <div className="staff-chat">
       <button type="button" className="staff-button" onClick={() => setChatOpen(!chatOpen)}><MessageSquare size={15} />{chatOpen ? "Fermer la conversation" : "Conversation avec le client"}{!chatOpen && unread > 0 && <span className="staff-unread">{unread}</span>}</button>
-      {chatOpen && <OrderChat order={order} language={language} />}
+      {chatOpen && <OrderChat order={order} language={language} viewerId={viewerId} />}
     </div>}
     <div className="staff-delivery-strip"><Bike size={16} /><span>{order.courierName ? <>Livreur : <strong>{order.courierName}</strong></> : order.status === "pending" ? "La recherche de livreur commence après acceptation." : order.status === "delivered" || order.status === "cancelled" ? "Suivi de livraison archivé" : "Aucun livreur assigné pour le moment"}</span>{order.courierName && <small>{order.status === "picked_up" ? "Commande récupérée" : order.status === "delivered" ? "Livraison terminée" : order.status === "cancelled" ? "Mission annulée" : "Retrait à venir"}</small>}</div>
     {canAssign && <details className="staff-order-details staff-dispatch"><summary>{order.courierId ? "Réassigner ou libérer la course" : "Assigner un livreur"}<ChevronDown size={16} /></summary><form className="staff-action-form" onSubmit={event => { event.preventDefault(); if (assignReason.trim().length >= 3) onAssign(order, courierId || null, assignReason.trim()); }}><label>Livreur<select value={courierId} disabled={busy} onChange={event => setCourierId(event.target.value)}><option value="">Aucun livreur — rendre la course disponible</option>{couriers.map(courier => <option key={courier.id} value={courier.id} disabled={courier.id !== order.courierId && (!courier.online || !!courier.activeOrderId && courier.activeOrderId !== order.id)}>{courier.name} · {courier.activeOrderId && courier.activeOrderId !== order.id ? "En mission" : courier.online ? "En ligne" : "En pause"}</option>)}</select></label><label>Motif de l’affectation<textarea required minLength={3} maxLength={250} value={assignReason} disabled={busy} onChange={event => setAssignReason(event.target.value)} placeholder="Indiquez pourquoi vous changez l’affectation." /></label><p>Une seule mission active par livreur. L’affectation est verrouillée après le retrait.</p><button type="submit" className="staff-button" disabled={busy || assignReason.trim().length < 3 || courierId === (order.courierId ?? "")}>{busy ? "Enregistrement…" : courierId ? "Confirmer l’affectation" : "Libérer la course"}</button></form></details>}
     <details className="staff-order-details">
       <summary>Livraison et suivi<ChevronDown size={16} /></summary>
       <div className="staff-order-detail-grid">
-        <div><h4>Retrait au restaurant</h4><p>{order.pickupAddress}<br />{order.pickupCity}</p><h4>Coordonnées de livraison</h4><p>{order.address}<br />{order.city}</p>{order.details && <p className="staff-muted">{order.details}</p>}<a href={`tel:${order.phone.replace(/[^+\d]/g, "")}`}><Phone size={14} />{order.phone}</a></div>
+        <div><h4>Retrait au restaurant</h4><p>{order.pickupAddress}<br />{order.pickupCity}</p><h4>Coordonnées de livraison</h4><p>{order.address}<br />{order.city}</p>{order.details && <p className="staff-muted">{order.details}</p>}{order.phone ? <a href={`tel:${order.phone.replace(/[^+\d]/g, "")}`}><Phone size={14} />{order.phone}</a> : <p className="staff-muted">Les appels sont disponibles pendant la prise en charge de la commande.</p>}</div>
         <div><h4>Historique de la commande</h4><ol className="staff-timeline">{order.history.map((event, index) => <li key={`${event.status}-${index}`}><span className="staff-timeline-dot" /><span>{event.label || statusLabels[event.status]}{event.actorName && <small className="staff-event-actor">{event.actorName}</small>}</span><time dateTime={event.date}>{dateLabel(event.date)}</time></li>)}</ol></div>
       </div>
     </details>
@@ -110,6 +111,15 @@ function StaffDashboard({ user, onLogout, onShop, onAccount }: { user: User; onL
   const requestSequence = useRef(0);
   const mutations = useRef(new Set<string>());
   const mounted = useRef(true);
+
+  useEffect(() => {
+    const read = (event: Event) => {
+      const detail = (event as CustomEvent<{orderId: string; viewerId: string}>).detail;
+      if (detail?.viewerId === user.id) setUnread(current => ({...current, [detail.orderId]: 0}));
+    };
+    window.addEventListener("manjeo-thread-read", read);
+    return () => window.removeEventListener("manjeo-thread-read", read);
+  }, [user.id]);
 
   const refresh = useCallback(async (silent = false) => {
     if (mutations.current.size) return;
@@ -225,7 +235,7 @@ function StaffDashboard({ user, onLogout, onShop, onAccount }: { user: User; onL
         {tab === "orders" && <section aria-label="Liste des commandes">
           <div className="staff-section-heading"><div><h2>Les commandes</h2><p>{admin ? "Un suivi partagé pour tous les restaurants." : "Acceptez, préparez, puis signalez que tout est prêt."}</p></div><span className="staff-result-count">{visibleOrders.length} résultat{visibleOrders.length > 1 ? "s" : ""}</span></div>
           <div className="staff-filters"><label className="staff-search"><Search size={17} /><input aria-label="Rechercher une commande" placeholder="Nom, numéro, ville…" value={search} onChange={event => setSearch(event.target.value)} /></label><label className="staff-select"><span>Statut</span><select value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="active">En cours</option><option value="all">Toutes les commandes</option>{allStatuses.map(status => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><ChevronDown size={14} /></label>{admin && <label className="staff-select"><span>Restaurant</span><select value={restaurantFilter} onChange={event => setRestaurantFilter(event.target.value)}><option value="all">Tous les restaurants</option>{restaurants.map(restaurant => <option key={restaurant.id} value={restaurant.id}>{restaurant.name}</option>)}</select><ChevronDown size={14} /></label>}</div>
-          {visibleOrders.length ? <div className="staff-orders">{visibleOrders.map(order => <OrderCard key={order.id} order={order} admin={admin} busy={busyKeys.includes(`order-${order.id}`)} onStatus={changeStatus} couriers={couriers} onAssign={assignCourier} language={user.language || "fr"} unread={unread[order.id] || 0} />)}</div> : <div className="staff-empty"><span><PackageCheck size={32} /></span><h3>{orders.length ? "Aucune commande avec ces filtres" : "La première commande se prépare ici"}</h3><p>{orders.length ? "Essayez un autre statut ou effacez votre recherche." : "Connectez-vous avec le compte client pour passer une commande test. Elle apparaîtra ici automatiquement."}</p>{orders.length > 0 ? <button type="button" className="staff-button" onClick={() => { setSearch(""); setStatusFilter("all"); setRestaurantFilter("all"); }}>Voir toutes les commandes</button> : <span className="staff-empty-account">client@manjeo.test</span>}</div>}
+          {visibleOrders.length ? <div className="staff-orders">{visibleOrders.map(order => <OrderCard key={order.id} order={order} admin={admin} busy={busyKeys.includes(`order-${order.id}`)} onStatus={changeStatus} couriers={couriers} onAssign={assignCourier} language={user.language || "fr"} unread={unread[order.id] || 0} viewerId={user.id} />)}</div> : <div className="staff-empty"><span><PackageCheck size={32} /></span><h3>{orders.length ? "Aucune commande avec ces filtres" : "La première commande se prépare ici"}</h3><p>{orders.length ? "Essayez un autre statut ou effacez votre recherche." : "Connectez-vous avec le compte client pour passer une commande test. Elle apparaîtra ici automatiquement."}</p>{orders.length > 0 ? <button type="button" className="staff-button" onClick={() => { setSearch(""); setStatusFilter("all"); setRestaurantFilter("all"); }}>Voir toutes les commandes</button> : <span className="staff-empty-account">client@manjeo.test</span>}</div>}
         </section>}
 
         {menuRestaurant && <section hidden={tab !== "menu"} aria-label="Gestion des cartes">{admin && <label className="staff-menu-selector">Restaurant à modifier<select value={menuRestaurant.id} onChange={event => setMenuRestaurantId(event.target.value)}>{restaurants.map(restaurant => <option key={restaurant.id} value={restaurant.id}>{restaurant.name}</option>)}</select></label>}<MenuEditor key={menuRestaurant.id} restaurant={menuRestaurant} onRestaurantChange={restaurant => { ++requestSequence.current; setRefreshing(false); setRestaurants(current => current.map(item => item.id === restaurant.id ? restaurant : item)); }} /></section>}
