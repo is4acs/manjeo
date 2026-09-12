@@ -11,6 +11,7 @@ import CustomerAccount from "./customer-account";
 import { localizeInvalid, clearValidity, refreshValidationLanguage } from "./validation";
 import Home from "./page";
 import RouteBoundary from "./route-boundary";
+import { recoverStaff } from "./staff-recovery";
 import "./accounts.css";
 
 const Staff = lazy(() => import("./staff"));
@@ -42,6 +43,7 @@ export default function Application() {
   const [initialError, setInitialError] = useState("");
   const [accountOpen, setAccountOpen] = useState(false);
   const [pathname, setPathname] = useState(() => window.location.pathname);
+  const [staffRecovery, setStaffRecovery] = useState(() => ({attempt: 0, component: Staff}));
   const entryRole = roleAtPath(pathname);
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState("");
@@ -298,6 +300,7 @@ export default function Application() {
   const startupHeader = <header className="site-header startup-header"><div className="header-inner"><span className="brand">manjéo</span>{languageControl}</div></header>;
   if (loading || initialError) return <>{startupHeader}<main className="app-startup"><div className="startup-card"><UserRound size={32}/><h1>{loading ? t("Chargement de votre espace…") : t("Votre espace est momentanément indisponible.")}</h1><p>{loading ? t("Connexion à Manjéo.") : t(initialError)}</p>{initialError && <Button onClick={initialize}>{t("Réessayer")}</Button>}</div></main></>;
   const viewer = user ? {...user,language:uiLanguage} : null;
+  const StaffView = staffRecovery.component;
   const professionalLogin = !user && !!entryRole;
   const SignInTitle = professionalLogin ? "h1" : DialogTitle;
   const SignInDescription = professionalLogin ? "p" : DialogDescription;
@@ -309,7 +312,7 @@ export default function Application() {
   </>;
   return <div className="localized-app" onInvalidCapture={localizeInvalid} onInputCapture={clearValidity}>
     {user && user.role !== "client"
-      ? <RouteBoundary key={`${user.id}:${user.role}`} header={startupHeader} onLogout={() => void logout()} disabled={locked}><Suspense fallback={<>{startupHeader}<main className="app-startup"><div className="startup-card" role="status"><p>{t("Chargement de votre espace…")}</p></div></main></>}><Staff user={viewer!} languageControl={languageControl} onLogout={() => void logout()} onAccount={() => openAccount()}/></Suspense></RouteBoundary>
+      ? <RouteBoundary key={`${user.id}:${user.role}:${staffRecovery.attempt}`} header={startupHeader} onRetry={() => setStaffRecovery(previous => ({attempt: previous.attempt + 1, component: lazy(recoverStaff)}))} onLogout={() => void logout()} disabled={locked}><Suspense fallback={<>{startupHeader}<main className="app-startup"><div className="startup-card" role="status"><p>{t("Chargement de votre espace…")}</p></div></main></>}><StaffView user={viewer!} languageControl={languageControl} onLogout={() => void logout()} onAccount={() => openAccount()}/></Suspense></RouteBoundary>
       : professionalLogin ? <>{startupHeader}<main className="app-startup"><section className="professional-login account-dialog">{signIn}</section></main></>
       : restaurants.length ? <Home user={viewer} languageControl={languageControl} onSaveProfile={saveCustomerProfile} restaurants={restaurants} refreshCatalog={refreshCatalog} onAccount={openAccount}/>
       : <>{startupHeader}<main className="app-startup"><div className="startup-card" role={catalogError ? "alert" : "status"}><ShoppingBag size={32}/><h1>{t(catalogError ? "La cuisine se fait attendre" : "Les bonnes adresses arrivent…")}</h1><p>{t(catalogError || "Connexion à Manjéo.")}</p>{!catalogLoading && <Button onClick={() => void loadCatalog()}>{t("Réessayer")}</Button>}<Button variant="outline" onClick={() => openAccount()}>{t(user ? "Mon compte" : "Se connecter")}</Button></div></main></>}

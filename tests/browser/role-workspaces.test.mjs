@@ -8,7 +8,7 @@ const spaces = [
   {role: 'admin', path: '/admin', label: 'Administration'},
 ];
 const clientControls = '.header-cart, .location-button, .restaurant-row, .product-card, .cart-sheet, .checkout-form, .customer-profile-form, .hero, .site-footer';
-const isClientEndpoint = path => ['/api/restaurants', '/api/promotions', '/api/promotions/check', '/api/payments/config'].includes(path) || path.startsWith('/api/addresses/');
+const isClientEndpoint = path => ['/api/restaurants', '/api/promotions', '/api/promotions/check', '/api/payments/config', '/api/addresses'].includes(path) || path.startsWith('/api/addresses/');
 
 async function isolated(engine, run) {
   const server = await startServer(); let browser;

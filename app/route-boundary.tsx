@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { t } from '@/lib/i18n';
 
 /** A failed professional module must keep recovery inside its account's workspace. */
-export default class RouteBoundary extends Component<{children: ReactNode; header?: ReactNode; onLogout: () => void; disabled?: boolean}, {failed: boolean}> {
+export default class RouteBoundary extends Component<{children: ReactNode; header?: ReactNode; onRetry: () => void; onLogout: () => void; disabled?: boolean}, {failed: boolean}> {
   state = {failed: false};
   static getDerivedStateFromError() { return {failed: true}; }
   render() {
@@ -12,7 +12,8 @@ export default class RouteBoundary extends Component<{children: ReactNode; heade
     return <>{this.props.header}<main className="app-startup">{!this.props.header && <span className="brand">manjéo</span>}<div className="startup-card" role="alert">
       <RefreshCw size={30}/><h1>{t('Votre espace est momentanément indisponible.')}</h1>
       <p>{t('Vérifiez votre connexion, puis rechargez la page pour rouvrir votre espace.')}</p>
-      <Button onClick={() => window.location.reload()}>{t('Recharger la page')}</Button>
+      <Button onClick={this.props.onRetry} disabled={this.props.disabled}>{t('Réessayer')}</Button>
+      <Button variant="outline" onClick={() => window.location.reload()}>{t('Recharger la page')}</Button>
       <Button variant="outline" onClick={this.props.onLogout} disabled={this.props.disabled}>{t('Déconnexion')}</Button>
     </div></main></>;
   }

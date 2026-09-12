@@ -11,7 +11,7 @@ Les interfaces client, restaurant, livreur et admin sont proposées en français
 - Le démarrage vérifie la session avant de charger les données de l’espace. Une panne du catalogue client ne bloque ni l’entrée ni les outils professionnels. Une réponse de catalogue ancienne ne peut pas réafficher la vitrine après un changement de rôle.
 - `GET /api/restaurants` reste public pour les visiteurs et disponible au client connecté ; une session professionnelle reçoit 403. Un client fournit son `accountId`, afin qu’un cookie devenu celui d’un autre compte provoque `session_changed` avant la lecture.
 - `GET /api/workspace/restaurants` exige restaurant ou admin et le contrôle habituel `X-Manjeo-Account`. Le restaurant reçoit uniquement son enseigne (liste vide s’il n’est plus affecté), l’admin toutes les enseignes nécessaires à sa supervision. Client et livreur reçoivent 403, une absence de session 401. Le livreur charge ses offres et missions avec `/api/deliveries`.
-- Aucun lien « Voir la vitrine » dans les espaces professionnels, y compris leurs écrans d’erreur. Les récupérations proposées sont recharger le même espace et se déconnecter. Les contrôles métier côté serveur restent obligatoires indépendamment de la navigation.
+- Aucun lien « Voir la vitrine » dans les espaces professionnels, y compris leurs écrans d’erreur. Les récupérations proposées sont réessayer, recharger le même espace et se déconnecter. La reprise du module échoué utilise une nouvelle URL de téléchargement dans le même onglet, vérifie la version du manifeste et reste bornée à quinze secondes ; elle ne mélange pas deux versions du moteur React. Les contrôles métier côté serveur restent obligatoires indépendamment de la navigation.
 
 ## Types communs
 
