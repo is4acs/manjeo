@@ -1,6 +1,6 @@
 import { NavigationLinks } from "./navigation-links";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Bike, CheckCircle2, ChevronDown, Clock3, History, KeyRound, LogOut, MapPin, MessageSquare, PackageCheck, Phone, RefreshCw, ShoppingBag, Store, Undo2 , UserRound } from "lucide-react";
+import { ArrowRight, Bike, CheckCircle2, ChevronDown, Clock3, History, KeyRound, LogOut, MapPin, MessageSquare, PackageCheck, Phone, RefreshCw, ShoppingBag, Store, Undo2 , UserRound } from "lucide-react";
 import { api, type CourierProfile, type DeliveryOffer, type Order, type User, statusLabels } from "@/lib/api";
 import { money } from "@/lib/menu";
 import { clockLabel, isLate } from "./deadline";
@@ -13,7 +13,7 @@ type CourierData = { available: DeliveryOffer[]; assigned: Order[]; profile: Cou
 const activeStatus = (order: Order) => order.status !== "delivered" && order.status !== "cancelled";
 const date = (value: string) => formatDate(value, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
-export default function Courier({ user, onLogout, onShop, onAccount, languageControl }: { user: User; onLogout: () => void; onShop: () => void; onAccount: () => void; languageControl?: React.ReactNode }) {
+export default function Courier({ user, onLogout, onAccount, languageControl }: { user: User; onLogout: () => void; onAccount: () => void; languageControl?: React.ReactNode }) {
   const [data, setData] = useState<CourierData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -47,7 +47,7 @@ export default function Courier({ user, onLogout, onShop, onAccount, languageCon
       if (mounted.current && current === sequence.current) { setData(result); setError(""); }
     } catch (cause) { if (mounted.current && current === sequence.current) setError(cause instanceof Error ? cause.message : "Les courses n’ont pas pu être chargées."); }
     finally { if (mounted.current && current === sequence.current) { setLoading(false); setRefreshing(false); } }
-  }, []);
+  }, [user.id]);
   useEffect(() => {
     mounted.current = true; void refresh();
     const timer = window.setInterval(() => { if (document.visibilityState === "visible") void refresh(true); }, 8000);
@@ -87,7 +87,7 @@ export default function Courier({ user, onLogout, onShop, onAccount, languageCon
     void mutate(`status-${order.id}`, () => api(`/api/orders/${encodeURIComponent(order.id)}`, { method: "PATCH", accountId: user.id, body: JSON.stringify({ status, ...(status === "delivered" ? { deliveryCode: code } : {}) }) }), status === "picked_up" ? "Retrait confirmé. Le client est informé du départ en livraison." : "Livraison confirmée. La mission est terminée.");
   }
   return <div className="staff-app courier-app">
-    <header className="staff-header"><div className="staff-header-inner"><button type="button" className="staff-brand" onClick={onShop} aria-label={t("Manjéo, voir la vitrine")}>manjéo<span>•</span></button><span className="staff-space-label"><Bike size={19} />{t("Espace livreur")}</span><div className="staff-header-actions"><button type="button" className="staff-shop-link" onClick={onAccount} aria-label={t("Mon compte")}><UserRound size={15} /><span>{t("Mon compte")}</span></button><button type="button" className="staff-shop-link" onClick={onShop} aria-label={t("Voir la vitrine")}><ArrowLeft size={15} /><span>{t("Voir la vitrine")}</span></button><button type="button" className="staff-logout" onClick={onLogout} aria-label={t("Déconnexion")}><LogOut size={16} /><span>{t("Déconnexion")}</span></button>{languageControl}</div></div></header>
+    <header className="staff-header"><div className="staff-header-inner"><span className="staff-brand">manjéo</span><span className="staff-space-label"><Bike size={19} />{t("Espace livreur")}</span><div className="staff-header-actions"><button type="button" className="staff-shop-link" onClick={onAccount} aria-label={t("Mon compte")}><UserRound size={15} /><span>{t("Mon compte")}</span></button><button type="button" className="staff-logout" onClick={onLogout} aria-label={t("Déconnexion")}><LogOut size={16} /><span>{t("Déconnexion")}</span></button>{languageControl}</div></div></header>
     <main className="staff-main">
       <section className="staff-welcome"><div><p className="staff-eyebrow">{t("LE DERNIER KILOMÈTRE, ENSEMBLE")}</p><h1>{t("Bonjour, {name}.", {name: user.name.split(" ")[0]})}</h1><p>{t("Une course à la fois, de la cuisine à la remise au client.")}</p></div><span className="staff-avatar"><Bike size={25} /></span></section>
       {data && <section className={`staff-service ${data.profile.online ? "staff-service-open" : "staff-service-paused"}`} aria-label={t("Disponibilité du livreur")}><div><span className="staff-service-dot" /><div><strong>{data.profile.online ? t("Vous êtes en ligne") : t("Vous êtes en pause")}</strong><p>{currentOrder ? t("Votre mission reste à terminer, même en pause.") : data.profile.online ? t("Les nouvelles courses disponibles apparaissent ci-dessous.") : t("Passez en ligne pour recevoir des propositions de course.")}</p></div></div><button type="button" role="switch" className="staff-switch" aria-checked={data.profile.online} aria-label={t("Être disponible pour les courses")} disabled={!!busy} onClick={() => void mutate("profile", () => api("/api/courier/profile", { method: "PATCH", accountId: user.id, body: JSON.stringify({ online: !data.profile.online }) }), data.profile.online ? "Vous êtes en pause." : "Vous êtes en ligne.")}><span /></button></section>}

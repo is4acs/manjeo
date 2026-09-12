@@ -5,6 +5,8 @@ export const commonTranslations: Record<string, [string, string]> = {
   'Vérifiez votre connexion, puis rechargez la page pour rouvrir votre espace.':['Verifye koneksyon ou, epi rechaje paj la pou ouvri espas ou ankò.','Verifique sua conexão e recarregue a página para reabrir sua área.'],
   'Recharger la page':['Rechaje paj la','Recarregar a página'],
   'Retour aux restaurants':['Retounen nan restoran yo','Voltar aos restaurantes'],
+  'Compte de démonstration partagé. Mot de passe :':['Kont demonstrasyon pataje. Modpas:','Conta de demonstração compartilhada. Senha:'],
+  'Cet espace est réservé aux clients.':['Espas sa a rezève pou kliyan yo.','Esta área é reservada aos clientes.'],
   'Client':['Kliyan','Cliente'], 'Restaurant':['Restoran','Restaurante'], 'Restaurateur':['Responsab restoran','Responsável pelo restaurante'], 'Livreur':['Livrè','Entregador'], 'Admin':['Admin','Admin'], 'Administrateur':['Administratè','Administrador'],
   'Espace client':['Espas kliyan','Área do cliente'], 'Espace restaurateur':['Espas restoran','Área do restaurante'], 'Espace livreur':['Espas livrè','Área do entregador'], 'Administration':['Administrasyon','Administração'],
   'En attente':['Ap tann','Aguardando'], 'Acceptée':['Aksepte','Aceito'], 'En préparation':['An preparasyon','Em preparo'], 'Prête au retrait':['Pare pou pran','Pronto para retirada'], 'En livraison':['Y ap livre l','Saiu para entrega'], 'Livrée (test)':['Livre (tès)','Entregue (teste)'], 'Annulée':['Anile','Cancelado'],

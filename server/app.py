@@ -585,7 +585,19 @@ class Handler(BaseHTTPRequestHandler):
             db.execute("DELETE FROM sessions WHERE token_hash = ?", (self.session_hash(),))
             return 200, {"ok": True}, self.session_cookie()
         if method == "GET" and path == "/api/restaurants":
+            # Visitors retain the public catalog. A signed-in professional uses
+            # the scoped workspace endpoint, never the customer's storefront.
+            if self.session_hash() is not None and self.user(db) is not None:
+                self.user(db, {"client"})
             return 200, {"restaurants": self.state.database.restaurants(db)}, None
+        if method == "GET" and path == "/api/workspace/restaurants":
+            user = self.user(db, {"restaurant", "admin"})
+            if user["role"] == "admin":
+                restaurants = self.state.database.restaurants(db)
+            else:
+                row = db.execute("SELECT * FROM restaurants WHERE id = ?", (user["restaurant_id"],)).fetchone()
+                restaurants = [self.state.database.restaurant(db, row)] if row else []
+            return 200, {"restaurants": restaurants}, None
         if method == "GET" and path == "/api/users":
             self.user(db, {"admin"})
             from .messaging import profile

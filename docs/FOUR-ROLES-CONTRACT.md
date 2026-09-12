@@ -4,6 +4,15 @@ Référence d’implémentation de la démonstration, 12 septembre 2026. Les pai
 
 Les interfaces client, restaurant, livreur et admin sont proposées en français, créole haïtien (`ht`) et portugais du Brésil (`pt`, balise HTML `pt-BR`). Le menu global à trois langues est disponible sans compte et conservé sur l’appareil ; connecté, il synchronise la préférence du profil et pilote aussi les messages. Il remplace le sélecteur distinct de sept langues de messagerie. Les dictionnaires d’interface ne modifient ni les montants, ni les identifiants, ni les textes enregistrés dans les cartes ou commandes. Leur qualité linguistique reste à relire par des locuteurs compétents.
 
+## Accès aux espaces
+
+- La session serveur décide de l’interface : client `/`, restaurant `/restaurant`, livreur `/livreur`, admin `/admin`. Un rôle professionnel ne monte jamais la vitrine, le panier, le formulaire de commande ou les préférences privées du client. Changer l’URL ou revenir dans l’historique ne donne pas accès à un autre espace.
+- Les URL professionnelles affichent une connexion dédiée sans session. La connexion redirige vers le rôle effectivement authentifié, même si l’adresse demandée correspondait à un autre rôle. Déconnexion et expiration restent sur l’entrée professionnelle, sans catalogue en arrière-plan.
+- Le démarrage vérifie la session avant de charger les données de l’espace. Une panne du catalogue client ne bloque ni l’entrée ni les outils professionnels. Une réponse de catalogue ancienne ne peut pas réafficher la vitrine après un changement de rôle.
+- `GET /api/restaurants` reste public pour les visiteurs et disponible au client connecté ; une session professionnelle reçoit 403. Un client fournit son `accountId`, afin qu’un cookie devenu celui d’un autre compte provoque `session_changed` avant la lecture.
+- `GET /api/workspace/restaurants` exige restaurant ou admin et le contrôle habituel `X-Manjeo-Account`. Le restaurant reçoit uniquement son enseigne (liste vide s’il n’est plus affecté), l’admin toutes les enseignes nécessaires à sa supervision. Client et livreur reçoivent 403, une absence de session 401. Le livreur charge ses offres et missions avec `/api/deliveries`.
+- Aucun lien « Voir la vitrine » dans les espaces professionnels, y compris leurs écrans d’erreur. Les récupérations proposées sont recharger le même espace et se déconnecter. Les contrôles métier côté serveur restent obligatoires indépendamment de la navigation.
+
 ## Types communs
 
 - Role : `client | restaurant | courier | admin`. Nouveau compte : `livreur@manjeo.test`, mot de passe de démonstration existant, id `demo-courier`, nom `Alex Livraison`.

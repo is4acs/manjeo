@@ -79,6 +79,8 @@ class SessionContextContracts:
             ("GET", path + "/thread", None, "client"), ("POST", path + "/messages", {"body": "Wrong person"}, "client"),
             ("GET", "/api/deliveries", None, "courier"), ("GET", "/api/couriers", None, "admin"),
             ("PATCH", "/api/courier/profile", {"online": True}, "courier"),
+            ("GET", "/api/workspace/restaurants", None, "restaurant"),
+            ("GET", "/api/workspace/restaurants", None, "admin"),
             ("GET", "/api/restaurants/ti-kreol/menu", None, "restaurant"),
             ("PATCH", "/api/restaurants/ti-kreol/menu", menu, "restaurant"),
             ("POST", "/api/restaurants/ti-kreol/images", {}, "restaurant"),

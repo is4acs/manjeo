@@ -19,6 +19,18 @@ Mot de passe commun : **`ManjeoDemo2026!`**
 | Livreur | `livreur@manjeo.test` | Disponibilité, offres, retrait et remise avec code client |
 | Administrateur | `admin@manjeo.test` | Commandes, cartes, comptes et affectation des livreurs |
 
+Chaque compte ouvre exclusivement son espace : [client](https://manjeo.vercel.app/),
+[restaurateur](https://manjeo.vercel.app/restaurant), [livreur](https://manjeo.vercel.app/livreur)
+ou [administration](https://manjeo.vercel.app/admin). Les espaces professionnels ne proposent
+ni vitrine, ni panier, ni achat. Leur marque ne renvoie pas au catalogue. Une ancienne URL,
+un rechargement ou l’historique du navigateur ramène au rôle de la session vérifiée par le serveur.
+L’admin conserve la gestion des restaurants et des cartes dans son panneau de supervision.
+
+Sans connexion, les adresses professionnelles affichent leur formulaire de connexion ; après
+déconnexion, elles restent sur ce formulaire. Le catalogue reste accessible aux visiteurs depuis
+la racine. Pour commander, utiliser un compte client distinct. La langue, les coordonnées du
+compte et la déconnexion restent disponibles dans chaque espace.
+
 Ces comptes de démonstration sont partagés entre les testeurs : utiliser un nom et un téléphone fictifs, et un point d’adresse de démonstration, sans l’associer à une personne réelle. Le rôle est vérifié côté serveur. Les mots de passe sont hachés ; les sessions utilisent des cookies HttpOnly et Secure en ligne.
 
 ## Passer une commande de bout en bout

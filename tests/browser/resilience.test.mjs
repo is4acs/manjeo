@@ -7,7 +7,7 @@ before(async () => { server = await startServer(); });
 after(async () => { await server?.close(); });
 
 for (const engine of browserTypes) {
-  test(`${engine.name()}: failed professional module leaves a reload and a way back to the shop`, async () => {
+  test(`${engine.name()}: failed professional module recovers its own workspace without exposing the shop`, async () => {
     const browser = await engine.launch({headless: true});
     try {
       const context = await browser.newContext({reducedMotion: 'reduce'}); await login(context, server.url, 'restaurant');
@@ -17,8 +17,15 @@ for (const engine of browserTypes) {
       await page.getByRole('heading', {name: 'Votre espace est momentanément indisponible.'}).waitFor();
       assert.equal(await page.getByRole('button', {name: 'Recharger la page', exact: true}).count(), 1);
       assert.equal(await page.locator('.language-trigger').count(), 1);
-      await page.getByRole('button', {name: 'Retour aux restaurants', exact: true}).click();
-      await page.locator('.account-header-button').waitFor();
+      assert.equal(new URL(page.url()).pathname, '/restaurant');
+      assert.equal(await page.getByRole('button', {name: 'Retour aux restaurants', exact: true}).count(), 0);
+      assert.equal(await page.locator('.header-cart, .restaurant-row, .site-footer').count(), 0);
+      await page.unroute('**/assets/staff-*.js');
+      await page.getByRole('button', {name: 'Recharger la page', exact: true}).click();
+      await page.locator('.staff-app').waitFor();
+      await page.locator('.staff-loading').waitFor({state: 'hidden'});
+      assert.equal(new URL(page.url()).pathname, '/restaurant');
+      assert.equal(await page.locator('.header-cart, .restaurant-row, .site-footer').count(), 0);
     } finally { await browser.close(); }
   });
 

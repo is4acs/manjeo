@@ -36,7 +36,7 @@ const pageSize = 4;
 // Les transitions restent fonctionnelles : aucun défilement animé quand le visiteur le refuse.
 const scrollToBlock = (element: HTMLElement | null) => element?.scrollIntoView({behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "start"});
 
-export default function Home({user, restaurants, refreshCatalog, onAccount, onStaff, onSaveProfile, languageControl}: {languageControl?: React.ReactNode; onSaveProfile: (payload: Record<string, unknown>) => Promise<User>; user: User | null; restaurants: Restaurant[]; refreshCatalog: () => Promise<Restaurant[]>; onAccount: (role?: Role) => void; onStaff: () => void}) {
+export default function Home({user, restaurants, refreshCatalog, onAccount, onSaveProfile, languageControl}: {languageControl?: React.ReactNode; onSaveProfile: (payload: Record<string, unknown>) => Promise<User>; user: User | null; restaurants: Restaurant[]; refreshCatalog: () => Promise<Restaurant[]>; onAccount: (role?: Role) => void}) {
   const locale = localeTag();
   const [view, setView] = useState<View>("home");
   const [selectedId, setSelectedId] = useState("ti-kreol");
@@ -346,7 +346,7 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
     return cartOutdated && <div className="cart-update" role="status"><strong>{t("La carte a changé")}</strong><p>{t("Actualisez les prix et options. Les articles indisponibles ou dont les options ont changé seront retirés ; vous pourrez les choisir à nouveau.")}</p><button type="button" disabled={updatingCart || submitting} onClick={() => void updateCart()}>{updatingCart ? t("Actualisation…") : t("Mettre à jour mon panier")}<RefreshCw size={15}/></button></div>;
   }
   function checkout() { if (cart.length && !cartUnavailable && !cartOutdated && !updatingCart && !promoPending && !submittingRef.current) { setCartOpen(false); setOrderError(""); setView("checkout"); if (!user) onAccount(); } }
-  function openHistory() { if (user?.role === "client") setHistoryOpen(true); else if (user) onStaff(); else onAccount(); }
+  function openHistory() { if (user?.role === "client") setHistoryOpen(true); else onAccount(); }
   async function submitOrder(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await placeOrder(false);
@@ -518,7 +518,6 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
       <nav className="desktop-nav"><button className={view === "home" || view === "restaurant" ? "active" : ""} onClick={() => setView("home")}>{t("Restaurants")}</button><button onClick={openHistory}>{t("Mes commandes")}</button></nav>
       <button disabled={submitting} className="location-button" aria-label={t("Adresse de livraison : {address}", {address: address ? `${address}, ${city}` : city})} onClick={() => setLocationOpen(true)}><MapPin size={15}/><strong>{address ? `${address}, ${city}` : city}</strong></button>
       <div className="header-actions">
-        {user && user.role !== "client" && <button className="account-staff-button" onClick={onStaff}>{user.role === "admin" ? t("Administration") : user.role === "courier" ? t("Mes livraisons") : t("Mon restaurant")}</button>}
         <button className="account-header-button" aria-label={user ? t("Mon compte, {name}", {name: user.name}) : t("Se connecter")} onClick={() => onAccount()}><UserRound size={17}/><span>{user ? user.name : t("Se connecter")}</span></button>
         <button className="account-mobile-orders" aria-label={t("Mes commandes")} onClick={openHistory}><PackageCheck size={18}/></button>
         <button className="header-cart" aria-label={t(count > 1 ? "Ouvrir le panier, {count} articles, {total}" : "Ouvrir le panier, {count} article, {total}", {count, total: money(total)})} onClick={() => setCartOpen(true)}><ShoppingBag size={16}/><span className="header-cart-label">{count ? money(total) : t("Panier")}</span></button>
@@ -649,7 +648,7 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
       </div>
       <SiteFooter city={city} cities={cities} onCity={nextCity => { if (!submittingRef.current) setCity(nextCity); }} onAccount={onAccount} disabled={submitting} onOrders={openHistory}
         onNearby={() => { setView("home"); setCategory("Tout"); setSearch(""); window.setTimeout(() => scrollToBlock(listRef.current), 0); }}
-        onStaff={role => { if (user && user.role !== "client" && (!role || user.role === role)) onStaff(); else onAccount(role); }}/>
+        onStaff={role => onAccount(role)}/>
     </main>
     {count > 0 && (view === "home" || view === "restaurant") && <div className="order-bar">
       <div><small>{t(count > 1 ? "{count} articles" : "{count} article", {count})}</small><strong>{money(total)}</strong></div>

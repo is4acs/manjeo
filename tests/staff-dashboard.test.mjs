@@ -5,11 +5,11 @@ import {change, formEvent, staffHarness} from './support/staff-harness.mjs';
 const restaurant = {id: 'kaz', name: 'La Kaz', description: 'Cuisine maison', minutes: 25, pickupAddress: '7 rue ancienne', pickupCity: 'Cayenne', acceptingOrders: true, products: []};
 const order = {id: 'ORDER-1', restaurantId: 'kaz', restaurant: 'La Kaz', customerName: 'Client test', city: 'Cayenne', status: 'ready', date: '2026-09-12T18:00:00Z', total: 1500, subtotal: 1000, courierId: null};
 const courier = {id: 'driver', name: 'Livreur test', online: true, activeOrderId: null};
-const roleProps = role => ({user: {id: role, role, restaurantId: 'kaz', name: 'Compte test'}, onLogout() {}, onShop() {}, onAccount() {}});
+const roleProps = role => ({user: {id: role, role, restaurantId: 'kaz', name: 'Compte test'}, onLogout() {}, onAccount() {}});
 
 async function settle(app, {orders = [order], restaurants = [restaurant], couriers = [courier], admin = true} = {}) {
   app.take('/api/orders').resolve({orders, unread: {}});
-  app.take('/api/restaurants').resolve({restaurants});
+  app.take('/api/workspace/restaurants').resolve({restaurants});
   if (admin) {app.take('/api/users').resolve({users: []}); app.take('/api/couriers').resolve({couriers});}
   await app.flush();
 }
@@ -21,10 +21,26 @@ async function dashboard(admin = true) {
 const card = app => app.find(node => node.props?.onAssign);
 const editor = app => app.find(node => node.props?.onRestaurantChange);
 
-test('private dashboard reads stay scoped to the displayed account while the catalog stays public', () => {
+test('every dashboard read including its restaurant list stays scoped to the displayed account', () => {
   const app = staffHarness('staff.tsx', roleProps('admin'), {dashboard: true});
-  for (const path of ['/api/orders', '/api/users', '/api/couriers']) assert.equal(app.take(path).options.accountId, 'admin');
-  assert.equal(app.take('/api/restaurants').options.accountId, undefined);
+  for (const path of ['/api/orders', '/api/users', '/api/couriers', '/api/workspace/restaurants']) assert.equal(app.take(path).options.accountId, 'admin');
+  assert.equal(app.requests.some(request => request.path === '/api/restaurants'), false);
+});
+
+test('a customer cannot mount a professional dashboard', () => {
+  assert.throws(() => staffHarness('staff.tsx', roleProps('client'), {dashboard: true}), /requires a professional account/);
+});
+
+test('a restaurant loads its scoped establishment and has no storefront navigation', async () => {
+  const app = await dashboard(false);
+  assert.equal(app.requests.find(request => request.path === '/api/workspace/restaurants').options.accountId, 'restaurant');
+  assert.equal(app.requests.some(request => ['/api/restaurants', '/api/users', '/api/couriers'].includes(request.path)), false);
+  assert.equal(app.button('Voir la vitrine'), undefined);
+  const brand = app.find(node => node.props?.className === 'staff-brand');
+  assert.equal(brand.type, 'span');
+  assert.equal(brand.props.onClick, undefined);
+  assert.ok(app.button('Mon compte'));
+  assert.ok(app.button('Déconnexion'));
 });
 
 test('a delayed open/pause response cannot revert restaurant details saved in the menu editor', async () => {
@@ -83,7 +99,7 @@ test('a poll started before a mutation cannot roll its confirmed result back', a
   const app = await dashboard();
   app.tick();
   const stale = app.take('/api/orders');
-  const staleRestaurants = app.take('/api/restaurants');
+  const staleRestaurants = app.take('/api/workspace/restaurants');
   const staleUsers = app.take('/api/users');
   const staleCouriers = app.take('/api/couriers');
   card(app).props.onStatus(order, 'preparing');

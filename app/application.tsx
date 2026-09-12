@@ -22,19 +22,30 @@ const demos = [
   { role: "admin", label: "Admin", email: "admin@manjeo.test", icon: ShieldCheck },
 ] as const;
 const roleNames: Record<Role, string> = { client: "Espace client", restaurant: "Espace restaurateur", courier: "Espace livreur", admin: "Administration" };
+const workspacePaths: Record<Role, string> = {client: "/", restaurant: "/restaurant", courier: "/livreur", admin: "/admin"};
+function roleAtPath(path: string): Role | null {
+  switch (path.split("/")[1]) {
+    case "restaurant": return "restaurant";
+    case "livreur": return "courier";
+    case "admin": return "admin";
+    default: return null;
+  }
+}
 const emptyProfile = {name: "", phone: "", language: "fr"};
 const profileOf = (user: User | null) => user ? {name: user.name, phone: user.phone || "", language: user.language || "fr"} : emptyProfile;
 
 export default function Application() {
   const uiLanguage = useLanguage();
-  useEffect(() => { refreshValidationLanguage(); document.documentElement.lang = documentLanguage(uiLanguage); document.title = t("Manjéo · Commandez en Guyane"); }, [uiLanguage]);
   const [user, setUser] = useState<User | null>(null);
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [loading, setLoading] = useState(true);
   const [initialError, setInitialError] = useState("");
   const [accountOpen, setAccountOpen] = useState(false);
-  const [staff, setStaff] = useState(false);
-  const [email, setEmail] = useState("client@manjeo.test");
+  const [pathname, setPathname] = useState(() => window.location.pathname);
+  const entryRole = roleAtPath(pathname);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState("");
+  const [email, setEmail] = useState<string>(() => demos.find(item => item.role === roleAtPath(window.location.pathname))?.email || "client@manjeo.test");
   const [password, setPassword] = useState("ManjeoDemo2026!");
   const [authError, setAuthError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -72,24 +83,53 @@ export default function Application() {
     setRequestedRole(role || null); if (role) selectDemo(role); setAccountOpen(true);
   }
 
+  // The authenticated role alone selects an interface. URLs never grant a role.
+  useEffect(() => {
+    const followRoute = () => {
+      const account = currentUser.current;
+      const url = new URL(window.location.href);
+      if (account) {
+        url.pathname = workspacePaths[account.role];
+        if (account.role !== "client") {
+          const language = url.searchParams.get("lang");
+          url.search = ""; url.hash = "";
+          if (language) url.searchParams.set("lang", language);
+        }
+        if (url.href !== window.location.href) {
+          window.history.replaceState(null, "", url);
+          window.scrollTo?.(0, 0);
+        }
+      }
+      setPathname(window.location.pathname);
+    };
+    followRoute();
+    window.addEventListener("popstate", followRoute);
+    window.addEventListener("hashchange", followRoute);
+    return () => { window.removeEventListener("popstate", followRoute); window.removeEventListener("hashchange", followRoute); };
+  }, [user?.id, user?.role]);
+  useEffect(() => {
+    refreshValidationLanguage(); document.documentElement.lang = documentLanguage(uiLanguage);
+    const role = user?.role || entryRole;
+    document.title = role && role !== "client" ? `Manjéo · ${t(roleNames[role])}` : t("Manjéo · Commandez en Guyane");
+  }, [uiLanguage, user?.role, entryRole]);
+  useEffect(() => { if (!user && entryRole) { selectDemo(entryRole); setRequestedRole(entryRole); } }, [user?.id, entryRole]);
+
   async function initialize() {
     const version = ++sessionVersion.current;
     ++sessionRead.current;
     initializing.current = true; pendingSessionSync.current = false;
     setLoading(true); setInitialError("");
     try {
-      const [initialSession, catalog] = await Promise.all([api<{user: User | null}>("/api/session"), api<{restaurants: Restaurant[]}>("/api/restaurants")]);
+      const initialSession = await api<{user: User | null}>("/api/session");
       if (!mounted.current || version !== sessionVersion.current) return;
-      if (!catalog.restaurants.length) throw new Error("Le catalogue est indisponible. Réessayez dans quelques instants.");
-      // Session events must not abandon the only request that loads the catalog.
-      // Re-read after an event, including one received during this fresh read.
+      // Re-read after a session event, including one received during this read.
       let session = initialSession;
       while (pendingSessionSync.current) {
         pendingSessionSync.current = false;
         session = await api<{user: User | null}>("/api/session");
         if (!mounted.current || version !== sessionVersion.current) return;
       }
-      currentUser.current = session.user; setUser(session.user); setProfileDraft(profileOf(session.user)); setStaff(!!session.user && session.user.role !== "client"); setRestaurants(catalog.restaurants);
+      currentUser.current = session.user; setUser(session.user); setProfileDraft(profileOf(session.user));
     } catch (error) { if (mounted.current && version === sessionVersion.current) setInitialError((error as Error).message); }
     finally { if (mounted.current && version === sessionVersion.current) { initializing.current = false; setLoading(false); } }
   }
@@ -107,10 +147,10 @@ export default function Application() {
         if (session.user) {
           const changedAccount = currentUser.current?.id !== session.user.id;
           currentUser.current = session.user; setUser(session.user);
-          if (changedAccount) { ++sessionVersion.current; setProfileDraft(profileOf(session.user)); setProfileNotice(""); setStaff(session.user.role !== "client"); setAccountOpen(false); }
+          if (changedAccount) { ++sessionVersion.current; setProfileDraft(profileOf(session.user)); setProfileNotice(""); setAccountOpen(false); }
           return;
         }
-        ++sessionVersion.current; ++sessionRead.current; currentUser.current = null; setUser(null); setStaff(false); setAccountOpen(true); setProfileDraft(emptyProfile); setProfileNotice(""); setAuthError("Votre session a expiré. Reconnectez-vous pour continuer.");
+        ++sessionVersion.current; ++sessionRead.current; currentUser.current = null; setUser(null); setAccountOpen(true); setProfileDraft(emptyProfile); setProfileNotice(""); setAuthError("Votre session a expiré. Reconnectez-vous pour continuer.");
       } catch { /* A network failure does not prove that the session expired. */ }
     };
     window.addEventListener("manjeo-session-expired", expired);
@@ -127,7 +167,7 @@ export default function Application() {
         if (!mounted.current || mutation.current && !force || version !== sessionVersion.current || read !== sessionRead.current) return;
         const changedAccount = currentUser.current?.id !== session.user?.id;
         currentUser.current = session.user; setUser(session.user);
-        if (changedAccount) { ++sessionVersion.current; setProfileDraft(profileOf(session.user)); setProfileNotice(""); setStaff(!!session.user && session.user.role !== "client"); setAccountOpen(false); }
+        if (changedAccount) { ++sessionVersion.current; setProfileDraft(profileOf(session.user)); setProfileNotice(""); setAccountOpen(false); }
       } catch { /* Temporary failure keeps the current session; a later focus/poll retries. */ }
     };
     const onSessionChanged = () => {
@@ -200,12 +240,31 @@ export default function Application() {
     finally { mutation.current = ""; if (mounted.current) setProfileBusy(false); }
   }
   const refreshCatalog = useCallback(async () => {
+    const account = currentUser.current;
+    if (account && account.role !== "client") throw new Error("Cet espace est réservé aux clients.");
     const read = ++catalogRead.current;
-    const data = await api<{restaurants: Restaurant[]}>("/api/restaurants");
+    const data = await api<{restaurants: Restaurant[]}>("/api/restaurants", {accountId: account?.id});
+    if (!mounted.current || read !== catalogRead.current || currentUser.current?.id !== account?.id) throw new Error("Le compte connecté a changé. Réessayez.");
     if (!data.restaurants.length) throw new Error("Le catalogue est temporairement indisponible.");
-    if (mounted.current && read === catalogRead.current) setRestaurants(data.restaurants);
+    setRestaurants(data.restaurants); setCatalogError("");
     return data.restaurants;
   }, []);
+  const customerWorkspace = !user ? !entryRole : user.role === "client";
+  const loadCatalog = useCallback(async () => {
+    setCatalogLoading(true); setCatalogError("");
+    const accountId = currentUser.current?.id;
+    const request = refreshCatalog();
+    const read = catalogRead.current;
+    const isCurrent = () => mounted.current && read === catalogRead.current && currentUser.current?.id === accountId;
+    try { await request; }
+    catch (cause) { if (isCurrent()) setCatalogError((cause as Error).message); }
+    finally { if (isCurrent()) setCatalogLoading(false); }
+  }, [refreshCatalog]);
+  useEffect(() => {
+    if (loading || initialError || !customerWorkspace) { ++catalogRead.current; setRestaurants([]); return; }
+    void loadCatalog();
+    return () => { ++catalogRead.current; };
+  }, [loading, initialError, customerWorkspace, user?.id, loadCatalog]);
   async function login(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (mutation.current) return;
     mutation.current = "auth"; setBusy(true); setAuthError("");
@@ -213,8 +272,8 @@ export default function Application() {
     try {
       const result = await api<{user: User}>("/api/login", {method:"POST", body:JSON.stringify({email,password})});
       if (!mounted.current || version !== sessionVersion.current) return;
-      currentUser.current = result.user; setUser(result.user); setProfileDraft(profileOf(result.user)); setStaff(result.user.role !== "client"); setAccountOpen(false); setRequestedRole(null); setProfileNotice("");
-      notifySessionChange(); void refreshCatalog().catch(() => {});
+      currentUser.current = result.user; setUser(result.user); setProfileDraft(profileOf(result.user)); setAccountOpen(false); setRequestedRole(null); setProfileNotice("");
+      notifySessionChange();
     } catch (error) { if (mounted.current && version === sessionVersion.current) setAuthError((error as Error).message); }
     finally { mutation.current = ""; if (mounted.current) { setBusy(false); if (pendingAuthSync.current) { pendingAuthSync.current = false; window.dispatchEvent(new Event('manjeo-session-changed')); } } }
   }
@@ -225,22 +284,36 @@ export default function Application() {
     try {
       await api("/api/logout", {method:"POST", accountId:currentUser.current?.id, body:"{}"});
       if (!mounted.current || version !== sessionVersion.current) return;
-      currentUser.current = null; setUser(null); setStaff(false); setAccountOpen(true); setProfileNotice(""); setProfileDraft(emptyProfile);
-      if (nextRole) { selectDemo(nextRole); setRequestedRole(nextRole); }
-      notifySessionChange(); void refreshCatalog().catch(() => {});
+      currentUser.current = null; setUser(null); setAccountOpen(true); setProfileNotice(""); setProfileDraft(emptyProfile);
+      if (nextRole) {
+        selectDemo(nextRole); setRequestedRole(nextRole);
+        window.history.replaceState(null, "", workspacePaths[nextRole]); setPathname(workspacePaths[nextRole]);
+      }
+      notifySessionChange();
     } catch (error) { if (mounted.current && version === sessionVersion.current) { setAccountOpen(true); setAuthError((error as Error).message); } }
     finally { mutation.current = ""; if (mounted.current) { setBusy(false); if (pendingAuthSync.current) { pendingAuthSync.current = false; window.dispatchEvent(new Event('manjeo-session-changed')); } } }
   }
   const locked = busy || profileBusy;
   const languageControl = <LanguageBar onChange={value => { if (loading || initialError) chooseLanguage(value); else void selectLanguage(value); }} disabled={locked}/>;
   const startupHeader = <header className="site-header startup-header"><div className="header-inner"><span className="brand">manjéo</span>{languageControl}</div></header>;
-  if (loading || initialError) return <>{startupHeader}<main className="app-startup"><div className="startup-card"><ShoppingBag size={32}/><h1>{loading ? t("Les bonnes adresses arrivent…") : t("La cuisine se fait attendre")}</h1><p>{loading ? t("Connexion à Manjéo.") : t(initialError)}</p>{initialError && <Button onClick={initialize}>{t("Réessayer")}</Button>}</div></main></>;
+  if (loading || initialError) return <>{startupHeader}<main className="app-startup"><div className="startup-card"><UserRound size={32}/><h1>{loading ? t("Chargement de votre espace…") : t("Votre espace est momentanément indisponible.")}</h1><p>{loading ? t("Connexion à Manjéo.") : t(initialError)}</p>{initialError && <Button onClick={initialize}>{t("Réessayer")}</Button>}</div></main></>;
   const viewer = user ? {...user,language:uiLanguage} : null;
+  const professionalLogin = !user && !!entryRole;
+  const SignInTitle = professionalLogin ? "h1" : DialogTitle;
+  const SignInDescription = professionalLogin ? "p" : DialogDescription;
+  const signIn = <>
+        <div className="account-symbol"><UserRound size={26}/></div><SignInTitle>{professionalLogin ? t(roleNames[entryRole!]) : t("Bienvenue à table.")}</SignInTitle><SignInDescription>{requestedRole ? t("Connectez-vous pour ouvrir {space}.", {space: t(roleNames[requestedRole]).toLowerCase()}) : t("Connectez-vous pour commander ou gérer votre activité.")}</SignInDescription>
+        {!professionalLogin && <div className="demo-account-picker" role="group" aria-label={t("Comptes de démonstration")}>{demos.map(({role,label,email:demoEmail,icon:Icon}) => <button key={role} type="button" disabled={locked} aria-pressed={email === demoEmail} onClick={() => {selectDemo(role);setRequestedRole(role);setAuthError("");}}><Icon size={20}/>{t(label)}</button>)}</div>}
+        <form className="account-form" onSubmit={login}><label>{t("Adresse e-mail")}<Input type="email" name="email" autoComplete="username" required disabled={locked} value={email} onChange={event => setEmail(event.target.value)}/></label><label>{t("Mot de passe")}<Input type="password" name="password" autoComplete="current-password" required disabled={locked} value={password} onChange={event => setPassword(event.target.value)}/></label>{authError && <p role="alert" className="account-error">{t(authError)}</p>}<Button type="submit" disabled={locked}>{busy ? t("Connexion…") : t("Se connecter")}<ArrowRight size={17}/></Button></form>
+        <p className="demo-credentials">{t(professionalLogin ? "Compte de démonstration partagé. Mot de passe :" : "4 comptes de démonstration partagés. Mot de passe commun :")}<br/><code>ManjeoDemo2026!</code></p>
+  </>;
   return <div className="localized-app" onInvalidCapture={localizeInvalid} onInputCapture={clearValidity}>
-    {staff && user && user.role !== "client"
-      ? <RouteBoundary key={user.id} header={startupHeader} onShop={() => setStaff(false)}><Suspense fallback={<>{startupHeader}<main className="app-startup"><div className="startup-card" role="status"><p>{t("Chargement de votre espace…")}</p></div></main></>}><Staff user={viewer!} languageControl={languageControl} onLogout={() => void logout()} onAccount={() => openAccount()} onShop={() => {setStaff(false); void refreshCatalog().catch(() => {});}}/></Suspense></RouteBoundary>
-      : <Home user={viewer} languageControl={languageControl} onSaveProfile={saveCustomerProfile} restaurants={restaurants} refreshCatalog={refreshCatalog} onAccount={openAccount} onStaff={() => setStaff(true)}/>}
-    <Dialog open={accountOpen} onOpenChange={open => {if (!locked) setAccountOpen(open);}}><DialogContent className="app-dialog account-dialog">
+    {user && user.role !== "client"
+      ? <RouteBoundary key={`${user.id}:${user.role}`} header={startupHeader} onLogout={() => void logout()} disabled={locked}><Suspense fallback={<>{startupHeader}<main className="app-startup"><div className="startup-card" role="status"><p>{t("Chargement de votre espace…")}</p></div></main></>}><Staff user={viewer!} languageControl={languageControl} onLogout={() => void logout()} onAccount={() => openAccount()}/></Suspense></RouteBoundary>
+      : professionalLogin ? <>{startupHeader}<main className="app-startup"><section className="professional-login account-dialog">{signIn}</section></main></>
+      : restaurants.length ? <Home user={viewer} languageControl={languageControl} onSaveProfile={saveCustomerProfile} restaurants={restaurants} refreshCatalog={refreshCatalog} onAccount={openAccount}/>
+      : <>{startupHeader}<main className="app-startup"><div className="startup-card" role={catalogError ? "alert" : "status"}><ShoppingBag size={32}/><h1>{t(catalogError ? "La cuisine se fait attendre" : "Les bonnes adresses arrivent…")}</h1><p>{t(catalogError || "Connexion à Manjéo.")}</p>{!catalogLoading && <Button onClick={() => void loadCatalog()}>{t("Réessayer")}</Button>}<Button variant="outline" onClick={() => openAccount()}>{t(user ? "Mon compte" : "Se connecter")}</Button></div></main></>}
+    <Dialog open={accountOpen && !professionalLogin} onOpenChange={open => {if (!locked) setAccountOpen(open);}}><DialogContent className="app-dialog account-dialog">
       {user ? <>
         <div className="account-symbol"><UserRound size={26}/></div><DialogTitle>{t("Bonjour, {name}", {name: user.name})}</DialogTitle><DialogDescription>{t(roleNames[user.role])} · {t("Démonstration partagée")}</DialogDescription>
         <div className="account-identity"><strong>{user.email}</strong><span>{t("Votre session est connectée.")}</span></div>
@@ -253,15 +326,9 @@ export default function Application() {
           <Button type="submit" variant="outline" disabled={locked}>{profileBusy ? t("Enregistrement…") : t("Enregistrer mes coordonnées")}</Button>
           </fieldset>
         </form>}
-        {user.role !== "client" && <Button disabled={locked} onClick={() => {setAccountOpen(false);setStaff(true);}}>{t(user.role === "admin" ? "Ouvrir l’administration" : user.role === "courier" ? "Ouvrir mes livraisons" : "Ouvrir mon restaurant")}<ArrowRight size={17}/></Button>}
         {authError && <p role="alert" className="account-error">{t(authError)}</p>}
         <Button variant="outline" disabled={locked} onClick={() => void logout()}><LogOut size={16}/>{busy ? t("Déconnexion…") : t("Se déconnecter / changer de compte")}</Button>
-      </> : <>
-        <div className="account-symbol"><UserRound size={26}/></div><DialogTitle>{t("Bienvenue à table.")}</DialogTitle><DialogDescription>{requestedRole ? t("Connectez-vous pour ouvrir {space}.", {space: t(roleNames[requestedRole]).toLowerCase()}) : t("Connectez-vous pour commander ou gérer votre activité.")}</DialogDescription>
-        <div className="demo-account-picker" role="group" aria-label={t("Comptes de démonstration")}>{demos.map(({role,label,email:demoEmail,icon:Icon}) => <button key={role} type="button" disabled={locked} aria-pressed={email === demoEmail} onClick={() => {selectDemo(role);setRequestedRole(role);setAuthError("");}}><Icon size={20}/>{t(label)}</button>)}</div>
-        <form className="account-form" onSubmit={login}><label>{t("Adresse e-mail")}<Input type="email" name="email" autoComplete="username" required disabled={locked} value={email} onChange={event => setEmail(event.target.value)}/></label><label>{t("Mot de passe")}<Input type="password" name="password" autoComplete="current-password" required disabled={locked} value={password} onChange={event => setPassword(event.target.value)}/></label>{authError && <p role="alert" className="account-error">{t(authError)}</p>}<Button type="submit" disabled={locked}>{busy ? t("Connexion…") : t("Se connecter")}<ArrowRight size={17}/></Button></form>
-        <p className="demo-credentials">{t("4 comptes de démonstration partagés. Mot de passe commun :")}<br/><code>ManjeoDemo2026!</code></p>
-      </>}
+      </> : signIn}
     </DialogContent></Dialog>
   </div>;
 }

@@ -13,10 +13,11 @@ const customer = id => ({id, name: id, email: `${id}@manjeo.test`, role: 'client
 const restaurants = [{id: 'ti-kreol', name: 'Ti Kréol'}];
 const event = {preventDefault() {}};
 
-function harness({language = 'fr', explicitChoice = false} = {}) {
+function harness({language = 'fr', explicitChoice = false, path = '/'} = {}) {
   const hooks = [], effects = [], requests = [], listeners = new Map();
   let cursor = 0, dirty = false, alive = true, tree, writesAfterUnmount = 0;
   let uiLanguage = language, chosenLanguage = explicitChoice;
+  let location = new URL(path, 'https://manjeo.test');
   const normalizeLanguage = value => ['fr', 'ht', 'pt'].includes(value) ? value : null;
   const languageNames = {fr: 'français', ht: 'créole haïtien', pt: 'portugais', en: 'anglais', es: 'espagnol', gcr: 'créole guyanais', zh: 'chinois'};
   const same = (left, right) => left && right && left.length === right.length && left.every((value, index) => Object.is(value, right[index]));
@@ -83,8 +84,13 @@ function harness({language = 'fr', explicitChoice = false} = {}) {
       if (name === './staff') return {default: components.Staff};
       return components;
     },
-    window: {addEventListener, removeEventListener: (name, callback) => listeners.get(name)?.delete(callback), dispatchEvent: event => { for (const callback of listeners.get(event.type) || []) callback(event); }},
-    Event,
+    window: {
+      get location() { return location; },
+      history: {replaceState(_state, _title, url) { location = new URL(url, location); }},
+      addEventListener, removeEventListener: (name, callback) => listeners.get(name)?.delete(callback),
+      dispatchEvent: event => { for (const callback of listeners.get(event.type) || []) callback(event); },
+    },
+    Event, URL,
     document: {documentElement: {}},
     localStorage: {setItem() {}}, crypto: {randomUUID: () => 'session-change'},
   });
@@ -125,6 +131,8 @@ function harness({language = 'fr', explicitChoice = false} = {}) {
     button: label => nodes(tree).find(node => node.type === components.Button && node.props.children === label),
     chooseLanguage: value => nodes(tree).find(node => node.type === components.LanguageBar).props.onChange(value),
     get interfaceLanguage() { return uiLanguage; },
+    get location() { return location; },
+    navigate(path, eventName = 'popstate') { location = new URL(path, location); dispatch(eventName); },
     unmount() { alive = false; for (const hook of hooks) if (hook.kind === 'effect') hook.cleanup?.(); },
     get writesAfterUnmount() { return writesAfterUnmount; },
   };
@@ -132,12 +140,17 @@ function harness({language = 'fr', explicitChoice = false} = {}) {
 
 async function settleInitial(app, user = customer('first')) {
   app.take('/api/session').resolve({user});
+  await app.flush();
+  if (app.requests.some(item => item.path === '/api/restaurants' && !item.taken)) await settleCatalog(app);
+}
+async function settleCatalog(app) {
   app.take('/api/restaurants').resolve({restaurants});
   await app.flush();
 }
 
-test('startup normally loads both the account and catalog without another session request', async () => {
+test('startup resolves the account before loading its customer catalog', async () => {
   const app = harness();
+  assert.equal(app.requests.some(item => item.path === '/api/restaurants'), false);
   await settleInitial(app);
   assert.equal(app.home().props.user.id, 'first');
   assert.deepEqual(app.home().props.restaurants, restaurants);
@@ -149,12 +162,13 @@ for (const name of ['storage', 'focus', 'manjeo-session-expired', 'manjeo-sessio
   test(`${name} during startup refreshes the account without abandoning the catalog or leaving a spinner`, async () => {
     const app = harness();
     app.dispatch(name); app.dispatch(name);
-    assert.equal(app.requests.length, 2, 'Events are coalesced while the initial catalog/session load runs');
+    assert.equal(app.requests.length, 1, 'Events are coalesced while the initial session load runs');
     await settleInitial(app, customer('stale'));
     assert.equal(app.startup(), true, 'Do not display the potentially stale account');
     assert.equal(app.home(), undefined);
     app.take('/api/session').resolve({user: customer('fresh')});
     await app.flush();
+    await settleCatalog(app);
     assert.equal(app.startup(), false);
     assert.equal(app.home().props.user.id, 'fresh');
     assert.deepEqual(app.home().props.restaurants, restaurants);
@@ -173,6 +187,7 @@ test('another account change during the fresh read is rechecked before completin
   assert.equal(app.home(), undefined);
   app.take('/api/session').resolve({user: customer('latest')});
   await app.flush();
+  await settleCatalog(app);
   assert.equal(app.home().props.user.id, 'latest');
   assert.equal(app.startup(), false);
 });
@@ -183,6 +198,7 @@ test('a logout in another tab during startup cannot restore the original signed-
   await settleInitial(app);
   app.take('/api/session').resolve({user: null});
   await app.flush();
+  await settleCatalog(app);
   assert.equal(app.startup(), false);
   assert.equal(app.home().props.user, null);
   assert.deepEqual(app.home().props.restaurants, restaurants);
@@ -194,6 +210,7 @@ test('a failed fresh read ends loading with a working retry instead of keeping a
   await settleInitial(app);
   app.take('/api/session').reject(new Error('Session temporairement indisponible.'));
   await app.flush();
+  assert.equal(app.requests.some(item => item.path === '/api/restaurants'), false, 'An unknown session must not start the customer catalog');
   assert.ok(app.find(node => node.type === 'p' && node.props.children === 'Session temporairement indisponible.'));
   const retry = app.button('Réessayer');
   assert.ok(retry);
@@ -203,20 +220,113 @@ test('a failed fresh read ends loading with a working retry instead of keeping a
   assert.equal(app.home().props.user.id, 'retried');
 });
 
-test('catalog failure also remains retryable when a session event arrives during startup', async () => {
+test('catalog failure remains retryable during a same-account session refresh', async () => {
   const app = harness();
+  const account = customer('first');
+  app.take('/api/session').resolve({user: account});
+  await app.flush();
+  const catalog = app.take('/api/restaurants');
   app.dispatch('storage');
-  app.take('/api/session').resolve({user: customer('old')});
-  app.take('/api/restaurants').reject(new Error('Catalogue temporairement indisponible.'));
+  app.take('/api/session').resolve({user: account});
+  catalog.reject(new Error('Catalogue temporairement indisponible.'));
   await app.flush();
   assert.ok(app.button('Réessayer'));
   void app.button('Réessayer').props.onClick();
-  app.dispatch('focus');
-  await settleInitial(app, customer('stale-retry'));
-  app.take('/api/session').resolve({user: customer('fresh-retry')});
-  await app.flush();
-  assert.equal(app.home().props.user.id, 'fresh-retry');
+  await settleCatalog(app);
+  assert.equal(app.home().props.user.id, account.id);
   assert.equal(app.startup(), false);
+});
+
+for (const account of [null, customer('unchanged')]) {
+  for (const eventName of ['storage', 'manjeo-session-changed']) {
+    test(`${eventName} during catalog loading keeps an unchanged ${account ? 'client' : 'visitor'} request usable`, async () => {
+      const app = harness();
+      app.take('/api/session').resolve({user: account});
+      await app.flush();
+      const catalog = app.take('/api/restaurants');
+      assert.equal(catalog.options.accountId, account?.id);
+      app.dispatch(eventName);
+      app.take('/api/session').resolve({user: account});
+      await app.flush();
+      catalog.resolve({restaurants});
+      await app.flush();
+      assert.equal(app.startup(), false);
+      assert.equal(app.home().props.user?.id, account?.id);
+      assert.deepEqual(app.home().props.restaurants, restaurants);
+      assert.equal(app.requests.filter(item => item.path === '/api/restaurants').length, 1);
+    });
+  }
+}
+
+test('failed login during initial catalog loading leaves the visitor catalog usable', async () => {
+  const app = harness();
+  app.take('/api/session').resolve({user: null});
+  await app.flush();
+  const catalog = app.take('/api/restaurants');
+  app.button('Se connecter').props.onClick();
+  await app.flush();
+  const attempt = app.find(node => node.type === 'form' && node.props.className === 'account-form').props.onSubmit(event);
+  app.take('/api/login').reject(new Error('Identifiants invalides.'));
+  await attempt; await app.flush();
+  catalog.resolve({restaurants});
+  await app.flush();
+  assert.equal(app.home().props.user, null);
+  assert.equal(app.startup(), false);
+});
+
+test('a delayed visitor catalog cannot reappear after a professional session is synchronized', async () => {
+  const app = harness();
+  app.take('/api/session').resolve({user: null});
+  await app.flush();
+  const catalog = app.take('/api/restaurants');
+  app.dispatch('storage');
+  app.take('/api/session').resolve({user: {...customer('restaurant'), role: 'restaurant', restaurantId: 'ti-kreol'}});
+  await app.flush();
+  assert.equal(app.staff().props.user.role, 'restaurant');
+  catalog.resolve({restaurants});
+  await app.flush();
+  assert.equal(app.home(), undefined);
+  assert.equal(app.staff().props.user.role, 'restaurant');
+  assert.equal(app.location.pathname, '/restaurant');
+});
+
+for (const [role, path] of [['restaurant', '/restaurant'], ['courier', '/livreur'], ['admin', '/admin']]) {
+  test(`${role} opens only its workspace and stays there through customer and other-role history`, async () => {
+    const app = harness({path: '/?payment=success&order=OTHER-ORDER&lang=pt#restaurants'});
+    await settleInitial(app, {...customer(role), role, restaurantId: role === 'restaurant' ? 'ti-kreol' : null});
+    assert.equal(app.staff().props.user.role, role);
+    assert.equal(app.home(), undefined);
+    assert.equal(app.staff().props.onShop, undefined);
+    assert.equal(app.location.pathname, path);
+    assert.equal(app.location.search, '?lang=pt');
+    assert.equal(app.location.hash, '');
+    for (const target of ['/', '/restaurant', '/livreur', '/admin']) {
+      app.navigate(target); await app.flush();
+      assert.equal(app.location.pathname, path);
+      assert.equal(app.home(), undefined);
+      assert.equal(app.staff().props.user.role, role);
+    }
+    assert.equal(app.requests.some(item => item.path === '/api/restaurants'), false);
+  });
+
+  test(`anonymous ${path} is a dedicated sign-in page without a customer catalog`, async () => {
+    const app = harness({path});
+    await settleInitial(app, null);
+    assert.ok(app.find(node => node.props?.className === 'professional-login account-dialog'));
+    assert.equal(app.home(), undefined);
+    assert.equal(app.staff(), undefined);
+    assert.equal(app.requests.some(item => item.path === '/api/restaurants'), false);
+    assert.equal(app.find(node => node.props?.name === 'email').props.value, `${role === 'courier' ? 'livreur' : role}@manjeo.test`);
+  });
+}
+
+test('inherited object property names in unknown URLs cannot become professional roles', async () => {
+  for (const path of ['/constructor', '/toString', '/__proto__']) {
+    const app = harness({path});
+    await settleInitial(app, null);
+    assert.equal(app.home().props.user, null);
+    assert.equal(app.staff(), undefined);
+  }
 });
 
 test('late startup responses cannot update an unmounted application', async () => {

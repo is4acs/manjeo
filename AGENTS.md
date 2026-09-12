@@ -26,6 +26,7 @@ Les parcours navigateur se lancent avec `npm run test:browser` après `npx playw
 
 ## Invariants
 
+- Chaque session monte uniquement son espace : client `/`, restaurant `/restaurant`, livreur `/livreur`, admin `/admin`. Aucune sortie vers la vitrine sous un compte professionnel, y compris au chargement ou en erreur. Charger la session avant les dépendances de l’espace ; les professionnels n’utilisent pas le catalogue public `/api/restaurants`. Le catalogue de gestion `/api/workspace/restaurants` est filtré côté serveur pour le restaurateur et réservé aux restaurateurs/admins.
 - Vérifier les rôles, les prix et les transitions côté serveur.
 - Conserver l’idempotence des commandes, les versions des cartes et les instantanés des commandes confirmées.
 - Une nouvelle commande exige une preuve d’adresse liée au client ou son adresse habituelle encore valable. Le replay précède cette validation ; conserver le corps exact d’une requête incertaine même si sa preuve devient une adresse enregistrée.

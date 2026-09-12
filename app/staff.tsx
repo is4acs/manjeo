@@ -1,6 +1,6 @@
 import PaymentStatus from "./payment-status";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Bike, CheckCircle2, ChefHat, ChevronDown, Clock3, ClipboardList, CreditCard, LogOut, MapPin, MessageSquare, PackageCheck, Phone, RefreshCw, Search, ShieldCheck, ShoppingBag, Store, UserRound, Users, UtensilsCrossed, X } from "lucide-react";
+import { ArrowRight, Bike, CheckCircle2, ChefHat, ChevronDown, Clock3, ClipboardList, CreditCard, LogOut, MapPin, MessageSquare, PackageCheck, Phone, RefreshCw, Search, ShieldCheck, ShoppingBag, Store, UserRound, Users, UtensilsCrossed, X } from "lucide-react";
 import { api, type User, type Order, type OrderStatus, type CourierProfile, statusLabels } from "@/lib/api";
 import { money, type Restaurant } from "@/lib/menu";
 import { clockLabel, countdown, isLate, useCountdown } from "./deadline";
@@ -92,11 +92,15 @@ function OrderCard({ order, admin, busy, onStatus, couriers, onAssign, onRefund,
   </article>;
 }
 
-export default function Staff(props: { user: User; onLogout: () => void; onShop: () => void; onAccount: () => void; languageControl?: React.ReactNode }) {
-  return props.user.role === "courier" ? <Courier key={props.user.id} {...props} /> : <StaffDashboard key={props.user.id} {...props} />;
+type StaffProps = { user: User; onLogout: () => void; onAccount: () => void; languageControl?: React.ReactNode };
+
+export default function Staff(props: StaffProps) {
+  if (props.user.role === "courier") return <Courier key={props.user.id} {...props} />;
+  if (props.user.role === "restaurant" || props.user.role === "admin") return <StaffDashboard key={props.user.id} {...props} />;
+  throw new Error("A professional workspace requires a professional account.");
 }
 
-function StaffDashboard({ user, onLogout, onShop, onAccount, languageControl }: { user: User; onLogout: () => void; onShop: () => void; onAccount: () => void; languageControl?: React.ReactNode }) {
+function StaffDashboard({ user, onLogout, onAccount, languageControl }: StaffProps) {
   const admin = user.role === "admin";
   const [tab, setTab] = useState<StaffTab>("orders");
   const [orders, setOrders] = useState<Order[]>([]);
@@ -134,7 +138,7 @@ function StaffDashboard({ user, onLogout, onShop, onAccount, languageControl }: 
     try {
       const [orderData, restaurantData, userData, courierData] = await Promise.all([
         api<{ orders: Order[]; unread: Record<string, number> }>("/api/orders", {accountId: user.id}),
-        api<{ restaurants: Restaurant[] }>("/api/restaurants"),
+        api<{ restaurants: Restaurant[] }>("/api/workspace/restaurants", {accountId: user.id}),
         admin ? api<{ users: User[] }>("/api/users", {accountId: user.id}) : Promise.resolve({ users: [] as User[] }),
         admin ? api<{ couriers: CourierProfile[] }>("/api/couriers", {accountId: user.id}) : Promise.resolve({ couriers: [] as CourierProfile[] }),
       ]);
@@ -150,7 +154,7 @@ function StaffDashboard({ user, onLogout, onShop, onAccount, languageControl }: 
     } finally {
       if (mounted.current && sequence === requestSequence.current) { setLoading(false); setRefreshing(false); }
     }
-  }, [admin]);
+  }, [admin, user.id]);
 
   useEffect(() => {
     mounted.current = true;
@@ -226,9 +230,9 @@ function StaffDashboard({ user, onLogout, onShop, onAccount, languageControl }: 
 
   return <div className="staff-app">
     <header className="staff-header"><div className="staff-header-inner">
-      <button type="button" className="staff-brand" onClick={onShop} aria-label={t("Manjéo, voir la vitrine")}>manjéo<span>•</span></button>
+      <span className="staff-brand">manjéo</span>
       <span className="staff-space-label">{admin ? <ShieldCheck size={17} /> : <ChefHat size={18} />}{admin ? t("Administration") : t("Espace restaurateur")}</span>
-      <div className="staff-header-actions"><button type="button" className="staff-shop-link" onClick={onShop} aria-label={t("Voir la vitrine")}><ArrowLeft size={15} /><span>{t("Voir la vitrine")}</span></button><button type="button" className="staff-shop-link" onClick={onAccount} aria-label={t("Mon compte")}><UserRound size={15} /><span>{t("Mon compte")}</span></button><button type="button" className="staff-logout" onClick={onLogout} aria-label={t("Déconnexion")}><LogOut size={16} /><span>{t("Déconnexion")}</span></button>{languageControl}</div>
+      <div className="staff-header-actions"><button type="button" className="staff-shop-link" onClick={onAccount} aria-label={t("Mon compte")}><UserRound size={15} /><span>{t("Mon compte")}</span></button><button type="button" className="staff-logout" onClick={onLogout} aria-label={t("Déconnexion")}><LogOut size={16} /><span>{t("Déconnexion")}</span></button>{languageControl}</div>
     </div></header>
 
     <main className="staff-main">

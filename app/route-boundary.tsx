@@ -3,8 +3,8 @@ import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { t } from '@/lib/i18n';
 
-/** A failed deferred module must leave a usable route back to the shop. */
-export default class RouteBoundary extends Component<{children: ReactNode; header?: ReactNode; onShop: () => void}, {failed: boolean}> {
+/** A failed professional module must keep recovery inside its account's workspace. */
+export default class RouteBoundary extends Component<{children: ReactNode; header?: ReactNode; onLogout: () => void; disabled?: boolean}, {failed: boolean}> {
   state = {failed: false};
   static getDerivedStateFromError() { return {failed: true}; }
   render() {
@@ -13,7 +13,7 @@ export default class RouteBoundary extends Component<{children: ReactNode; heade
       <RefreshCw size={30}/><h1>{t('Votre espace est momentanément indisponible.')}</h1>
       <p>{t('Vérifiez votre connexion, puis rechargez la page pour rouvrir votre espace.')}</p>
       <Button onClick={() => window.location.reload()}>{t('Recharger la page')}</Button>
-      <Button variant="outline" onClick={this.props.onShop}>{t('Retour aux restaurants')}</Button>
+      <Button variant="outline" onClick={this.props.onLogout} disabled={this.props.disabled}>{t('Déconnexion')}</Button>
     </div></main></>;
   }
 }

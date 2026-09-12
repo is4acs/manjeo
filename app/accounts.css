@@ -28,3 +28,9 @@
 .startup-card{padding:60px 5px}
 }
 .profile-fields{border:0;padding:0;margin:0;min-width:0;display:grid;gap:17px}.account-switch-role{border:2px solid var(--ink);border-radius:18px;padding:16px;display:grid;gap:12px;background:var(--punch)}.account-switch-role p{font-size:13px;line-height:1.6;color:var(--ink)}
+
+.professional-login{width:100%;padding:28px;background:var(--cream-2);border:2px solid var(--ink);border-radius:20px;display:grid;gap:12px}
+.professional-login h1{font-size:clamp(25px,5vw,32px);line-height:1.1}
+.professional-login>p{color:var(--ink-soft);font-size:14px;line-height:1.6}
+.professional-login .account-symbol{margin-bottom:0}
+@media(max-width:520px){.professional-login{padding:20px}}
