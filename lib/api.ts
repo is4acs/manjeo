@@ -1,6 +1,11 @@
 export type Role = "client" | "restaurant" | "courier" | "admin";
-export type User = { id: string; email: string; name: string; role: Role; restaurantId: string | null; phone: string; language: string };
-export type OrderStatus = "pending" | "accepted" | "preparing" | "ready" | "picked_up" | "delivered" | "cancelled";
+export type DeliveryLocation = {latitude: number; longitude: number; provider: 'ign'; precision: 'house' | 'street'; verifiedAt: string; confirmedAt: string};
+export type DeliveryAddress = DeliveryLocation & {address: string; city: string; details: string; verificationExpiresAt: string};
+export type AddressCandidate = Omit<DeliveryLocation, 'verifiedAt' | 'confirmedAt'> & {address: string; city: string; verificationToken: string; expiresAt: string};
+export type PaymentMethod = 'demo' | 'stripe';
+export type PaymentConfig = {mode: 'demo' | 'stripe_test'; stripeAvailable: boolean; reason: string | null};
+export type User = { id: string; email: string; name: string; role: Role; restaurantId: string | null; phone: string; language: string; deliveryAddress?: DeliveryAddress | null; paymentMethod?: PaymentMethod };
+export type OrderStatus = "awaiting_payment" | "pending" | "accepted" | "preparing" | "ready" | "picked_up" | "delivered" | "cancelled";
 export type Order = {
   id: string; restaurantId: string; restaurant: string; customerId: string;
   customerName: string; phone: string; address: string; city: string; details: string; notes: string;
@@ -9,6 +14,8 @@ export type Order = {
   date: string; updatedAt: string; acceptBy: string | null; eta: string | null;
   courierId: string | null; courierName: string | null;
   pickupAddress: string; pickupCity: string; deliveryCode?: string;
+  deliveryLocation?: DeliveryLocation;
+  payment?: {provider: PaymentMethod; status: 'simulated' | 'awaiting_payment' | 'paid' | 'expired' | 'cancelled' | 'refund_pending' | 'refunded' | 'refund_failed'; testMode: boolean};
   items: { productId: string; name: string; option: string; price: number; quantity: number }[];
   history: { status: OrderStatus; date: string; label?: string; actorName?: string }[];
 };
@@ -22,11 +29,12 @@ export type PublicPromotion = { code: string; label: string; conditions: string;
 export type CourierProfile = { id: string; name: string; email: string; online: boolean; activeOrderId: string | null };
 export type DeliveryOffer = Pick<Order, "id" | "restaurantId" | "restaurant" | "pickupAddress" | "pickupCity" | "city" | "count" | "status" | "delivery" | "date">;
 export const statusLabels: Record<OrderStatus, string> = {
+  awaiting_payment: "Paiement à terminer",
   pending: "En attente", accepted: "Acceptée", preparing: "En préparation",
   ready: "Prête au retrait", picked_up: "En livraison", delivered: "Livrée (test)", cancelled: "Annulée",
 };
 export class ApiError extends Error {
-  constructor(message: string, public status: number) { super(message); }
+  constructor(message: string, public status: number, public code?: string) { super(message); }
 }
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const controller = new AbortController();
@@ -42,7 +50,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     const data = await response.json().catch(() => { throw new ApiError("Réponse du serveur illisible. Réessayez.", response.status >= 400 ? response.status : 502); });
     if (!response.ok) {
       if (response.status === 401 && path !== "/api/login" && path !== "/api/session") window.dispatchEvent(new Event("manjeo-session-expired"));
-      throw new ApiError(data.error || "La demande n’a pas abouti.", response.status);
+      throw new ApiError(data.error || "La demande n’a pas abouti.", response.status, typeof data.code === "string" ? data.code : undefined);
     }
     return data as T;
   } catch (error) {

@@ -1,0 +1,10 @@
+.navigation-links{display:grid;gap:8px;min-width:0;max-width:100%;margin-top:15px}
+.navigation-links .navigation-label{display:flex;align-items:center;gap:7px;margin:0;color:var(--ink);font-size:12px;line-height:1.5}
+.navigation-links-list{display:flex;flex-wrap:wrap;gap:8px;min-width:0}
+.navigation-links .navigation-link{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:44px;max-width:100%;padding:8px 12px;margin:0;border:2px solid var(--ink);border-radius:999px;background:var(--cream-2);color:var(--ink);font-family:var(--body);font-size:12px;font-weight:600;line-height:1.35;text-decoration:none}
+.navigation-links .navigation-link:hover{background:var(--punch)}
+.navigation-links .navigation-link:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+.navigation-links .navigation-note{margin:0;color:var(--ink-soft);font-size:11px;line-height:1.5;overflow-wrap:anywhere}
+.navigation-links-compact{margin-top:10px;gap:6px}
+.navigation-links-compact .navigation-links-list{gap:6px}
+.navigation-links-compact .navigation-link{padding:7px 10px;font-size:11px}

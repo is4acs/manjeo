@@ -390,8 +390,23 @@ class Handler(BaseHTTPRequestHandler):
 
     def dispatch_api(self):
         try:
-            self.check_origin()
             path = urlsplit(self.path).path
+            if self.command == 'POST' and path == '/api/payments/stripe/webhook':
+                from .payments import MAX_WEBHOOK_BYTES, handle_payment_request
+                if self.headers.get('Transfer-Encoding'):
+                    raise APIError(400, 'Format de requête non pris en charge.')
+                try:
+                    length = int(self.headers.get('Content-Length', '0'))
+                except ValueError:
+                    raise APIError(400, 'Requête invalide.')
+                if not 0 < length <= MAX_WEBHOOK_BYTES:
+                    raise APIError(413 if length > MAX_WEBHOOK_BYTES else 400, 'Taille de requête invalide.')
+                raw_body = self.rfile.read(length)
+                if len(raw_body) != length:
+                    raise APIError(400, 'Requête invalide.')
+                status, response, cookie = handle_payment_request(self, path, raw_body=raw_body)
+                return self.json_response(status, response, cookie)
+            self.check_origin()
             if not path.startswith("/api/"):
                 if self.command != "GET":
                     raise APIError(405, "Méthode non autorisée.")
@@ -407,6 +422,14 @@ class Handler(BaseHTTPRequestHandler):
                 from .translation import translate_request
                 status, response, cookie = translate_request(self, data)
                 return self.json_response(status, response, cookie)
+            if self.command == 'POST' and path == '/api/addresses/verify':
+                from .customer import verify_address_request
+                status, response, cookie = verify_address_request(self, data)
+                return self.json_response(status, response, cookie)
+            from .payments import handle_payment_request
+            payment_response = handle_payment_request(self, path, data=data)
+            if payment_response is not None:
+                return self.json_response(*payment_response)
             database = self.state.database
             self.in_write = False
             with database.connect() as db:
@@ -437,18 +460,20 @@ class Handler(BaseHTTPRequestHandler):
                     # acceptance must not resurrect an expired order or its promo.
                     self.ensure_write(db)
                     expire_pending_orders(self, db)
+                    from .payments import expire_awaiting_payments
+                    expire_awaiting_payments(db)
                     db.execute("SAVEPOINT requested_operation")
                     try:
                         status, response, cookie = self.api(db, path, data)
                     except APIError as error:
                         db.execute("ROLLBACK TO SAVEPOINT requested_operation")
-                        status, response, cookie = error.status, {"error": error.message}, None
+                        status, response, cookie = error.status, {"error": error.message, **({"code": error.code} if getattr(error, "code", None) else {})}, None
                     db.execute("RELEASE SAVEPOINT requested_operation")
                 else:
                     status, response, cookie = self.api(db, path, data)
             self.json_response(status, response, cookie)
         except APIError as error:
-            self.json_response(error.status, {"error": error.message})
+            self.json_response(error.status, {"error": error.message, **({"code": error.code} if getattr(error, "code", None) else {})})
         except (BrokenPipeError, ConnectionResetError):
             pass
         except Exception:
@@ -475,7 +500,7 @@ class Handler(BaseHTTPRequestHandler):
         if method == "GET" and path == "/api/session":
             from .messaging import profile
             user = self.user(db)
-            return 200, {"user": {**public_user(user), **profile(db, user["id"])} if user else None}, None
+            return 200, {"user": {**public_user(user), **profile(db, user["id"], include_delivery=True)} if user else None}, None
         if method == "POST" and path == "/api/login":
             email = text_field(data, "email", 3, 254).lower()
             password = text_field(data, "password", 1, 200)
@@ -503,7 +528,7 @@ class Handler(BaseHTTPRequestHandler):
             db.execute("DELETE FROM sessions WHERE token_hash = ? OR expires_at <= ?", (self.session_hash(), int(time.time())))
             db.execute("INSERT INTO sessions VALUES (?, ?, ?)", (hashlib.sha256(token.encode()).hexdigest(), row["id"], int(time.time()) + SESSION_SECONDS))
             from .messaging import profile
-            return 200, {"user": {**public_user(row), **profile(db, row["id"])}}, self.session_cookie(token, SESSION_SECONDS)
+            return 200, {"user": {**public_user(row), **profile(db, row["id"], include_delivery=True)}}, self.session_cookie(token, SESSION_SECONDS)
         if method == "POST" and path == "/api/logout":
             db.execute("DELETE FROM sessions WHERE token_hash = ?", (self.session_hash(),))
             return 200, {"ok": True}, self.session_cookie()
@@ -521,7 +546,12 @@ class Handler(BaseHTTPRequestHandler):
                 clause, args = " WHERE id IN (SELECT order_id FROM order_assignments WHERE courier_id = ?)", (user["id"],)
             from .messaging import unread_counts
             rows = db.execute("SELECT data FROM orders" + clause + " ORDER BY created_at DESC, id DESC", args)
-            return 200, {"orders": [projected_order(json.loads(row["data"]), user) for row in rows],
+            visible_orders = [json.loads(row['data']) for row in rows]
+            if user['role'] == 'restaurant':
+                visible_orders = [order for order in visible_orders if order['status'] != 'awaiting_payment' and not (
+                    order.get('payment', {}).get('provider') == 'stripe' and order['status'] == 'cancelled'
+                    and not any(event.get('status') == 'pending' for event in order.get('history', [])))]
+            return 200, {"orders": [projected_order(order, user) for order in visible_orders],
                          "unread": unread_counts(db, user)}, None
         if method == "POST" and path == "/api/orders":
             return self.create_order(db, data)
@@ -545,8 +575,6 @@ class Handler(BaseHTTPRequestHandler):
         raise APIError(404, "Cette ressource API n’existe pas.")
 
     def create_order(self, db, data):
-        from .marketplace import ACCEPTANCE_SECONDS, selected_price, shifted
-        from .promotions import evaluate, normalized_code, record_use
         user = self.user(db, {"client"})
         request_id = text_field(data, "requestId", 36, 36)
         try:
@@ -561,6 +589,17 @@ class Handler(BaseHTTPRequestHandler):
             if existing["request_hash"] != request_hash:
                 raise APIError(409, "Cet identifiant correspond déjà à une autre commande.")
             return 200, {"order": json.loads(existing["data"])}, None
+        try:
+            return self.create_new_order(db, data, user, request_id, request_hash)
+        except APIError as error:
+            # The locked replay lookup found no order, and dispatch rolls this
+            # whole attempted creation back before returning this marker.
+            error.code = 'order_not_created'
+            raise
+
+    def create_new_order(self, db, data, user, request_id, request_hash):
+        from .marketplace import ACCEPTANCE_SECONDS, selected_price, shifted
+        from .promotions import evaluate, normalized_code, record_use
         # Old clients must explicitly refresh their basket; never silently adopt
         # a changed menu price or turn a previous fixed option into a new choice.
         if type(data.get("expectedTotal")) is not int:
@@ -628,6 +667,10 @@ class Handler(BaseHTTPRequestHandler):
             promo, discount = evaluate(db, code, user, restaurant_id, subtotal, delivery)
         if data["expectedTotal"] != subtotal + delivery - discount:
             raise APIError(409, "Le total a changé. Vérifiez votre panier avant de confirmer la commande.")
+        from .customer import checkout_address
+        from .payments import validate_requested_payment, prepare_order_payment, register_payment
+        destination = checkout_address(db, user, data)
+        payment_method = validate_requested_payment(data)
         stamp = now_iso()
         order = {
             "id": "MJ-" + uuid.uuid4().hex[:12].upper(),
@@ -644,8 +687,11 @@ class Handler(BaseHTTPRequestHandler):
             "pickupAddress": restaurant["pickupAddress"], "pickupCity": restaurant["pickupCity"],
             "deliveryCode": "%04d" % secrets.randbelow(10_000),
         }
+        order.update(destination)
+        prepare_order_payment(order, payment_method)
         db.execute("INSERT INTO orders VALUES (?, ?, ?, ?, ?, ?, ?)", (order["id"], user["id"], restaurant_id, request_id, request_hash, stamp, json.dumps(order, ensure_ascii=False)))
-        db.execute("INSERT INTO order_assignments(order_id, courier_id, state) VALUES (?, ?, ?)", (order["id"], None, "pending"))
+        db.execute("INSERT INTO order_assignments(order_id, courier_id, state) VALUES (?, ?, ?)", (order["id"], None, order["status"]))
+        register_payment(db, order)
         record_use(db, order, user)
         return 201, {"order": order}, None
 

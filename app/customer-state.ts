@@ -1,5 +1,15 @@
 export type PromotionContext = { userId?: string; role?: string; restaurantId?: string; city: string; subtotal: number; delivery: number };
 export type PromotionQuote = { context: string; promotion: { code: string; discount: number } };
+export type LocationDraft = {address: string; city: string; details: string};
+export type ProfileLocation = LocationDraft & {userId: string};
+
+/** A profile refresh may update an untouched destination, never a local edit.
+ * A different account's saved address is adopted explicitly on account change.
+ */
+export function shouldAdoptProfileLocation(previous: ProfileLocation | null, next: ProfileLocation, draft: LocationDraft, hasSavedAddress: boolean): boolean {
+  return !!(hasSavedAddress && previous?.userId !== next.userId || previous &&
+    draft.address === previous.address && draft.city === previous.city && draft.details === previous.details);
+}
 
 // A quote belongs to one account and one price/destination snapshot, never to a mutable basket.
 export function promotionContext(value: PromotionContext): string {

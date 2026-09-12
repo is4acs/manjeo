@@ -62,6 +62,8 @@ def legacy_options(product):
 
 
 def initialize_marketplace(db):
+    from .payments import initialize_payments
+    initialize_payments(db)
     for statement in (
         """CREATE TABLE IF NOT EXISTS courier_profiles (
             user_id TEXT PRIMARY KEY REFERENCES users(id),
@@ -188,6 +190,8 @@ def expire_pending_orders(handler, db, stamp=None):
         current = json.loads(db.execute("SELECT data FROM orders WHERE id = ?", (order["id"],)).fetchone()["data"])
         if not acceptance_is_due(current, stamp):
             continue
+        from .payments import cancel_payment
+        cancel_payment(db, current)
         current["status"] = "cancelled"
         current["acceptBy"] = None
         current["updatedAt"] = stamp
@@ -200,6 +204,9 @@ def expire_pending_orders(handler, db, stamp=None):
 
 def projected_order(order, user):
     result = copy.deepcopy(order)
+    if not (user['role'] == 'admin' or user['role'] == 'client' and user['id'] == order['customerId']
+            or user['role'] == 'courier' and user['id'] == order.get('courierId')):
+        result.pop('deliveryLocation', None)
     if user["role"] not in {"client", "admin"}:
         result.pop("deliveryCode", None)
         if order["status"] not in ACTIVE_STATUSES:
@@ -517,8 +524,10 @@ def transition_order(handler, db, order_id, data):
     if current in TERMINAL_STATUSES:
         raise APIError(409, "Cette commande est terminée et ne peut plus être modifiée.")
     label = None
+    if current == 'awaiting_payment' and role not in {'client', 'admin'}:
+        raise APIError(403, 'Cette commande attend la confirmation de son paiement.')
     if target == "cancelled":
-        if role == "courier" or role == "client" and current != "pending" or current == "picked_up":
+        if role == "courier" or role == "client" and current not in {"pending", "awaiting_payment"} or current == "picked_up":
             raise APIError(409, "Cette commande ne peut plus être annulée depuis votre espace.")
         label = "Annulation — " + text_field(data, "reason", 3, 250)
     elif role in {"restaurant", "admin"}:
@@ -556,6 +565,8 @@ def transition_order(handler, db, order_id, data):
         order["eta"] = shifted(transition_stamp, minutes * 60 + COURSE_SECONDS)
         order["acceptBy"] = None
     elif target == "cancelled":
+        from .payments import cancel_payment
+        cancel_payment(db, order)
         order["acceptBy"] = None
     order["status"] = target
     save_order(db, order, user, label, stamp=transition_stamp)

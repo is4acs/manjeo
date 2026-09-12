@@ -1,3 +1,4 @@
+import PaymentStatus from "./payment-status";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Bike, CheckCircle2, ChefHat, ChevronDown, Clock3, ClipboardList, CreditCard, LogOut, MapPin, MessageSquare, PackageCheck, Phone, RefreshCw, Search, ShieldCheck, ShoppingBag, Store, UserRound, Users, UtensilsCrossed, X } from "lucide-react";
 import { api, type User, type Order, type OrderStatus, type CourierProfile, statusLabels } from "@/lib/api";
@@ -10,7 +11,7 @@ import { t, tEvent, formatDate } from "@/lib/i18n";
 import "./staff.css";
 
 type StaffTab = "orders" | "menu" | "restaurants" | "users" | "couriers";
-const activeStatuses: OrderStatus[] = ["pending", "accepted", "preparing", "ready", "picked_up"];
+const activeStatuses: OrderStatus[] = ["awaiting_payment", "pending", "accepted", "preparing", "ready", "picked_up"];
 const allStatuses: OrderStatus[] = [...activeStatuses, "delivered", "cancelled"];
 const nextActions: Partial<Record<OrderStatus, { status: OrderStatus; label: string }>> = {
   pending: { status: "accepted", label: "Accepter la commande" },
@@ -35,7 +36,7 @@ function OrderDeadline({ order, seconds }: { order: Order; seconds: number }) {
   return <span className={`staff-deadline ${isLate(order.eta, order.status) ? "urgent" : ""}`}><Clock3 size={14} />{isLate(order.eta, order.status) ? <>{t("En retard sur {time}", {time: clockLabel(order.eta)})}</> : <strong>{t("Attendue vers {time}", {time: clockLabel(order.eta)})}</strong>}</span>;
 }
 
-function OrderCard({ order, admin, busy, onStatus, couriers, onAssign, language, unread, viewerId }: { order: Order; admin: boolean; busy: boolean; onStatus: (order: Order, status: OrderStatus, reason?: string) => void; couriers: CourierProfile[]; onAssign: (order: Order, courierId: string | null, reason: string) => void; language: string; unread: number; viewerId: string }) {
+function OrderCard({ order, admin, busy, onStatus, couriers, onAssign, onRefund, language, unread, viewerId }: { onRefund: (order: Order) => void; order: Order; admin: boolean; busy: boolean; onStatus: (order: Order, status: OrderStatus, reason?: string) => void; couriers: CourierProfile[]; onAssign: (order: Order, courierId: string | null, reason: string) => void; language: string; unread: number; viewerId: string }) {
   const next = nextActions[order.status];
   const seconds = useCountdown(order.status === "pending" ? order.acceptBy : null);
   const expired = order.status === "pending" && !!order.acceptBy && seconds <= 0;
@@ -44,7 +45,7 @@ function OrderCard({ order, admin, busy, onStatus, couriers, onAssign, language,
   const [cancelReason, setCancelReason] = useState("");
   const [assignReason, setAssignReason] = useState("");
   const [courierId, setCourierId] = useState(order.courierId ?? "");
-  const canCancel = !expired && ["pending", "accepted", "preparing", "ready"].includes(order.status);
+  const canCancel = !expired && ["awaiting_payment", "pending", "accepted", "preparing", "ready"].includes(order.status);
   const canAssign = admin && ["accepted", "preparing", "ready"].includes(order.status);
   useEffect(() => { setCourierId(order.courierId ?? ""); setAssignReason(""); }, [order.courierId]);
   return <article className={`staff-order ${order.status === "pending" ? "staff-order-new" : ""}`}>
@@ -71,12 +72,14 @@ function OrderCard({ order, admin, busy, onStatus, couriers, onAssign, language,
       </div>
     </div>
     {cancelOpen && canCancel && <form className="staff-inline-action staff-action-form" onSubmit={event => { event.preventDefault(); if (cancelReason.trim().length >= 3) onStatus(order, "cancelled", cancelReason.trim()); }}><label>{t("Motif d’annulation")}<textarea required minLength={3} maxLength={250} value={cancelReason} disabled={busy} onChange={event => setCancelReason(event.target.value)} placeholder={t("Expliquez le motif au client et à l’équipe.")} /></label><p>{t("L’annulation est définitive et informe tous les espaces concernés.")}</p><div><button type="button" className="staff-button" onClick={() => setCancelOpen(false)} disabled={busy}>{t("Garder la commande")}</button><button type="submit" className="staff-button menu-danger" disabled={busy || cancelReason.trim().length < 3}>{t("Confirmer l’annulation")}</button></div></form>}
-    {order.status !== "pending" && (order.status !== "cancelled" || order.history.some(event => event.status === "accepted")) && <div className="staff-chat">
+    {!["awaiting_payment", "pending"].includes(order.status) && (order.status !== "cancelled" || order.history.some(event => event.status === "accepted")) && <div className="staff-chat">
       <button type="button" className="staff-button" onClick={() => setChatOpen(!chatOpen)}><MessageSquare size={15} />{chatOpen ? t("Fermer la conversation") : t("Conversation avec le client")}{!chatOpen && unread > 0 && <span className="staff-unread">{unread}</span>}</button>
       {chatOpen && <OrderChat order={order} language={language} viewerId={viewerId} />}
     </div>}
     <div className="staff-delivery-strip"><Bike size={16} /><span>{order.courierName ? <strong>{t("Livreur : {name}", {name: order.courierName})}</strong> : order.status === "pending" ? t("La recherche de livreur commence après acceptation.") : order.status === "delivered" || order.status === "cancelled" ? t("Suivi de livraison archivé") : t("Aucun livreur assigné pour le moment")}</span>{order.courierName && <small>{order.status === "picked_up" ? t("Commande récupérée") : order.status === "delivered" ? t("Livraison terminée") : order.status === "cancelled" ? t("Mission annulée") : t("Retrait à venir")}</small>}</div>
     {canAssign && <details className="staff-order-details staff-dispatch"><summary>{order.courierId ? t("Réassigner ou libérer la course") : t("Assigner un livreur")}<ChevronDown size={16} /></summary><form className="staff-action-form" onSubmit={event => { event.preventDefault(); if (assignReason.trim().length >= 3) onAssign(order, courierId || null, assignReason.trim()); }}><label>{t("Livreur")}<select value={courierId} disabled={busy} onChange={event => setCourierId(event.target.value)}><option value="">{t("Aucun livreur — rendre la course disponible")}</option>{couriers.map(courier => <option key={courier.id} value={courier.id} disabled={courier.id !== order.courierId && (!courier.online || !!courier.activeOrderId && courier.activeOrderId !== order.id)}>{courier.name} · {courier.activeOrderId && courier.activeOrderId !== order.id ? t("En mission") : courier.online ? t("En ligne") : t("En pause")}</option>)}</select></label><label>{t("Motif de l’affectation")}<textarea required minLength={3} maxLength={250} value={assignReason} disabled={busy} onChange={event => setAssignReason(event.target.value)} placeholder={t("Indiquez pourquoi vous changez l’affectation.")} /></label><p>{t("Une seule mission active par livreur. L’affectation est verrouillée après le retrait.")}</p><button type="submit" className="staff-button" disabled={busy || assignReason.trim().length < 3 || courierId === (order.courierId ?? "")}>{busy ? t("Enregistrement…") : courierId ? t("Confirmer l’affectation") : t("Libérer la course")}</button></form></details>}
+    <PaymentStatus order={order}/>
+    {admin && order.payment?.status === 'refund_pending' && <div className="staff-inline-action"><button type="button" className="staff-button" disabled={busy} onClick={() => onRefund(order)}>{t('Demander le remboursement de test')}</button></div>}
     <details className="staff-order-details">
       <summary>{t("Livraison et suivi")}<ChevronDown size={16} /></summary>
       <div className="staff-order-detail-grid">
@@ -185,6 +188,11 @@ function StaffDashboard({ user, onLogout, onShop, onAccount }: { user: User; onL
     }, {source: acceptingOrders ? "{name} accepte les commandes." : "{name} est en pause.", params: {name: restaurant.name}});
   }
 
+  function refundPayment(order: Order) {
+    void mutate(`order-${order.id}`, async () => {
+      await api(`/api/orders/${encodeURIComponent(order.id)}/refund`, {method:'POST', body:'{}'});
+    }, 'Demande envoyée. La confirmation du remboursement apparaîtra après le retour de Stripe.');
+  }
   function assignCourier(order: Order, courierId: string | null, reason: string) {
     void mutate(`order-${order.id}`, async () => {
       const data = await api<{ order: Order }>(`/api/orders/${encodeURIComponent(order.id)}/assign`, { method: "POST", body: JSON.stringify({ courierId, reason }) });
@@ -235,8 +243,9 @@ function StaffDashboard({ user, onLogout, onShop, onAccount }: { user: User; onL
       {loading ? <div className="staff-loading" role="status"><RefreshCw size={23} className="staff-spinning" /><p>{t("Ouverture de votre espace…")}</p></div> : <>
         {tab === "orders" && <section aria-label={t("Liste des commandes")}>
           <div className="staff-section-heading"><div><h2>{t("Les commandes")}</h2><p>{admin ? t("Un suivi partagé pour tous les restaurants.") : t("Acceptez, préparez, puis signalez que tout est prêt.")}</p></div><span className="staff-result-count">{t(visibleOrders.length !== 1 ? "{count} résultats" : "{count} résultat", {count: visibleOrders.length})}</span></div>
+          {admin && orders.some(order => ['refund_pending', 'refund_failed'].includes(order.payment?.status || '')) && <div className="staff-help"><p>{t('Des remboursements de test nécessitent votre attention.')}</p><button type="button" className="staff-button" onClick={() => {setStatusFilter('all'); setRestaurantFilter('all'); setSearch('');}}>{t('Voir toutes les commandes')}</button></div>}
           <div className="staff-filters"><label className="staff-search"><Search size={17} /><input aria-label={t("Rechercher une commande")} placeholder={t("Nom, numéro, ville…")} value={search} onChange={event => setSearch(event.target.value)} /></label><label className="staff-select"><span>{t("Statut")}</span><select value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="active">{t("En cours")}</option><option value="all">{t("Toutes les commandes")}</option>{allStatuses.map(status => <option key={status} value={status}>{t(statusLabels[status])}</option>)}</select><ChevronDown size={14} /></label>{admin && <label className="staff-select"><span>{t("Restaurant")}</span><select value={restaurantFilter} onChange={event => setRestaurantFilter(event.target.value)}><option value="all">{t("Tous les restaurants")}</option>{restaurants.map(restaurant => <option key={restaurant.id} value={restaurant.id}>{restaurant.name}</option>)}</select><ChevronDown size={14} /></label>}</div>
-          {visibleOrders.length ? <div className="staff-orders">{visibleOrders.map(order => <OrderCard key={order.id} order={order} admin={admin} busy={busyKeys.includes(`order-${order.id}`)} onStatus={changeStatus} couriers={couriers} onAssign={assignCourier} language={user.language || "fr"} unread={unread[order.id] || 0} viewerId={user.id} />)}</div> : <div className="staff-empty"><span><PackageCheck size={32} /></span><h3>{orders.length ? t("Aucune commande avec ces filtres") : t("La première commande se prépare ici")}</h3><p>{orders.length ? t("Essayez un autre statut ou effacez votre recherche.") : t("Connectez-vous avec le compte client pour passer une commande test. Elle apparaîtra ici automatiquement.")}</p>{orders.length > 0 ? <button type="button" className="staff-button" onClick={() => { setSearch(""); setStatusFilter("all"); setRestaurantFilter("all"); }}>{t("Voir toutes les commandes")}</button> : <span className="staff-empty-account">client@manjeo.test</span>}</div>}
+          {visibleOrders.length ? <div className="staff-orders">{visibleOrders.map(order => <OrderCard key={order.id} order={order} admin={admin} busy={busyKeys.includes(`order-${order.id}`)} onStatus={changeStatus} couriers={couriers} onAssign={assignCourier} onRefund={refundPayment} language={user.language || "fr"} unread={unread[order.id] || 0} viewerId={user.id} />)}</div> : <div className="staff-empty"><span><PackageCheck size={32} /></span><h3>{orders.length ? t("Aucune commande avec ces filtres") : t("La première commande se prépare ici")}</h3><p>{orders.length ? t("Essayez un autre statut ou effacez votre recherche.") : t("Connectez-vous avec le compte client pour passer une commande test. Elle apparaîtra ici automatiquement.")}</p>{orders.length > 0 ? <button type="button" className="staff-button" onClick={() => { setSearch(""); setStatusFilter("all"); setRestaurantFilter("all"); }}>{t("Voir toutes les commandes")}</button> : <span className="staff-empty-account">client@manjeo.test</span>}</div>}
         </section>}
 
         {menuRestaurant && <section hidden={tab !== "menu"} aria-label={t("Gestion des cartes")}>{admin && <label className="staff-menu-selector">{t("Restaurant à modifier")}<select value={menuRestaurant.id} onChange={event => setMenuRestaurantId(event.target.value)}>{restaurants.map(restaurant => <option key={restaurant.id} value={restaurant.id}>{restaurant.name}</option>)}</select></label>}<MenuEditor key={menuRestaurant.id} restaurant={menuRestaurant} onRestaurantChange={restaurant => { ++requestSequence.current; setRefreshing(false); setRestaurants(current => current.map(item => item.id === restaurant.id ? restaurant : item)); }} /></section>}

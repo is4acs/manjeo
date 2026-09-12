@@ -1,7 +1,7 @@
 "use client";
-import { t, localeTag, tEvent, formatDate } from "@/lib/i18n";
+import { t, localeTag, tEvent, formatDate, getLanguage } from "@/lib/i18n";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, Bike, Check, CheckCheck, ChevronLeft, Clock3, CreditCard, MapPin, Minus, PackageCheck, Plus, Search, ShoppingBag, Tag, Utensils, UserRound, RefreshCw, X } from "lucide-react";
+import { ArrowRight, Bike, Check, CheckCheck, ChevronLeft, Clock3, MapPin, Minus, PackageCheck, Plus, Search, ShoppingBag, Tag, Utensils, UserRound, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -9,14 +9,16 @@ import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/
 import { categories, money, type Restaurant, type Product, type Selection } from "@/lib/menu";
 import { defaultSelections, selectionsValid, selectionPrice, makeLine, lineNeedsUpdate, validStoredLine, type CartLine as Line } from "@/lib/cart";
 import "./customer-flow.css";
-import { setFieldValidity } from "./validation";
 import OrderTracking from "./order-tracking";
 import AddressField from "./address-field";
+import AddressVerification, { savedAddressMatches } from "./address-verification";
+import PaymentMethods from "./payment-methods";
 import OrderChat from "./order-chat";
 import SiteFooter from "./site-footer";
-import { promotionContext, quotedDiscount } from "./customer-state";
+import { prepareOrderRequest, type OrderRequest } from "@/lib/checkout-request";
+import { promotionContext, quotedDiscount, shouldAdoptProfileLocation, type ProfileLocation } from "./customer-state";
 
-import { api, ApiError, statusLabels, type Order, type Promotion, type PublicPromotion, type User, type Role } from "@/lib/api";
+import { api, ApiError, statusLabels, type Order, type Promotion, type PublicPromotion, type User, type Role, type AddressCandidate, type PaymentMethod, type PaymentConfig } from "@/lib/api";
 
 type View = "home" | "restaurant" | "checkout" | "success";
 const normalize = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -26,7 +28,7 @@ const pageSize = 4;
 // Les transitions restent fonctionnelles : aucun défilement animé quand le visiteur le refuse.
 const scrollToBlock = (element: HTMLElement | null) => element?.scrollIntoView({behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "start"});
 
-export default function Home({user, restaurants, refreshCatalog, onAccount, onStaff}: {user: User | null; restaurants: Restaurant[]; refreshCatalog: () => Promise<Restaurant[]>; onAccount: (role?: Role) => void; onStaff: () => void}) {
+export default function Home({user, restaurants, refreshCatalog, onAccount, onStaff, onSaveProfile}: {onSaveProfile: (payload: Record<string, unknown>) => Promise<User>; user: User | null; restaurants: Restaurant[]; refreshCatalog: () => Promise<Restaurant[]>; onAccount: (role?: Role) => void; onStaff: () => void}) {
   const locale = localeTag();
   const [view, setView] = useState<View>("home");
   const [selectedId, setSelectedId] = useState("ti-kreol");
@@ -39,6 +41,17 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   const [address, setAddress] = useState("");
   const [checkoutName, setCheckoutName] = useState(user?.name || "");
   const [checkoutPhone, setCheckoutPhone] = useState(user?.phone || "");
+  const [details, setDetails] = useState('');
+  const [notes, setNotes] = useState('');
+  const [addressCandidate, setAddressCandidate] = useState<AddressCandidate | null>(null);
+  const [saveForNext, setSaveForNext] = useState(true);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(user?.paymentMethod || 'demo');
+  const [paymentConfig, setPaymentConfig] = useState<PaymentConfig | null>(null);
+  const paymentOpening = useRef(false);
+  const [paymentBusy, setPaymentBusy] = useState(false);
+  const [paymentError, setPaymentError] = useState('');
+  const [profileSaveWarning, setProfileSaveWarning] = useState(false);
+  const paymentReturn = useRef('');
   const contactTouched = useRef({name: false, phone: false});
   const [locationOpen, setLocationOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
@@ -70,8 +83,10 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   const [activeGroup, setActiveGroup] = useState("");
   const listRef = useRef<HTMLElement>(null);
   const groupRefs = useRef<Record<string, HTMLElement | null>>({});
-  const request = useRef({key: "", id: ""});
+  const request = useRef<OrderRequest<Record<string, unknown>> | null>(null);
   const activeUser = useRef(user?.id);
+  const addressAccount = useRef(user?.id);
+  const profileLocation = useRef<ProfileLocation | null>(null);
   const orderSequence = useRef(0);
   const promoSequence = useRef(0);
   const submittingRef = useRef(false);
@@ -88,7 +103,7 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
     return () => window.removeEventListener("manjeo-thread-read", markRead);
   }, []);
   const loadOrders = useCallback(async () => {
-    if (user?.role !== "client") return;
+    if (user?.role !== "client" || submittingRef.current || cancellingRef.current) return;
     const userId = user.id;
     const sequence = ++orderSequence.current;
     setOrdersLoading(true);
@@ -96,6 +111,13 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
       const data = await api<{orders: Order[]; unread: Record<string, number>}>("/api/orders");
       if (activeUser.current !== userId || sequence !== orderSequence.current) return;
       setOrders(data.orders); setUnread(data.unread || {}); setOrdersError("");
+      const url = new URL(window.location.href);
+      const returnedId = url.searchParams.get('order');
+      const returned = data.orders.find(order => order.id === returnedId);
+      if (url.searchParams.has('payment') && returned && paymentReturn.current !== `${userId}:${returnedId}`) {
+        paymentReturn.current = `${userId}:${returnedId}`; setCurrentOrder(returned); setView('success');
+        url.searchParams.delete('payment'); url.searchParams.delete('order'); window.history.replaceState(window.history.state, '', url);
+      }
       setCurrentOrder(current => current ? data.orders.find(order => order.id === current.id) || current : null);
     } catch (error) { if (activeUser.current === userId && sequence === orderSequence.current) setOrdersError((error as Error).message); }
     finally { if (activeUser.current === userId && sequence === orderSequence.current) setOrdersLoading(false); }
@@ -111,6 +133,11 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   const promoPending = !!appliedCode && (!promotion || promoBusy);
   const discount = quotedDiscount(quote, context, appliedCode, subtotal + delivery);
   const total = subtotal + delivery - discount;
+  const savedDelivery = savedAddressMatches(user?.deliveryAddress, address, city);
+  const confirmedCandidate = addressCandidate?.address === address.trim() && addressCandidate.city === city && Date.parse(addressCandidate.expiresAt) > Date.now() ? addressCandidate : null;
+  const paymentReady = paymentMethod === 'demo' || !!paymentConfig?.stripeAvailable;
+  const quickReady = user?.role === 'client' && savedDelivery && user.name.trim().length >= 2 && /^\+?\d{10,15}$/.test((user.phone || '').replace(/[\s().-]/g, '')) && paymentReady;
+  const activeOrders = orders.filter(order => !['delivered', 'cancelled'].includes(order.status));
   const cartUnavailable = !!cart.length && (!cartRestaurant?.acceptingOrders || cart.some(line => !cartRestaurant.products.find(item => item.id === line.productId)?.available));
   const cartOutdated = cart.some(line => lineNeedsUpdate(line, cartRestaurant?.products.find(item => item.id === line.productId)));
   const productCurrent = product && restaurant.products.find(item => item.id === product.id);
@@ -131,7 +158,7 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   useEffect(() => {
     try {
       const savedRequest = JSON.parse(sessionStorage.getItem("manjeo-request-v1") || "null");
-      if (savedRequest && typeof savedRequest.key === "string" && typeof savedRequest.id === "string") request.current = savedRequest;
+      request.current = savedRequest;
     } catch {}
     try {
       const stored = JSON.parse(localStorage.getItem("manjeo-cart-v2") || "[]");
@@ -150,9 +177,12 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
     setReady(true);
   }, []);
   useEffect(() => { if (ready) { try { localStorage.setItem("manjeo-cart-v2", JSON.stringify(cart)); } catch {} } }, [cart, ready]);
-  useEffect(() => { if (ready) { try { localStorage.setItem("manjeo-location-v1", JSON.stringify({ city, address })); } catch {} } }, [city, address, ready]);
+  useEffect(() => { if (ready && !user) { try { localStorage.setItem("manjeo-location-v1", JSON.stringify({ city, address })); } catch {} } }, [city, address, ready, user?.id]);
   useEffect(() => {
+    if (addressAccount.current && addressAccount.current !== user?.id) {setAddress(user?.deliveryAddress?.address || ''); setCity(user?.deliveryAddress?.city || 'Cayenne');}
+    addressAccount.current = user?.id;
     contactTouched.current = {name: false, phone: false}; setCheckoutName(user?.role === "client" ? user.name : ""); setCheckoutPhone(user?.role === "client" ? user.phone || "" : "");
+    setAddressCandidate(null); setDetails(''); setNotes(''); setPaymentMethod(user?.paymentMethod || 'demo'); setPaymentError(''); setPaymentBusy(false); paymentOpening.current = false;
     setOrders([]); setUnread({}); setCurrentOrder(null); setOrdersError(""); setOrderError(""); setOrdersLoading(false); setHistoryOpen(false); setSubmitting(false);
     ++orderSequence.current; ++promoSequence.current; setQuote(null); setAppliedCode(""); setPromoCode(""); setPromoBusy(false); setPromoError(""); setCancelOrder(null); setCancelError(""); setCancelling(false); submittingRef.current = false; cancellingRef.current = false;
     setView(current => current === "success" ? "home" : current);
@@ -163,11 +193,26 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
     if (!contactTouched.current.phone) setCheckoutPhone(user.phone || "");
   }, [user?.name, user?.phone, user?.role]);
   useEffect(() => {
-    if (user?.role !== "client" || (!historyOpen && view !== "success")) return;
+    if (user?.role !== 'client') {profileLocation.current = null; return;}
+    const previous = profileLocation.current;
+    const next = {userId:user.id, address:user.deliveryAddress?.address || '', city:user.deliveryAddress?.city || 'Cayenne', details:user.deliveryAddress?.details || ''};
+    profileLocation.current = next;
+    if (shouldAdoptProfileLocation(previous, next, {address, city, details}, !!user.deliveryAddress)) {
+      setAddress(next.address); setCity(next.city); setDetails(next.details); setAddressCandidate(null);
+    }
+  }, [user?.id, user?.deliveryAddress?.address, user?.deliveryAddress?.city, user?.deliveryAddress?.details, user?.deliveryAddress?.verifiedAt]);
+  useEffect(() => { setPaymentMethod(user?.paymentMethod || 'demo'); }, [user?.id, user?.paymentMethod]);
+  useEffect(() => {
+    let alive = true;
+    void api<PaymentConfig>('/api/payments/config').then(config => {if (alive) setPaymentConfig(config);}).catch(() => {if (alive) setPaymentConfig({mode:'demo', stripeAvailable:false, reason:'Le paiement Stripe de test n’est pas configuré. La démonstration reste disponible.'});});
+    return () => {alive = false;};
+  }, []);
+  useEffect(() => {
+    if (user?.role !== "client") return;
     void loadOrders();
     const timer = window.setInterval(() => void loadOrders(), 8000);
     return () => window.clearInterval(timer);
-  }, [historyOpen, view, loadOrders, user?.role]);
+  }, [loadOrders, user?.role]);
   useEffect(() => {
     const refresh = () => { void refreshCatalog().catch(() => {}); };
     const timer = window.setInterval(refresh, 8000);
@@ -298,43 +343,64 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   function openHistory() { if (user?.role === "client") setHistoryOpen(true); else if (user) onStaff(); else onAccount(); }
   async function submitOrder(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!cartRestaurant || submittingRef.current || cartUnavailable || cartOutdated || updatingCart || promoPending) return;
-    if (user?.role !== "client") { onAccount(); return; }
-    const form = new FormData(event.currentTarget);
-    const phoneInput = event.currentTarget.elements.namedItem("phone") as HTMLInputElement;
-    const phoneDigits = String(form.get("phone") || "").replace(/[\s().-]/g, "");
-    if (!/^\+?\d{10,15}$/.test(phoneDigits)) {
-      setFieldValidity(phoneInput,"Saisissez un numéro de téléphone valide, par exemple 0694 00 00 00.");
-      phoneInput.reportValidity();
-      return;
-    }
-    for (const [field, min, message] of [["name", 2, "Renseignez votre prénom et votre nom."], ["address", 5, "Renseignez une adresse de livraison complète."]] as const) {
-      if (String(form.get(field) || "").trim().length < min) {
-        const input = event.currentTarget.elements.namedItem(field) as HTMLInputElement;
-        setFieldValidity(input,message); input.reportValidity(); return;
-      }
-    }
-    submittingRef.current = true; setSubmitting(true); setOrderError("");
+    await placeOrder(false);
+  }
+  async function openPayment(order: Order) {
+    if (paymentOpening.current || user?.role !== 'client') return;
+    const accountId = user.id;
+    paymentOpening.current = true; setPaymentBusy(true); setPaymentError('');
+    try {
+      const result = await api<{checkoutUrl: string}>(`/api/orders/${order.id}/checkout`, {method:'POST', body:JSON.stringify({language:user.language})});
+      if (activeUser.current !== accountId) return;
+      const url = new URL(result.checkoutUrl);
+      if (url.protocol !== 'https:' || url.hostname !== 'checkout.stripe.com' || url.username || url.password) throw new Error('Le lien de paiement est invalide. Réessayez.');
+      window.location.assign(url.href);
+    } catch (cause) {if (activeUser.current === accountId) setPaymentError((cause as Error).message);}
+    finally {if (activeUser.current === accountId) {paymentOpening.current = false; setPaymentBusy(false);}}
+  }
+  async function placeOrder(quick: boolean) {
+    if (!cartRestaurant || submittingRef.current || cartUnavailable || cartOutdated || updatingCart || promoPending || !paymentReady) return;
+    if (user?.role !== 'client') {onAccount(); return;}
+    const customerName = (quick ? user.name : checkoutName).trim();
+    const phoneDigits = (quick ? user.phone : checkoutPhone).replace(/[\s().-]/g, '');
+    if (!/^\+?\d{10,15}$/.test(phoneDigits)) {setOrderError('Saisissez un numéro de téléphone valide, par exemple 0694 00 00 00.'); return;}
+    if (customerName.length < 2) {setOrderError('Renseignez votre prénom et votre nom.'); return;}
+    if (!savedDelivery && !confirmedCandidate) {setOrderError('Confirmez le point de livraison avant de passer commande.'); return;}
+    ++orderSequence.current; submittingRef.current = true; setSubmitting(true); setOrderError(""); setProfileSaveWarning(false);
     const payload = {
       restaurantId: cartRestaurant.id,
       expectedTotal: total,
       items: cart.map(line => ({productId: line.productId, quantity: line.quantity, selections: line.selections, unitPrice: line.price, productVersion: line.productVersion})),
       promoCode: promotion?.code || null,
-      customerName: String(form.get("name") || "").trim(), phone: phoneDigits,
-      address: address.trim(), city, details: String(form.get("details") || "").trim(), notes: String(form.get("notes") || "").trim(),
+      customerName, phone: phoneDigits,
+      address: address.trim(), city, details: (quick ? user.deliveryAddress?.details || '' : details).trim(), notes: quick ? '' : notes.trim(), paymentMethod,
+      ...(confirmedCandidate ? {addressVerificationToken:confirmedCandidate.verificationToken} : {useDefaultAddress:true}),
     };
-    const key = JSON.stringify({userId: user.id, ...payload});
-    if (request.current.key !== key) request.current = {key, id: crypto.randomUUID()};
+    request.current = prepareOrderRequest(request.current, user.id, payload, () => crypto.randomUUID());
     try { sessionStorage.setItem("manjeo-request-v1", JSON.stringify(request.current)); } catch {}
     try {
-      const data = await api<{order: Order}>("/api/orders", {method: "POST", body: JSON.stringify({...payload, requestId: request.current.id})});
+      const data = await api<{order: Order}>("/api/orders", {method: "POST", body: JSON.stringify({...request.current.payload, requestId: request.current.id})});
       if (activeUser.current !== user.id) return;
       setCurrentOrder(data.order); setOrders(current => [data.order, ...current.filter(order => order.id !== data.order.id)]);
-      setCart([]); clearPromo(); setView("success"); request.current = {key: "", id: ""};
+      setCart([]); clearPromo(); setCartOpen(false); setView("success"); request.current = null;
       try { sessionStorage.removeItem("manjeo-request-v1"); } catch {}
+      if (!quick && saveForNext) {
+        try {
+          await onSaveProfile({name:customerName, phone:phoneDigits, language:getLanguage(), paymentMethod,
+            deliveryAddress:{address:payload.address, city, details:payload.details, ...(confirmedCandidate ? {verificationToken:confirmedCandidate.verificationToken} : {})}});
+          if (activeUser.current !== user.id) return;
+        } catch {
+          if (activeUser.current === user.id) setProfileSaveWarning(true);
+        }
+      }
+      if (data.order.status === "awaiting_payment") await openPayment(data.order);
     } catch (error) {
       if (activeUser.current === user.id) {
         setOrderError((error as Error).message);
+        if (error instanceof ApiError && error.code === 'order_not_created') {
+          request.current = null;
+          try {sessionStorage.removeItem('manjeo-request-v1');} catch {}
+        }
         if (error instanceof ApiError && error.status === 409 && appliedCode) { setQuote(null); void checkPromo(appliedCode, true); }
         void refreshCatalog().catch(() => {});
       }
@@ -392,7 +458,8 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
           <div className="cart-totals"><div><span>{t("Sous-total")}</span><span>{money(subtotal)}</span></div><div><span>{t("Livraison à {city}", {city})}</span><span>{money(delivery)}</span></div>{discount > 0 && <div className="promo-line"><span>{t("Remise {code}", {code: promotion?.code || ""})}</span><span>− {money(discount)}</span></div>}<div className="total"><strong>{t("Total")}</strong><strong>{money(total)}</strong></div></div>
         </>}
       </div>
-      {!!cart.length && view !== "checkout" && <div className="cart-foot"><Button disabled={submitting || cartUnavailable || cartOutdated || updatingCart || promoPending} className="cart-checkout" onClick={checkout}>{t("Passer commande · {total}", {total: money(total)})}</Button></div>}
+      {!!cart.length && view !== 'checkout' && quickReady && <div className="quick-order-summary"><strong>{t('Prêt à commander en un clic')}</strong><p>{user?.name} · {user?.phone}</p><p>{address}, {city}{user?.deliveryAddress?.details && ` · ${user.deliveryAddress.details}`}</p><p>{t(paymentMethod === 'demo' ? 'Simulation sans paiement' : 'Carte bancaire · Apple Pay · Google Pay')}</p><button type="button" disabled={submitting} onClick={checkout}>{t('Modifier les coordonnées ou le paiement')}</button>{orderError && <p className="checkout-error" role="alert">{t(orderError)}</p>}</div>}
+      {!!cart.length && view !== "checkout" && <div className="cart-foot"><Button disabled={submitting || cartUnavailable || cartOutdated || updatingCart || promoPending} className="cart-checkout" onClick={() => quickReady ? void placeOrder(true) : checkout()}>{submitting ? t("Confirmation en cours…") : t(quickReady ? "Confirmer · {total}" : "Passer commande · {total}", {total: money(total)})}</Button></div>}
     </div>;
   }
   return <>
@@ -410,6 +477,7 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
     {view === "home" && promises.length > 0 && <div className="promise-bar" aria-label={t("Nos promesses")}>
       <div className="promise-track">{[0, 1].map(run => <div className="promise-run" key={run} aria-hidden={run === 1 || undefined}>{promises.map(promise => <Fragment key={promise}><span>{promise}</span><span className="promise-dot"/></Fragment>)}</div>)}</div>
     </div>}
+    {!!activeOrders.length && view !== 'success' && user?.role === 'client' && <section className="active-orders" aria-label={t('Commandes en cours')}>{activeOrders.map(order => <div className="active-order-card" key={order.id}><ShoppingBag size={23}/><div><strong>{t('Commande en cours')}</strong><p>{order.restaurant} · {t(statusLabels[order.status])}</p></div><Button variant="outline" onClick={() => {setCurrentOrder(order); setView('success');}}>{t('Voir le suivi')}</Button></div>)}</section>}
     <main className="page-shell">
       <div className="main-content">
         {view === "home" && <>
@@ -493,14 +561,16 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
           <div className="checkout-account-note"><UserRound size={19}/><div><strong>{user?.role === "client" ? t("Connecté en tant que {name}", {name: user.name}) : t("Un compte client pour passer commande")}</strong><p>{user?.role === "client" ? t("Votre commande sera transmise à l’espace restaurateur de cette démo.") : t("Utilisez client@manjeo.test pour tester votre première commande.")}</p></div><button onClick={() => onAccount(user?.role === "client" ? undefined : "client")}>{user?.role === "client" ? t("Mon compte") : t("Se connecter")}</button></div>
           <form key={user?.id || "guest"} className="checkout-form" onSubmit={submitOrder}>
             <section><h2><span>1</span> {t("Vos coordonnées")}</h2><div className="form-grid"><label>{t("Prénom et nom")}<Input disabled={submitting} value={checkoutName} onChange={event => { contactTouched.current.name = true; setCheckoutName(event.target.value); }} name="name" onInput={e => e.currentTarget.setCustomValidity("")} autoComplete="name" placeholder={t("Ex. Camille Dupont")} required minLength={2} maxLength={80}/></label><label>{t("Téléphone")}<Input disabled={submitting} name="phone" value={checkoutPhone} onChange={event => { contactTouched.current.phone = true; setCheckoutPhone(event.target.value); }} type="tel" autoComplete="tel" placeholder="0694 00 00 00" required onInput={e => e.currentTarget.setCustomValidity("")}/></label></div></section>
-            <section><h2><span>2</span> {t("Adresse de livraison")}</h2><label>{t("Rue et numéro")}<AddressField value={address} city={city} onChange={setAddress} onPick={suggestion => setCity(suggestion.city)} inputProps={{disabled: submitting, name: "address", placeholder: t("Ex. 12 avenue du Général de Gaulle"), required: true, minLength: 5, maxLength: 180, onInput: event => event.currentTarget.setCustomValidity("")}}/></label><div className="form-grid"><label>{t("Commune")}<select disabled={submitting} name="city" value={city} onChange={e => setCity(e.target.value)}>{cities.map(c => <option key={c}>{c}</option>)}</select></label><label>{t("Bâtiment, étage (facultatif)")}<Input disabled={submitting} name="details" placeholder={t("Bâtiment A, 2e étage")} maxLength={120}/></label></div><label>{t("Instructions de livraison (facultatif)")}<textarea disabled={submitting} name="notes" placeholder={t("Un repère pour vous trouver plus facilement…")} rows={2} maxLength={300}/></label><div className="delivery-estimate"><Clock3 size={20}/><div><strong>{t("Préparation annoncée : {minutes} min", {minutes: cartRestaurant?.minutes || 25})}</strong><p>{t("Le suivi affichera une estimation de livraison après acceptation par le restaurant.")}</p></div></div></section>
-            <section><h2><span>3</span> {t("Paiement de démonstration")}</h2><div className="payment-demo"><CreditCard size={23}/><div><strong>{t("Carte de test")}</strong><p>{t("Aucune carte bancaire requise. Aucun débit.")}</p></div><Check size={19}/></div></section>
+            <section><h2><span>2</span> {t("Adresse de livraison")}</h2><label>{t("Rue et numéro")}<AddressField value={address} city={city} onChange={setAddress} onPick={suggestion => setCity(suggestion.city)} inputProps={{disabled: submitting, name: "address", placeholder: t("Ex. 12 avenue du Général de Gaulle"), required: true, minLength: 5, maxLength: 180, onInput: event => event.currentTarget.setCustomValidity("")}}/></label><div className="form-grid"><label>{t("Commune")}<select disabled={submitting} name="city" value={city} onChange={e => setCity(e.target.value)}>{cities.map(c => <option key={c}>{c}</option>)}</select></label><label>{t("Bâtiment, étage (facultatif)")}<Input disabled={submitting} name="details" value={details} onChange={event => setDetails(event.target.value)} placeholder={t("Bâtiment A, 2e étage")} maxLength={120}/></label></div><label>{t("Instructions de livraison (facultatif)")}<textarea disabled={submitting} name="notes" value={notes} onChange={event => setNotes(event.target.value)} placeholder={t("Un repère pour vous trouver plus facilement…")} rows={2} maxLength={300}/></label><div className="delivery-estimate"><Clock3 size={20}/><div><strong>{t("Préparation annoncée : {minutes} min", {minutes: cartRestaurant?.minutes || 25})}</strong><p>{t("Le suivi affichera une estimation de livraison après acceptation par le restaurant.")}</p></div></div></section>
+            <AddressVerification userId={user?.role === 'client' ? user.id : undefined} address={address} city={city} saved={user?.deliveryAddress} selected={addressCandidate} disabled={submitting} onSelect={candidate => {setAddressCandidate(candidate); setAddress(candidate.address); setCity(candidate.city);}}/>
+            <section><h2><span>3</span> {t('Mon moyen de paiement')}</h2><PaymentMethods value={paymentMethod} onChange={setPaymentMethod} config={paymentConfig} disabled={submitting}/></section>
+            <label className="save-checkout-profile"><input type="checkbox" checked={saveForNext} disabled={submitting} onChange={event => setSaveForNext(event.target.checked)}/>{t('Enregistrer ces coordonnées pour mes prochaines commandes')}</label>
             {renderPromo()}
             <div className="checkout-mobile-total"><span>{t("Total, livraison incluse")}</span><strong>{money(total)}</strong></div>
             {renderCartUpdate()}
             {orderError && <p className="checkout-error" role="alert">{t(orderError)}</p>}
             {cartUnavailable && <p className="checkout-error" role="alert">{t("Un article ou le restaurant est devenu indisponible. Modifiez votre panier.")}</p>}
-            <Button className="submit-order" type="submit" disabled={submitting || user?.role !== "client" || cartUnavailable || cartOutdated || updatingCart || promoPending}>{submitting ? t("Confirmation en cours…") : t("Confirmer · {total}", {total: money(total)})}</Button>
+            <Button className="submit-order" type="submit" disabled={submitting || user?.role !== "client" || cartUnavailable || cartOutdated || updatingCart || promoPending || (!savedDelivery && !confirmedCandidate) || !paymentReady}>{submitting ? t("Confirmation en cours…") : t("Confirmer · {total}", {total: money(total)})}</Button>
             <p className="demo-explanation">{t("Restaurants et produits fictifs. Commande enregistrée dans la démo partagée en ligne, sans paiement ni livraison réelle.")}</p>
           </form>
         </>}
@@ -508,7 +578,7 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
         {view === "success" && currentOrder && <div className="success-page">
           <div className="success-icon"><CheckCheck size={34}/></div>
           <span className="eyebrow">{t("Suivi de votre commande")}</span>
-          <h1>{currentOrder.status === "cancelled" ? t("Commande annulée.") : currentOrder.status === "delivered" ? t("Bon appétit !") : t("À table, bientôt.")}</h1>
+          <h1>{currentOrder.status === "awaiting_payment" ? t("Paiement à terminer") : currentOrder.status === "cancelled" ? t("Commande annulée.") : currentOrder.status === "delivered" ? t("Bon appétit !") : t("À table, bientôt.")}</h1>
           <p>{t("Le restaurant et le livreur partagent ici chaque étape de votre commande.")}</p>
           <div className="order-ticket">
             <div><span className="ticket-label">{t("Commande test")}</span><strong>{currentOrder.id}</strong></div>
@@ -519,7 +589,9 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
             <div className="ticket-total"><span>{t(currentOrder.count > 1 ? "{count} articles · Livraison à {city}" : "{count} article · Livraison à {city}", {count: currentOrder.count, city: currentOrder.city})}</span><strong>{money(currentOrder.total)}</strong></div>
             <OrderTracking order={currentOrder} onCancel={requestCancel}/>
           </div>
-          {currentOrder.status !== "pending" && currentOrder.status !== "cancelled" && <OrderChat order={currentOrder} viewerId={user?.id || ""} language={user?.language || "fr"}/>}
+          {!["awaiting_payment", "pending", "cancelled"].includes(currentOrder.status) && <OrderChat order={currentOrder} viewerId={user?.id || ""} language={user?.language || "fr"}/>}
+          {profileSaveWarning && <p className="account-error" role="alert">{t('Votre commande est enregistrée, mais vos coordonnées n’ont pas pu être sauvegardées dans le compte.')}</p>}
+          {currentOrder.status === 'awaiting_payment' && <div className="payment-followup"><strong>{t('Paiement à terminer')}</strong><p>{t('Votre commande sera envoyée au restaurant après confirmation du paiement de test.')}</p><Button disabled={paymentBusy} onClick={() => void openPayment(currentOrder)}>{t(paymentBusy ? 'Ouverture du paiement…' : 'Reprendre le paiement')}</Button>{paymentError && <p className="checkout-error" role="alert">{t(paymentError)}</p>}</div>}
           {ordersError && <p className="orders-error" role="alert">{t(ordersError)}</p>}
           <div className="success-info"><PackageCheck size={21}/><p>{t("Testez la préparation depuis le compte restaurant, puis la prise en charge depuis le compte livreur. Votre suivi s’actualise ici. Aucun paiement ni livraison réelle.")}</p></div>
           <Button onClick={() => setView("home")}>{t("Découvrir d’autres adresses")} <ArrowRight size={17}/></Button>
@@ -548,7 +620,7 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
       {!selectionsValid(product,selections) && <p className="option-rule" role="status">{t("Complétez les choix obligatoires pour ajouter ce plat.")}</p>}
     </div></>}</DialogContent></Dialog>
     <Dialog open={!!pending} onOpenChange={open => { if (!open) setPending(null); }}><DialogContent className="app-dialog"><DialogTitle>{t("Une nouvelle bonne adresse ?")}</DialogTitle><DialogDescription>{t("Une commande se fait auprès d’un seul restaurant. Ajouter ce plat remplacera votre panier de {restaurant}.", {restaurant: cartRestaurant?.name || ""})}</DialogDescription><Button onClick={() => { if (pending) addLine(pending, true); setPending(null); }}>{t("Remplacer le panier")}</Button><Button variant="outline" onClick={() => setPending(null)}>{t("Garder mon panier actuel")}</Button></DialogContent></Dialog>
-    <Dialog open={historyOpen} onOpenChange={setHistoryOpen}><DialogContent className="app-dialog history-dialog"><DialogTitle>{t("Mes commandes")}</DialogTitle><DialogDescription>{t("Vos commandes enregistrées en base, avec leur suivi restaurant.")}</DialogDescription><div className="history-refresh"><span>{t("Mise à jour automatique · 8 s")}</span><button disabled={ordersLoading} onClick={() => void loadOrders()}><RefreshCw size={14}/>{ordersLoading ? t("Actualisation…") : t("Actualiser")}</button></div>{ordersError && <p className="orders-error" role="alert">{t(ordersError)}</p>}{orders.length ? <div className="order-history">{orders.map(order => <div className="history-order" key={order.id}><span className="history-icon"><ShoppingBag size={21}/></span><div><strong>{order.restaurant}</strong><p>{order.id} · {formatDate(order.date, {dateStyle:"short",timeStyle:"short"})}</p><span className="order-status" data-status={order.status}>{t(statusLabels[order.status])}</span><OrderTracking order={order} onCancel={requestCancel}/>{order.status !== "pending" && order.status !== "cancelled" && <button className="text-link" onClick={() => { setCurrentOrder(order); setHistoryOpen(false); setView("success"); }}>{unread[order.id] ? t(unread[order.id] > 1 ? "Ouvrir la conversation · {count} non lus" : "Ouvrir la conversation · {count} non lu", {count: unread[order.id]}) : t("Ouvrir la conversation")}</button>}<details><summary>{t("Articles commandés et adresse")}</summary>{order.items.map((item, index) => <p key={index}>{item.quantity} × {t(item.name)}{item.option && ` · ${t(item.option)}`} — {money(item.price * item.quantity)}</p>)}<p className="order-destination">{order.address}, {order.city}<br/>{t("Livraison : {price}", {price: money(order.delivery)})}{order.discount > 0 && <><br/>{t("Remise {code} : − {discount}", {code: order.promoCode || "", discount: money(order.discount)})}</>}</p>{order.history.map((step,index) => <p key={index}>{tEvent(step.label || statusLabels[step.status])} · {formatDate(step.date, {hour:"2-digit",minute:"2-digit"})}</p>)}</details></div><b>{money(order.total)}</b></div>)}</div> : ordersLoading ? <p className="orders-loading">{t("Vos commandes arrivent…")}</p> : !ordersError && <div className="no-orders"><ShoppingBag size={34}/><h3>{t("Votre première envie vous attend.")}</h3><p>{t("Vos commandes test apparaîtront ici.")}</p><Button onClick={() => { setHistoryOpen(false); setView("home"); }}>{t("Explorer les restaurants")}</Button></div>}</DialogContent></Dialog>
+    <Dialog open={historyOpen} onOpenChange={setHistoryOpen}><DialogContent className="app-dialog history-dialog"><DialogTitle>{t("Mes commandes")}</DialogTitle><DialogDescription>{t("Vos commandes enregistrées en base, avec leur suivi restaurant.")}</DialogDescription><div className="history-refresh"><span>{t("Mise à jour automatique · 8 s")}</span><button disabled={ordersLoading} onClick={() => void loadOrders()}><RefreshCw size={14}/>{ordersLoading ? t("Actualisation…") : t("Actualiser")}</button></div>{ordersError && <p className="orders-error" role="alert">{t(ordersError)}</p>}{orders.length ? <div className="order-history">{orders.map(order => <div className="history-order" key={order.id}><span className="history-icon"><ShoppingBag size={21}/></span><div><strong>{order.restaurant}</strong><p>{order.id} · {formatDate(order.date, {dateStyle:"short",timeStyle:"short"})}</p><span className="order-status" data-status={order.status}>{t(statusLabels[order.status])}</span><OrderTracking order={order} onCancel={requestCancel}/>{!["awaiting_payment", "pending", "cancelled"].includes(order.status) && <button className="text-link" onClick={() => { setCurrentOrder(order); setHistoryOpen(false); setView("success"); }}>{unread[order.id] ? t(unread[order.id] > 1 ? "Ouvrir la conversation · {count} non lus" : "Ouvrir la conversation · {count} non lu", {count: unread[order.id]}) : t("Ouvrir la conversation")}</button>}<details><summary>{t("Articles commandés et adresse")}</summary>{order.items.map((item, index) => <p key={index}>{item.quantity} × {t(item.name)}{item.option && ` · ${t(item.option)}`} — {money(item.price * item.quantity)}</p>)}<p className="order-destination">{order.address}, {order.city}<br/>{t("Livraison : {price}", {price: money(order.delivery)})}{order.discount > 0 && <><br/>{t("Remise {code} : − {discount}", {code: order.promoCode || "", discount: money(order.discount)})}</>}</p>{order.history.map((step,index) => <p key={index}>{tEvent(step.label || statusLabels[step.status])} · {formatDate(step.date, {hour:"2-digit",minute:"2-digit"})}</p>)}</details></div><b>{money(order.total)}</b></div>)}</div> : ordersLoading ? <p className="orders-loading">{t("Vos commandes arrivent…")}</p> : !ordersError && <div className="no-orders"><ShoppingBag size={34}/><h3>{t("Votre première envie vous attend.")}</h3><p>{t("Vos commandes test apparaîtront ici.")}</p><Button onClick={() => { setHistoryOpen(false); setView("home"); }}>{t("Explorer les restaurants")}</Button></div>}</DialogContent></Dialog>
     <Dialog open={!!cancelOrder} onOpenChange={open => {if (!open && !cancelling) setCancelOrder(null);}}><DialogContent className="app-dialog cancel-dialog"><DialogTitle>{t("Annuler votre commande ?")}</DialogTitle><DialogDescription>{t("Vous pouvez l’annuler tant que le restaurant ne l’a pas acceptée. Le statut est vérifié au moment de votre demande.")}</DialogDescription><form onSubmit={confirmCancel}><label>{t("Motif de l’annulation")}<textarea required minLength={3} maxLength={250} value={cancelReason} onChange={event => setCancelReason(event.target.value)} placeholder={t("Ex. Je souhaite modifier ma commande")}/></label>{cancelError && <p role="alert" className="checkout-error">{t(cancelError)}</p>}<Button type="submit" disabled={cancelling || cancelReason.trim().length < 3}>{cancelling ? t("Annulation…") : t("Confirmer l’annulation")}</Button></form></DialogContent></Dialog>
     <div className={`toast ${notice ? "visible" : ""}`} role="status" aria-live="polite">{notice && <><span><Check size={15}/></span>{typeof notice === "string" ? t(notice) : t(notice.source, Object.fromEntries(Object.entries(notice.params).map(([key, value]) => [key, typeof value === "string" ? t(value) : value])))}</>}</div>
   </>;

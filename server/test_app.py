@@ -73,21 +73,33 @@ class AppTestHarness(unittest.TestCase):
         return {"productId": product_id, "quantity": quantity, "selections": selections,
                 "unitPrice": price, "productVersion": product["version"]}
 
-    def order_payload(self, restaurant="ti-kreol", product="kreol-poulet"):
+    def order_payload(self, restaurant="ti-kreol", product="kreol-poulet", customer_id="demo-client", city="Cayenne"):
         restaurant_row, _ = self.catalog_product(product, restaurant)
         item = self.item_payload(product, restaurant)
+        from server.customer import issue_verification
+        # A synthetic geocode in the isolated test DB, never a real provider call.
+        with self.database.connect() as db:
+            self.database.begin_write(db)
+            candidate = issue_verification(db, customer_id, {
+                "address": "12 rue de la Démonstration", "city": city,
+                "latitude": 4.939915, "longitude": -52.332754, "provider": "ign", "precision": "house",
+            })
         return {
             "restaurantId": restaurant, "items": [item],
-            "expectedTotal": item["unitPrice"] * item["quantity"] + restaurant_row["delivery"],
+            "expectedTotal": item["unitPrice"] * item["quantity"] + restaurant_row["delivery"] + (0 if city == "Cayenne" else 100),
             "customerName": "Camille Test", "phone": "0694 00 00 00",
-            "address": "12 rue de la Démonstration", "city": "Cayenne",
+            "address": "12 rue de la Démonstration", "city": city,
+            "addressVerificationToken": candidate["verificationToken"],
             "details": "Portail bleu", "notes": "Commande test", "requestId": str(uuid.uuid4()),
         }
 
     def create_order(self, payload=None, role="client"):
         if role not in self.cookies:
             self.login(role)
-        return self.request("POST", "/api/orders", payload or self.order_payload(), role=role, status=201)[0]["order"]
+        if payload is None:
+            account = self.request("GET", "/api/session", role=role)[0]["user"]
+            payload = self.order_payload(customer_id=account["id"])
+        return self.request("POST", "/api/orders", payload, role=role, status=201)[0]["order"]
 
     def add_test_user(self, email, role, restaurant=None):
         salt = secrets.token_hex(16)
@@ -144,7 +156,7 @@ class AppIntegrationTests(AppTestHarness):
         self.request("PATCH", "/api/restaurants/ti-kreol", {"acceptingOrders": False}, role="client", status=403)
 
     def test_server_totals_options_and_customer_identity(self):
-        payload = self.order_payload()
+        payload = self.order_payload(city="Matoury")
         _, product = self.catalog_product("kreol-poulet")
         selections = []
         unit_price = product["price"]

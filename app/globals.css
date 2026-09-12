@@ -484,9 +484,3 @@ body:has(.order-bar) .toast,body:has([data-slot=sheet-content]) .toast{bottom:ca
 *,*::before,*::after{transition:none!important;animation:none!important;scroll-behavior:auto!important}
 .promise-track{animation:none;transform:none}
 }
-
-/* One language control serves every workspace without resetting its form or basket. */
-.language-bar{background:var(--cream-2);border-bottom:2px solid var(--line);padding:6px 24px;display:flex;justify-content:flex-end}
-.language-bar label{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--ink-soft)}
-.language-bar select{max-width:190px;min-height:36px;border:2px solid var(--ink);border-radius:999px;background:var(--cream);color:var(--ink);font:inherit;padding:4px 12px}
-@media(max-width:480px){.language-bar{padding:5px 12px}.language-bar label{gap:8px}.language-bar label>span{font-size:11px}}

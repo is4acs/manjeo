@@ -5,6 +5,7 @@ une validation obligatoire de l'adresse de livraison.
 """
 import copy
 import json
+import math
 import re
 import threading
 import time
@@ -227,3 +228,80 @@ def lookup(query, city=None, remote=True):
         result = local_result(FALLBACK_NOTE)
         _remember(key, result, FAILURE_CACHE_TTL_SECONDS)
         return result
+
+
+class AddressServiceUnavailable(Exception):
+    """Provider failures never contain API keys, request URLs or submitted text."""
+
+
+def _coordinates(latitude, longitude):
+    # Geographic bounds reject nonsensical/inverted coordinates. The provider's
+    # commune identifier is checked separately; this is not a delivery geofence.
+    if any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)
+           for value in (latitude, longitude)):
+        return None
+    if not (2 <= latitude <= 6 and -55 <= longitude <= -51):
+        return None
+    return {"latitude": latitude, "longitude": longitude}
+
+
+def _verification_payload(url, parameters):
+    request = Request(url + "?" + urlencode(parameters),
+                      headers={"Accept": "application/json", "User-Agent": "Manjeo-address-geocoding/1.0"})
+    try:
+        with _opener.open(request, timeout=REQUEST_TIMEOUT) as response:
+            if response.status != 200:
+                raise AddressServiceUnavailable()
+            content_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+            if content_type not in {"application/json", "application/geo+json"}:
+                raise AddressServiceUnavailable()
+            body = response.read(MAX_RESPONSE_BYTES + 1)
+            if len(body) > MAX_RESPONSE_BYTES:
+                raise AddressServiceUnavailable()
+        payload = json.loads(body.decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise AddressServiceUnavailable()
+        return payload
+    except (HTTPError, URLError, TimeoutError, OSError, ValueError, HTTPException, RecursionError):
+        raise AddressServiceUnavailable() from None
+
+
+def _ign_geocodes(address, city):
+    payload = _verification_payload(IGN_URL, {"q": address, "citycode": CITY_CODES[city], "index": "address", "limit": 6})
+    if payload.get("type") != "FeatureCollection" or not isinstance(payload.get("features"), list):
+        raise AddressServiceUnavailable()
+    candidates = []
+    for feature in payload["features"][:50]:
+        if not isinstance(feature, dict):
+            continue
+        properties, geometry = feature.get("properties"), feature.get("geometry")
+        if not isinstance(properties, dict) or not isinstance(geometry, dict):
+            continue
+        if properties.get("citycode") != CITY_CODES[city] or geometry.get("type") != "Point":
+            continue
+        location, score = geometry.get("coordinates"), properties.get("score")
+        if not isinstance(location, list) or len(location) != 2 or _coordinates(location[1], location[0]) is None:
+            continue
+        if isinstance(score, bool) or not isinstance(score, (int, float)) or not math.isfinite(score) or not (0.5 <= score <= 1):
+            continue
+        name = _text(properties.get("name"))
+        if not name or properties.get("type") not in {"housenumber", "street"}:
+            continue
+        candidates.append({"address": name, "city": city, **_coordinates(location[1], location[0]),
+                           "provider": "ign", "precision": "house" if properties["type"] == "housenumber" else "street"})
+    return candidates
+
+
+
+def geocode(address, city):
+    """Real IGN geocodes only; a caller must still confirm the result.
+
+    Unlike lookup(), this never uses STREETS, including during an outage. The
+    returned coordinates can be used with navigation services selected by users.
+    """
+    if not isinstance(address, str) or not isinstance(city, str) or city not in CITY_CODES:
+        raise ValueError("Invalid address query")
+    address = " ".join(address.split())
+    candidates = _ign_geocodes(address, city)
+    unique = {(item["address"].casefold(), item["latitude"], item["longitude"]): item for item in candidates}
+    return {"candidates": list(unique.values())[:6], "source": "ign"}

@@ -1,0 +1,28 @@
+.customer-profile-form h2 {font-size: 24px; margin: 8px 0 0;}
+.account-dialog {max-height: calc(100dvh - 32px); overflow-y: auto; overscroll-behavior: contain;}
+.checkout-form .save-checkout-profile {display: flex; align-items: flex-start; gap: 10px; font-size: 14px; line-height: 1.5;}
+.checkout-form .save-checkout-profile input[type="checkbox"], .checkout-form .payment-methods input[type="radio"], .customer-profile-form .payment-methods input[type="radio"] {width: 18px; height: 18px; min-height: 18px; padding: 0; margin-top: 3px; flex-shrink: 0; accent-color: #213e2d;}
+.address-verification {display: grid; gap: 10px; font-size: 14px; padding: 14px; border: 2px solid var(--ink, #17251c); border-radius: 12px; background: var(--cream, #fffbed);}
+.address-verification p {margin: 0; line-height: 1.5;}
+.address-verification a {display: block; text-decoration: underline; font-weight: 700; margin: 8px 0;}
+.address-verification small {display: block; line-height: 1.5;}
+.verified-address {display: flex; align-items: flex-start; gap: 10px;}
+.verified-address > svg, .address-candidates svg {flex-shrink: 0; margin-top: 3px;}
+.address-candidates {display: grid; list-style: none; padding: 0; margin: 0; gap: 14px;}
+.address-candidates li {display: flex; gap: 10px; padding-top: 12px; border-top: 1px solid currentColor;}
+.address-candidates button {white-space: normal; height: auto; min-height: 44px;}
+.payment-methods {display: grid; gap: 10px;}
+.payment-methods label {display: flex; align-items: flex-start; gap: 10px; padding: 14px; border: 2px solid var(--ink, #17251c); border-radius: 10px; cursor: pointer;}
+.payment-methods label:has(input:disabled) {opacity: .6; cursor: default;}
+.payment-methods input {width: 18px; height: 18px; margin-top: 3px; accent-color: #213e2d; flex-shrink: 0;}
+.payment-methods small {display: block; margin-top: 4px; font-weight: 400;}
+.quick-order-summary {padding: 14px 18px; border-top: 2px solid var(--ink, #17251c); font-size: 14px;}
+.quick-order-summary p {margin: 5px 0;}
+.quick-order-summary button {text-decoration: underline; font-weight: 700; min-height: 44px;}
+.active-orders {display: grid; gap: 10px; max-width: 1180px; margin: 18px auto; padding: 0 20px;}
+.active-order-card {display: flex; align-items: center; gap: 16px; border: 2px solid var(--ink, #17251c); background: var(--yellow, #ffdc47); border-radius: 14px; padding: 16px;}
+.active-order-card > div {flex: 1; min-width: 0;}
+.active-order-card p {margin: 4px 0 0; font-size: 14px;}
+.active-order-card button {flex-shrink: 0;}
+.payment-followup {display: grid; gap: 10px; padding: 16px; border: 2px solid currentColor; border-radius: 12px; margin: 18px 0;}
+@media (max-width: 480px) {.active-order-card {flex-wrap: wrap; gap: 10px;}.active-order-card > button {width: 100%;}}

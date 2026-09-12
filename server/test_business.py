@@ -57,8 +57,8 @@ class BusinessContracts:
             order["acceptBy"] = "2000-01-01T00:00:00.000Z"
             db.execute("UPDATE orders SET data = ? WHERE id = ?", (json.dumps(order, ensure_ascii=False), order_id))
 
-    def promo_payload(self, code, discount, restaurant="ti-kreol", product="kreol-poulet"):
-        payload = self.order_payload(restaurant, product)
+    def promo_payload(self, code, discount, restaurant="ti-kreol", product="kreol-poulet", customer_id="demo-client"):
+        payload = self.order_payload(restaurant, product, customer_id=customer_id)
         payload["promoCode"] = code
         payload["expectedTotal"] -= discount
         return payload
@@ -314,7 +314,7 @@ class BusinessContracts:
         self.login("client")
         self.add_test_user("client2", "client")
         self.login("client2")
-        results = self.parallel_orders([("client", self.promo_payload("BIENVENUE", 440)), ("client2", self.promo_payload("BIENVENUE", 440))])
+        results = self.parallel_orders([("client", self.promo_payload("BIENVENUE", 440)), ("client2", self.promo_payload("BIENVENUE", 440, customer_id="test-client2"))])
         self.assertEqual(sorted(status for status, _ in results), [201, 409])
         with self.database.connect() as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM promo_uses WHERE code = 'BIENVENUE'").fetchone()[0], 1)

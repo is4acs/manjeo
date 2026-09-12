@@ -49,7 +49,7 @@ function harness({language = 'fr', explicitChoice = false} = {}) {
       }
     },
   };
-  const components = Object.fromEntries(['Home', 'Staff', 'LanguageBar', 'Dialog', 'DialogContent', 'DialogDescription', 'DialogTitle', 'Button', 'Input'].map(name => [name, function component() {}]));
+  const components = Object.fromEntries(['Home', 'Staff', 'CustomerAccount', 'LanguageBar', 'Dialog', 'DialogContent', 'DialogDescription', 'DialogTitle', 'Button', 'Input'].map(name => [name, function component() {}]));
   const exports = {};
   const addEventListener = (name, callback) => {
     if (!listeners.has(name)) listeners.set(name, new Set());
@@ -65,7 +65,7 @@ function harness({language = 'fr', explicitChoice = false} = {}) {
       }};
       if (name === '@/lib/i18n') return {
         t: (value, parameters = {}) => value.replace(/\{(\w+)\}/g, (_match, name) => parameters[name] || ''),
-        documentLanguage: () => uiLanguage, normalizeLanguage,
+        documentLanguage: () => uiLanguage, getLanguage: () => uiLanguage, normalizeLanguage,
         languageOptions: ['fr', 'ht', 'pt'].map(code => ({code, label: languageNames[code]})),
       };
       if (name === './i18n') return {
@@ -76,6 +76,7 @@ function harness({language = 'fr', explicitChoice = false} = {}) {
       };
       if (name === './translate') return {languageNames};
       if (name === './validation') return {refreshValidationLanguage() {}};
+      if (name === './customer-account') return {default: components.CustomerAccount};
       if (name === './page') return {default: components.Home};
       if (name === './staff') return {default: components.Staff};
       return components;
@@ -244,77 +245,132 @@ test('after startup, a late login cannot replace the account selected in another
 });
 
 for (const language of ['en', 'es', 'gcr', 'zh']) {
-  test(`saving contact details preserves the existing ${language} message language and the three-language interface`, async () => {
+  test(`legacy ${language} messaging target adopts the selected three-language interface`, async () => {
     const app = harness();
     const account = {...customer('legacy'), language};
     await settleInitial(app, account);
-    assert.equal(app.home().props.user.language, language);
+    assert.equal(app.home().props.user.language, 'fr');
     assert.equal(app.interfaceLanguage, 'fr');
-    app.home().props.onAccount();
-    await app.flush();
-    const languageField = app.find(node => node.type === 'select' && node.props.name === 'language');
-    assert.equal(languageField.props.value, language);
-    const options = languageField.props.children.flat().filter(Boolean);
-    assert.deepEqual(Array.from(options, option => option.props.value), ['fr', 'ht', 'pt', language]);
-    assert.match(options.at(-1).props.children, /\(messages\)$/);
-    app.find(node => node.props?.name === 'name').props.onChange({target: {value: 'Updated name'}});
-    await app.flush();
-    app.find(node => node.props?.name === 'phone').props.onChange({target: {value: '0694 01 02 03'}});
-    await app.flush();
-    const save = app.find(node => node.type === 'form' && node.props.className === 'account-form profile-form').props.onSubmit(event);
     const request = app.take('/api/profile');
-    assert.deepEqual(JSON.parse(request.options.body), {name: 'Updated name', phone: '0694 01 02 03', language});
-    request.resolve({user: {...account, name: 'Updated name', phone: '0694 01 02 03'}});
-    await save; await app.flush();
-    assert.equal(app.home().props.user.language, language);
-    assert.equal(app.home().props.user.name, 'Updated name');
-    assert.equal(app.interfaceLanguage, 'fr');
+    assert.deepEqual(JSON.parse(request.options.body), {language:'fr'});
+    request.resolve({user:{...account, language:'fr'}});
+    await app.flush();
+    app.home().props.onAccount(); await app.flush();
+    assert.equal(app.find(node => node.type === 'select' && node.props.name === 'language'), undefined);
+    assert.equal(app.requests.filter(item => item.path === '/api/profile').length, 1);
   });
 }
 
-test('an explicit main language choice replaces the legacy message target and persists only the language', async () => {
+test('an explicit main language choice immediately controls messages and saves only the language', async () => {
   const app = harness();
-  const account = {...customer('legacy'), language: 'gcr'};
+  const account = customer('first');
   await settleInitial(app, account);
   app.chooseLanguage('ht');
   const request = app.take('/api/profile');
   assert.deepEqual(JSON.parse(request.options.body), {language: 'ht'});
   await app.flush();
   assert.equal(app.interfaceLanguage, 'ht');
-  assert.equal(app.home().props.user.language, 'ht', 'The explicit UI choice takes effect while persistence is pending');
+  assert.equal(app.home().props.user.language, 'ht');
   request.resolve({user: {...account, language: 'ht'}});
   await app.flush();
-  app.home().props.onAccount();
-  await app.flush();
-  const field = app.find(node => node.type === 'select' && node.props.name === 'language');
-  assert.equal(field.props.value, 'ht');
-  assert.equal(field.props.children.flat().filter(Boolean).length, 3);
+  assert.equal(app.requests.filter(item => item.path === '/api/profile').length, 1);
 });
 
-test('a previously explicit device preference controls messages without rewriting the legacy account on startup', async () => {
-  const app = harness({language: 'pt', explicitChoice: true});
-  await settleInitial(app, {...customer('legacy'), language: 'zh'});
+test('the language selected before login is saved to the account for another device', async () => {
+  const app = harness({language:'pt', explicitChoice:true});
+  await settleInitial(app, null);
+  app.home().props.onAccount(); await app.flush();
+  const form = app.find(node => node.type === 'form' && node.props.className === 'account-form');
+  const login = form.props.onSubmit(event);
+  app.take('/api/login').resolve({user:customer('signed-in')});
+  await login; await app.flush();
   assert.equal(app.interfaceLanguage, 'pt');
-  assert.equal(app.home().props.user.language, 'pt');
-  assert.equal(app.requests.filter(request => request.path === '/api/profile').length, 0);
-  app.home().props.onAccount();
-  await app.flush();
-  assert.equal(app.find(node => node.type === 'select' && node.props.name === 'language').props.value, 'zh');
-});
-
-test('choosing a primary language in the profile updates both messages and interface after saving', async () => {
-  const app = harness();
-  const account = {...customer('legacy'), language: 'en'};
-  await settleInitial(app, account);
-  app.home().props.onAccount();
-  await app.flush();
-  app.find(node => node.type === 'select' && node.props.name === 'language').props.onChange({target: {value: 'pt'}});
-  await app.flush();
-  const save = app.find(node => node.type === 'form' && node.props.className === 'account-form profile-form').props.onSubmit(event);
   const request = app.take('/api/profile');
-  assert.equal(JSON.parse(request.options.body).language, 'pt');
-  request.resolve({user: {...account, language: 'pt'}});
-  await save; await app.flush();
+  assert.deepEqual(JSON.parse(request.options.body), {language:'pt'});
+  request.resolve({user:{...customer('signed-in'), language:'pt'}});
+  await app.flush();
+  assert.equal(app.home().props.user.language, 'pt');
+});
+
+test('a saved supported account language is adopted on a device with no explicit choice', async () => {
+  const app = harness();
+  await settleInitial(app, {...customer('first'), language:'ht'});
+  assert.equal(app.interfaceLanguage, 'ht');
+  assert.equal(app.home().props.user.language, 'ht');
+  assert.equal(app.requests.filter(item => item.path === '/api/profile').length, 0);
+});
+
+test('failed language persistence leaves the local choice and does not loop requests', async () => {
+  const app = harness({language:'pt', explicitChoice:true});
+  await settleInitial(app);
+  app.take('/api/profile').reject(new Error('offline'));
+  await app.flush();
   assert.equal(app.interfaceLanguage, 'pt');
   assert.equal(app.home().props.user.language, 'pt');
+  assert.equal(app.requests.filter(item => item.path === '/api/profile').length, 1);
+});
+
+test('a stale language save cannot restore the previous account after another tab logs in', async () => {
+  const app = harness();
+  await settleInitial(app);
+  app.chooseLanguage('ht');
+  const stale = app.take('/api/profile');
+  app.dispatch('storage');
+  app.take('/api/session').resolve({user:{...customer('other'), language:'ht'}});
+  await app.flush();
+  stale.resolve({user:{...customer('first'), language:'ht'}});
+  await app.flush();
+  assert.equal(app.home().props.user.id, 'other');
+});
+
+test('checkout autosave and My account share one profile mutation lock', async () => {
+  const app = harness();
+  await settleInitial(app);
+  const automaticSave = app.home().props.onSaveProfile({name:'Nom Automatique', language:'fr'});
+  const automaticRequest = app.take('/api/profile');
+  app.home().props.onAccount();
+  await app.flush();
+  const accountPanel = () => app.find(node => node.props?.onSaveProfile && typeof node.props.disabled === 'boolean');
+  assert.equal(accountPanel().props.disabled, true, 'The account stays readable but cannot start a competing save');
+  assert.equal(accountPanel().props.onSaveProfile, app.home().props.onSaveProfile);
+  await assert.rejects(accountPanel().props.onSaveProfile({name:'Nom Manuel'}), /déjà en cours/);
+  app.chooseLanguage('pt');
+  assert.equal(app.interfaceLanguage, 'fr', 'The common lock also prevents a concurrent language save');
+  assert.equal(app.requests.filter(request => request.path === '/api/profile').length, 1);
+  automaticRequest.resolve({user:{...customer('first'), name:'Nom Automatique'}});
+  await automaticSave; await app.flush();
+  assert.equal(accountPanel().props.disabled, false);
+  const manualSave = accountPanel().props.onSaveProfile({name:'Nom Manuel Plus Récent'});
+  app.take('/api/profile').resolve({user:{...customer('first'), name:'Nom Manuel Plus Récent'}});
+  await manualSave; await app.flush();
+  assert.equal(app.home().props.user.name, 'Nom Manuel Plus Récent');
+});
+
+for (const refreshedAccount of [customer('first'), customer('another-account')]) {
+  test(`a delayed checkout profile save cannot replace ${refreshedAccount.id} refreshed from another tab`, async () => {
+    const app = harness();
+    await settleInitial(app);
+    const automaticSave = app.home().props.onSaveProfile({name:'Nom Automatique Ancien'});
+    const refused = assert.rejects(automaticSave, /compte connecté a changé/);
+    const automaticRequest = app.take('/api/profile');
+    app.dispatch('storage');
+    app.take('/api/session').resolve({user:{...refreshedAccount, name:'Nom Récent Autre Onglet'}});
+    await app.flush();
+    automaticRequest.resolve({user:{...customer('first'), name:'Nom Automatique Ancien'}});
+    await refused; await app.flush();
+    assert.equal(app.home().props.user.id, refreshedAccount.id);
+    assert.equal(app.home().props.user.name, 'Nom Récent Autre Onglet');
+  });
+}
+
+test('a checkout profile save that finishes after unmount cannot publish any state', async () => {
+  const app = harness();
+  await settleInitial(app);
+  const save = app.home().props.onSaveProfile({name:'Réponse Tardive'});
+  const refused = assert.rejects(save, /compte connecté a changé/);
+  const request = app.take('/api/profile');
+  app.unmount();
+  request.resolve({user:{...customer('first'), name:'Réponse Tardive'}});
+  await refused; await app.flush();
+  assert.equal(app.writesAfterUnmount, 0);
 });

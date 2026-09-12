@@ -5,9 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, type User, type Role } from "@/lib/api";
 import { type Restaurant } from "@/lib/menu";
-import { t, documentLanguage, languageOptions, normalizeLanguage, type UILanguage } from "@/lib/i18n";
+import { t, documentLanguage, getLanguage, normalizeLanguage, type UILanguage } from "@/lib/i18n";
 import { LanguageBar, useLanguage, chooseLanguage, adoptProfileLanguage, hasLanguageChoice } from "./i18n";
-import { languageNames } from "./translate";
+import CustomerAccount from "./customer-account";
 import { localizeInvalid, clearValidity, refreshValidationLanguage } from "./validation";
 import Home from "./page";
 import Staff from "./staff";
@@ -40,6 +40,7 @@ export default function Application() {
   const [profileNotice, setProfileNotice] = useState("");
   const [profileDraft, setProfileDraft] = useState(emptyProfile);
   const [requestedRole, setRequestedRole] = useState<Role | null>(null);
+  const languageAttempt = useRef("");
   const sessionVersion = useRef(0);
   const sessionRead = useRef(0);
   const catalogRead = useRef(0);
@@ -132,6 +133,7 @@ export default function Application() {
     if (!account) return;
     setProfileDraft(draft => ({...draft,language:value}));
     if (account.language === value) return;
+    languageAttempt.current = `${account.id}:${value}`;
     const version = sessionVersion.current;
     ++sessionRead.current; mutation.current = "profile"; setProfileBusy(true); setAuthError("");
     try {
@@ -142,6 +144,26 @@ export default function Application() {
       if (mounted.current && version === sessionVersion.current) { setAuthError("La langue est affichée sur cet appareil, mais sa sauvegarde sur le compte a échoué. Réessayez depuis Mon compte."); setAccountOpen(true); }
     } finally { mutation.current = ""; if (mounted.current) setProfileBusy(false); }
   }
+  useEffect(() => {
+    if (!user || loading || busy || profileBusy || mutation.current) return;
+    const value = getLanguage();
+    if ((hasLanguageChoice() || !normalizeLanguage(user.language)) && user.language !== value && languageAttempt.current !== `${user.id}:${value}`) {
+      void selectLanguage(value);
+    }
+  }, [user?.id, user?.language, uiLanguage, loading, busy, profileBusy]);
+  const saveCustomerProfile = useCallback(async (payload: Record<string, unknown>) => {
+    const account = currentUser.current;
+    if (!account || account.role !== 'client' || mutation.current) throw new Error('Une modification du compte est déjà en cours. Réessayez.');
+    const version = sessionVersion.current;
+    const read = ++sessionRead.current;
+    mutation.current = 'profile'; setProfileBusy(true);
+    try {
+      const result = await api<{user:User}>('/api/profile', {method:'PATCH', body:JSON.stringify(payload)});
+      if (!mounted.current || sessionVersion.current !== version || sessionRead.current !== read || currentUser.current?.id !== account.id || result.user.id !== account.id) throw new Error('Le compte connecté a changé. Réessayez.');
+      currentUser.current = result.user; setUser(result.user); setProfileDraft(profileOf(result.user)); notifySessionChange();
+      return result.user;
+    } finally {mutation.current = ''; if (mounted.current) setProfileBusy(false);}
+  }, []);
   async function saveProfile(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (mutation.current || !currentUser.current) return;
@@ -150,9 +172,9 @@ export default function Application() {
     ++sessionRead.current;
     mutation.current = "profile"; setProfileBusy(true); setAuthError(""); setProfileNotice("");
     try {
-      const result = await api<{user: User}>("/api/profile", {method: "PATCH", body: JSON.stringify({name: profileDraft.name.trim(), phone: profileDraft.phone.trim(), language: profileDraft.language})});
+      const result = await api<{user: User}>("/api/profile", {method: "PATCH", body: JSON.stringify({name: profileDraft.name.trim(), phone: profileDraft.phone.trim(), language: getLanguage()})});
       if (!mounted.current || version !== sessionVersion.current || currentUser.current?.id !== userId || result.user.id !== userId) return;
-      currentUser.current = result.user; setUser(result.user); setProfileDraft(profileOf(result.user)); setProfileNotice("Vos coordonnées sont enregistrées."); const preferred = normalizeLanguage(result.user.language); if (preferred) chooseLanguage(preferred); notifySessionChange();
+      currentUser.current = result.user; setUser(result.user); setProfileDraft(profileOf(result.user)); setProfileNotice("Vos coordonnées sont enregistrées."); notifySessionChange();
     } catch (error) { if (mounted.current && version === sessionVersion.current && currentUser.current?.id === userId) setAuthError((error as Error).message); }
     finally { mutation.current = ""; if (mounted.current) setProfileBusy(false); }
   }
@@ -190,26 +212,25 @@ export default function Application() {
   }
   if (loading || initialError) return <><LanguageBar onChange={value => chooseLanguage(value)}/><main className="app-startup"><span className="brand">manjéo</span><div className="startup-card"><ShoppingBag size={32}/><h1>{loading ? t("Les bonnes adresses arrivent…") : t("La cuisine se fait attendre")}</h1><p>{loading ? t("Connexion à Manjéo.") : t(initialError)}</p>{initialError && <Button onClick={initialize}>{t("Réessayer")}</Button>}</div></main></>;
   const locked = busy || profileBusy;
-  const viewer = user ? {...user,language:!normalizeLanguage(user.language) && !hasLanguageChoice() ? user.language : uiLanguage} : null;
+  const viewer = user ? {...user,language:uiLanguage} : null;
   return <div className="localized-app" onInvalidCapture={localizeInvalid} onInputCapture={clearValidity}>
     <LanguageBar onChange={value => void selectLanguage(value)} disabled={locked}/>
     {staff && user && user.role !== "client"
       ? <Staff key={user.id} user={viewer!} onLogout={() => void logout()} onAccount={() => openAccount()} onShop={() => {setStaff(false); void refreshCatalog().catch(() => {});}}/>
-      : <Home user={viewer} restaurants={restaurants} refreshCatalog={refreshCatalog} onAccount={openAccount} onStaff={() => setStaff(true)}/>}
+      : <Home user={viewer} onSaveProfile={saveCustomerProfile} restaurants={restaurants} refreshCatalog={refreshCatalog} onAccount={openAccount} onStaff={() => setStaff(true)}/>}
     <Dialog open={accountOpen} onOpenChange={open => {if (!locked) setAccountOpen(open);}}><DialogContent className="app-dialog account-dialog">
       {user ? <>
         <div className="account-symbol"><UserRound size={26}/></div><DialogTitle>{t("Bonjour, {name}", {name: user.name})}</DialogTitle><DialogDescription>{t(roleNames[user.role])} · {t("Démonstration partagée")}</DialogDescription>
         <div className="account-identity"><strong>{user.email}</strong><span>{t("Votre session est connectée.")}</span></div>
         {requestedRole && requestedRole !== user.role && <div className="account-switch-role"><p>{t("Pour ouvrir {space}, utilisez le compte de démonstration correspondant.", {space: t(roleNames[requestedRole]).toLowerCase()})}</p><Button type="button" disabled={locked} onClick={() => void logout(requestedRole)}>{t("Changer pour le compte {role}", {role: t(demos.find(item => item.role === requestedRole)?.label || "Client").toLowerCase()})}</Button></div>}
-        <form className="account-form profile-form" key={user.id} onSubmit={saveProfile}>
+        {user.role === "client" ? <CustomerAccount key={user.id} user={viewer!} disabled={locked} onSaveProfile={saveCustomerProfile}/> : <form className="account-form profile-form" key={user.id} onSubmit={saveProfile}>
           <fieldset disabled={locked} className="profile-fields">
           <label>{t("Nom affiché")}<Input name="name" value={profileDraft.name} onChange={event => setProfileDraft({...profileDraft, name: event.target.value})} required minLength={2} maxLength={100} autoComplete="name"/></label>
           <label>{t("Téléphone")}<Input name="phone" type="tel" value={profileDraft.phone} onChange={event => setProfileDraft({...profileDraft, phone: event.target.value})} maxLength={30} autoComplete="tel" placeholder="0694 00 00 00"/><small>{t("Vos interlocuteurs autorisés peuvent vous joindre pendant leur prise en charge de la commande.")}</small></label>
-          <label>{t("Langue du site et des messages")}<select name="language" value={profileDraft.language} onChange={event => setProfileDraft({...profileDraft, language: event.target.value})}>{languageOptions.map(option => <option key={option.code} value={option.code}>{t(option.label)}</option>)}{!normalizeLanguage(profileDraft.language) && <option value={profileDraft.language}>{t("{language} (messages)", {language:t(languageNames[profileDraft.language] || profileDraft.language)})}</option>}</select><small>{t("Cette langue sera également utilisée lors de votre prochaine connexion sur un autre appareil.")}</small></label>
           {profileNotice && <p className="account-notice" role="status">{t(profileNotice)}</p>}
           <Button type="submit" variant="outline" disabled={locked}>{profileBusy ? t("Enregistrement…") : t("Enregistrer mes coordonnées")}</Button>
           </fieldset>
-        </form>
+        </form>}
         {user.role !== "client" && <Button disabled={locked} onClick={() => {setAccountOpen(false);setStaff(true);}}>{t(user.role === "admin" ? "Ouvrir l’administration" : user.role === "courier" ? "Ouvrir mes livraisons" : "Ouvrir mon restaurant")}<ArrowRight size={17}/></Button>}
         {authError && <p role="alert" className="account-error">{t(authError)}</p>}
         <Button variant="outline" disabled={locked} onClick={() => void logout()}><LogOut size={16}/>{busy ? t("Déconnexion…") : t("Se déconnecter / changer de compte")}</Button>

@@ -143,11 +143,18 @@ def initialize_messaging(db):
 
     from .translation import initialize_translation
     initialize_translation(db)
+    from .customer import initialize_customer
+    initialize_customer(db)
 
 
-def profile(db, user_id):
+def profile(db, user_id, include_delivery=False):
     row = db.execute("SELECT phone, language FROM user_profiles WHERE user_id = ?", (user_id,)).fetchone()
-    return {"phone": row["phone"] if row else "", "language": row["language"] if row and row["language"] in LANGUAGES else "fr"}
+    result = {"phone": row["phone"] if row else "", "language": row["language"] if row and row["language"] in LANGUAGES else "fr"}
+    if include_delivery:
+        from .customer import delivery_address, payment_method
+        result["deliveryAddress"] = delivery_address(db, user_id)
+        result["paymentMethod"] = payment_method(db, user_id)
+    return result
 
 
 def valid_phone(value):
@@ -159,13 +166,19 @@ def valid_phone(value):
 
 def update_profile(handler, db, data):
     user = handler.user(db, {"client", "restaurant", "courier", "admin"})
-    if not data or set(data) - {"phone", "language", "name"}:
+    if not data or set(data) - {"phone", "language", "name", "deliveryAddress", "paymentMethod"}:
         raise APIError(400, "Les champs du profil sont invalides.")
     current = profile(db, user["id"])
     phone = valid_phone(text_field(data, "phone", 0, 30)) if "phone" in data else current["phone"]
     language = data.get("language", current["language"])
     if not isinstance(language, str) or language not in LANGUAGES:
         raise APIError(400, "Cette langue n’est pas proposée.")
+    if "deliveryAddress" in data:
+        from .customer import update_delivery_address
+        update_delivery_address(db, user, data["deliveryAddress"])
+    if "paymentMethod" in data:
+        from .customer import update_payment_method
+        update_payment_method(db, user, data["paymentMethod"])
     if "name" in data:
         db.execute("UPDATE users SET name = ? WHERE id = ?", (text_field(data, "name", 2, 100), user["id"]))
     db.execute("INSERT INTO user_profiles(user_id, phone, language, updated_at) VALUES (?, ?, ?, ?) "
@@ -173,7 +186,7 @@ def update_profile(handler, db, data):
                (user["id"], phone, language, now_iso()))
     row = db.execute("SELECT * FROM users WHERE id = ?", (user["id"],)).fetchone()
     from .app import public_user
-    return 200, {"user": {**public_user(row), **profile(db, user["id"])}}, None
+    return 200, {"user": {**public_user(row), **profile(db, user["id"], include_delivery=True)}}, None
 
 
 def participants(db, order):
@@ -369,7 +382,7 @@ def handle_messaging(handler, db, path, data):
             return update_profile(handler, db, data)
         user = handler.user(db, {"client", "restaurant", "courier", "admin"})
         from .app import public_user
-        return 200, {"user": {**public_user(user), **profile(db, user["id"])},
+        return 200, {"user": {**public_user(user), **profile(db, user["id"], include_delivery=True)},
                      "languages": [{"code": code, "label": label} for code, label in LANGUAGES.items()]}, None
     if path == "/api/phrases" and method == "GET":
         return 200, {"phrases": [{"id": key, "labels": value} for key, value in PHRASES.items()]}, None

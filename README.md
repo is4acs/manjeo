@@ -2,11 +2,11 @@
 
 Application de commande de repas pour Cayenne, Rémire-Montjoly et Matoury, avec quatre espaces reliés : client, restaurateur, livreur et administration.
 
-Les quatre espaces proposent une interface en **français, créole haïtien (Kreyòl ayisyen) et portugais du Brésil**. Le sélecteur de langue est disponible avant connexion ; le choix est conservé sur l’appareil et peut être enregistré dans le profil.
+Les quatre espaces proposent une interface en **français, créole haïtien (Kreyòl ayisyen) et portugais du Brésil**. Le menu de langue est disponible avant connexion ; le choix global pilote aussi les messages, reste conservé sur l’appareil et se synchronise avec le profil connecté. Il remplace l’ancien sélecteur distinct de sept langues de messagerie.
 
 **Adresse du projet : [https://manjeo.vercel.app](https://manjeo.vercel.app).** Le site s’utilise depuis un ordinateur ou un téléphone, sans lancer de serveur local. Pour reprendre le développement sur un autre Mac, suivre le [guide MacBook](docs/REPRENDRE-SUR-MACBOOK.md).
 
-L’interface et l’API Python sont déployées sur Vercel. Les comptes, menus et commandes sont conservés dans PostgreSQL chez Neon et partagés entre les appareils. Les six restaurants, produits, prix, avis et délais sont fictifs ; les photographies sont illustratives. Le paiement et la livraison restent simulés.
+L’interface et l’API Python sont déployées sur Vercel. Les comptes, menus, coordonnées enregistrées et commandes sont conservés dans PostgreSQL chez Neon et partagés entre les appareils. Les six restaurants, produits, prix, avis et délais sont fictifs ; les photographies sont illustratives. Le paiement est simulé par défaut. Une intégration **Stripe exclusivement en mode test** est préparée et reste désactivée sans configuration ; aucun encaissement réel ni déplacement n’est activé. Voir [les paiements et leurs limites](docs/PAIEMENTS.md).
 
 ## Quatre comptes pour tester
 
@@ -14,23 +14,25 @@ Mot de passe commun : **`ManjeoDemo2026!`**
 
 | Rôle | Adresse de connexion | Accès |
 | --- | --- | --- |
-| Client | `client@manjeo.test` | Catalogue, panier, commande et historique du compte |
+| Client | `client@manjeo.test` | Catalogue, coordonnées et adresse habituelle, panier, commandes en cours et historique |
 | Restaurateur | `restaurant@manjeo.test` | Commandes, carte et réglages de **Ti Kaz Kréol** |
 | Livreur | `livreur@manjeo.test` | Disponibilité, offres, retrait et remise avec code client |
 | Administrateur | `admin@manjeo.test` | Commandes, cartes, comptes et affectation des livreurs |
 
-Ces comptes de démonstration sont partagés entre les testeurs : saisir uniquement un nom, un téléphone et une adresse fictifs. Le rôle est vérifié côté serveur. Les mots de passe sont hachés ; les sessions utilisent des cookies HttpOnly et Secure en ligne.
+Ces comptes de démonstration sont partagés entre les testeurs : utiliser un nom et un téléphone fictifs, et un point d’adresse de démonstration, sans l’associer à une personne réelle. Le rôle est vérifié côté serveur. Les mots de passe sont hachés ; les sessions utilisent des cookies HttpOnly et Secure en ligne.
 
 ## Passer une commande de bout en bout
 
 1. Ouvrir le site et se connecter avec le compte client. Choisir **Ti Kaz Kréol** et ajouter un poulet boucané au panier.
-2. Renseigner des coordonnées fictives et une commune, puis confirmer la commande test. Conserver son numéro.
+2. Renseigner un nom et un téléphone fictifs. Rechercher par exemple **7 Rue Lallouette, Cayenne**, vérifier le point proposé sur la carte et le confirmer. Choisir **Simulation sans paiement**, puis confirmer la commande. Les coordonnées peuvent être enregistrées pour les prochaines fois ; conserver le numéro de commande.
 3. Se connecter au compte restaurateur. Accepter la commande, démarrer la préparation et la marquer **Prête au retrait**.
 4. Se connecter au compte livreur, activer sa disponibilité et prendre cette course. Le retrait est possible lorsque le restaurant l’a marquée prête.
 5. Après le retrait, ouvrir le suivi côté client pour lire son code à quatre chiffres. Dans l’espace livreur, saisir ce code pour confirmer la remise fictive. Le restaurant et le livreur ne peuvent pas lire le code dans l’API.
 6. L’admin retrouve la commande, son livreur et les événements. Il peut affecter ou réaffecter une course avant son retrait avec un motif ; il ne peut pas valider une livraison à la place du livreur.
 
 Le compte restaurateur fourni gère uniquement Ti Kaz Kréol. Choisir cette enseigne pour tester le traitement complet. Le catalogue comprend aussi Smash Club, Bowl Tropical, Ciao Cayenne, Crispy Kaz et La Marée Cayennaise. Les commandes confirmées sont visibles depuis un autre appareil avec le même compte.
+
+Avec un nom, un téléphone et une adresse confirmée enregistrés, le panier présente un récapitulatif et un bouton **Confirmer** : la commande suivante se fait directement depuis le panier. Le client peut ouvrir le formulaire pour modifier les coordonnées ou le paiement. Une commande en cours reste accessible dans son suivi. Le parcours Stripe, lorsqu’il est configuré, ouvre sa page hébergée et attend son webhook signé avant de transmettre la commande au restaurant ; le simple retour du navigateur ne confirme pas le paiement.
 
 Un livreur ne peut avoir qu’une course active. Les offres affichent le restaurant et la commune de destination ; les coordonnées de livraison deviennent visibles après affectation. Il peut libérer une course avant le retrait avec un motif. Le client peut annuler une commande encore en attente ; le restaurant ou l’admin peuvent l’annuler avant le retrait. Une livraison terminée ne peut pas être modifiée.
 
@@ -48,7 +50,9 @@ handoff sont dans [la direction « Punch »](docs/DIRECTION-PUNCH.md).
 - **Une estimation apparaît à l’acceptation** (préparation annoncée + quinze minutes de course). Elle est affichée au client, au restaurateur et au livreur, et le retard est signalé aux trois.
 - **Trois codes de démonstration** : `BIENVENUE` (20 % dès 15 €, une fois par compte), `LIVRAISON` (livraison offerte dès 25 €) et `TIKAZ5` (5 € chez Ti Kaz Kréol dès 20 €). Le code se saisit dans le panier ; la remise est revérifiée si le compte, le restaurant, la commune ou les montants changent. Le serveur la recalcule à la confirmation et refuse tout total qui ne correspond pas. Un code est rendu quand la commande est annulée.
 - **Un client ne peut pas cumuler plus de cinq commandes en cours**, pour que la démonstration partagée reste lisible.
-- **La saisie d’adresse interroge l’IGN en ligne**, dans l’index des adresses issu de la Base Adresse Nationale, pour Cayenne, Rémire-Montjoly et Matoury. Les appels sont bornés et mis en cache. En cas d’indisponibilité, une liste fixe prend le relais avec la mention explicite « Suggestions de démonstration ». Le mode local utilise cette liste par défaut ; `MANJEO_ADDRESS_PROVIDER=ign` active le service distant. La saisie libre reste possible, sans obligation de choisir une suggestion ni garantie qu’un numéro existe. La sélection est explicite et une réponse tardive ne remplace pas ce qui est en cours de saisie. [Service de géocodage IGN](https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/geocodage/).
+- **La saisie reste libre, puis le point doit être confirmé avant une nouvelle commande.** L’autocomplétion interroge l’IGN/BAN en ligne ; son secours fixe est annoncé comme démonstration. La vérification distincte exige un vrai résultat IGN dans l’une des trois communes et ne transforme jamais ce secours en preuve. Le client choisit le résultat et vérifie l’entrée ; un résultat limité à la rue demande des précisions. Une panne permet de corriger la saisie et de réessayer, sans autoriser une commande non vérifiée. [Service de géocodage IGN](https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/geocodage/).
+- **L’adresse habituelle confirmée reste valable trente jours**, avec adresse, commune, précisions et point géographique. Modifier le nom, le téléphone ou les précisions ne prolonge pas cette validité. Changer la rue ou la commune exige une nouvelle vérification. La base ne publie pas l’adresse habituelle dans la liste des comptes ; la commande conserve son propre instantané.
+- **Google Maps, Waze et Plans (Apple) ouvrent un itinéraire choisi par le livreur.** Le point provient de l’IGN, pas d’une validation postale Google. Google Address Validation ne liste pas la Guyane (`GF`) dans sa couverture ; Waze fournit des liens de navigation. Les commandes historiques sans point conservent leur adresse texte et restent consultables. [Couverture officielle Google](https://developers.google.com/maps/documentation/address-validation/coverage), [liens Waze](https://developers.google.com/waze/deeplinks).
 
 ## Modifier la carte
 
@@ -62,9 +66,11 @@ Le restaurant peut aussi modifier sa présentation, son adresse de retrait, son 
 
 ## Coordonnées, messagerie et langues
 
-Chaque compte porte un nom, un téléphone et une langue, modifiables depuis **Mon compte**, accessible
-depuis les quatre espaces. Le nom et le téléphone préremplissent la prochaine commande ; les
-coordonnées d’une commande déjà confirmée restent celles saisies au moment de cette commande.
+Chaque compte porte un nom et un téléphone, modifiables depuis **Mon compte**. Le client y enregistre
+également son adresse habituelle confirmée, les précisions et sa préférence de paiement : simulation
+ou Stripe de test. La préférence ne contient aucun numéro de carte. La langue vient du menu global
+FR/HT/PT. Ces coordonnées préremplissent les prochaines commandes, tandis que les instantanés des
+commandes déjà confirmées restent inchangés.
 
 - **Les numéros suivent la prise en charge.** Le client joint le restaurant de l’acceptation à la
   livraison, et son livreur dès que la commande est prête puis pendant la livraison. Le livreur
@@ -78,7 +84,8 @@ coordonnées d’une commande déjà confirmée restent celles saisies au moment
   la course perd cet accès. Les non-lus sont suivis par compte et une nouvelle tentative d’envoi
   conserve le même identifiant pour éviter les doublons. Les échanges sont actualisés périodiquement.
 - **Les réponses rapides ont des versions préparées** en français, créole haïtien, créole guyanais,
-  portugais, anglais, espagnol et chinois. Elles sont identifiées comme telles et ne nécessitent
+  portugais, anglais, espagnol et chinois dans le répertoire historique ; l’interface utilise le choix
+  global FR/HT/PT. Elles sont identifiées comme telles et ne nécessitent
   pas de moteur de traduction après chargement du répertoire. Elles ne constituent pas une garantie
   de justesse ou de fonctionnement hors ligne de l’application.
 - **Les messages libres reçus sont soumis automatiquement au moteur serveur**, dans la langue
@@ -107,6 +114,8 @@ Configuration serveur dans les variables d’environnement Vercel :
 - `DATABASE_URL` : connexion PostgreSQL fournie par Neon ; `POSTGRES_URL` est accepté comme alternative.
 - `APP_ORIGIN` : `https://manjeo.vercel.app` pour l’environnement Production.
 - `MANJEO_DB_SCHEMA` : schéma isolé selon l’environnement, notamment `manjeo_preview` pour les essais Preview.
+- `MANJEO_ADDRESS_PROVIDER=ign` active aussi l’autocomplétion distante en local. La vérification obligatoire utilise toujours le service IGN réel, sans clé. `MANJEO_ADDRESS_REQUESTS_PER_MINUTE` et `MANJEO_ADDRESS_REQUESTS_PER_DAY` bornent les demandes (10/minute/compte et 200/jour UTC/schéma par défaut).
+- `MANJEO_PAYMENT_MODE=demo` par défaut ; `stripe_test` exige les secrets serveur **de test** décrits dans [PAIEMENTS.md](docs/PAIEMENTS.md). Une préférence Stripe sauvegardée ne suffit pas à activer ce service.
 - `MANJEO_TRANSLATE_PROVIDER` : `auto` par défaut, ou `vercel` pour AI Gateway avec OIDC côté serveur. `MANJEO_TRANSLATE_MODEL` choisit le modèle (`openai/gpt-4.1-mini` par défaut). L’équipe doit d’abord activer son accès ; les identifiants ne vont jamais dans le navigateur.
 - `MANJEO_TRANSLATE_URL` et `MANJEO_TRANSLATE_KEY` : relais LibreTranslate compatible facultatif, actuellement non configuré. Les quotas serveur, les conditions du palier gratuit et le contrat d’autodétection sont détaillés dans [le guide traduction](docs/TRADUCTION.md).
 
@@ -114,7 +123,7 @@ La connexion à la base reste côté serveur : ne pas la préfixer avec `VITE_`,
 
 Vercel compile l’interface avec `npm run build:vercel` et sert l’API via `api/index.py`. Le runtime Python est fixé à 3.12 et les dépendances Python sont déclarées dans `requirements.txt`.
 
-Les anciens essais SQLite de l’ordinateur ne sont pas importés dans Neon. La migration de cet historique n’est pas implémentée. Le panier et la destination restent propres au navigateur ; les commandes confirmées et leur suivi sont partagés via la base en ligne.
+Les anciens essais SQLite de l’ordinateur ne sont pas importés dans Neon. La migration de cet historique n’est pas implémentée. Le panier reste propre au navigateur ; l’adresse habituelle enregistrée, la préférence de paiement, les commandes confirmées et leur suivi sont partagés via la base en ligne.
 
 ## Codex Cloud et reprise sur MacBook
 

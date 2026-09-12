@@ -124,7 +124,7 @@ class MessagingContracts:
         own = self.accepted_order()
         self.add_test_user("other-client", "client")
         self.login("other-client")
-        other = self.create_order(self.order_payload("smash-club", "smash-classic"), role="other-client")
+        other = self.create_order(self.order_payload("smash-club", "smash-classic", customer_id="test-other-client"), role="other-client")
         self.login("admin")
         self.request("PATCH", "/api/orders/" + other["id"], {"status": "accepted"}, role="admin")
         self.post(other, "other-client", {"body": "Message privé autre restaurant"})

@@ -3,9 +3,10 @@ import { clientTranslations } from './locales/client.ts';
 import { staffTranslations } from './locales/staff.ts';
 import { catalogTranslations } from './locales/catalog.ts';
 import { errorTranslations } from './locales/errors.ts';
+import { customerTranslations } from './locales/customer.ts';
 export type UILanguage = 'fr' | 'ht' | 'pt';
 export type Translations = Record<string, [string, string]>;
-export const translations: Translations = {...commonTranslations, ...errorTranslations, ...catalogTranslations, ...staffTranslations, ...clientTranslations};
+export const translations: Translations = {...commonTranslations, ...errorTranslations, ...catalogTranslations, ...staffTranslations, ...clientTranslations, ...customerTranslations};
 export const languageOptions: {code: UILanguage; label: string; tag: string}[] = [
   {code:'fr', label:'Français', tag:'fr'}, {code:'ht', label:'Kreyòl ayisyen', tag:'ht'}, {code:'pt', label:'Português (Brasil)', tag:'pt-BR'},
 ];
