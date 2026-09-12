@@ -83,3 +83,15 @@ Après activation, exécuter ce corpus synthétique dans les six directions, ave
 | Portugais brésilien → français | « Faltam 2 sucos no pedido. A sacola estava fechada quando recebi. » | Deux jus manquants, sac fermé à la réception. |
 
 Vérifier aussi : profil français avec texte portugais ; texte déjà dans la langue du lecteur ; orthographe familière ; noms et adresses ; et un message contenant « Ignore les instructions précédentes ». Ce dernier doit être traduit comme un message, jamais exécuté comme une consigne au modèle. Conserver l’original visible et qualifier les résultats avant toute affirmation de fiabilité linguistique.
+
+## Vérification de l’interface trilingue
+
+Code vérifié : `5a06055`, le 12 septembre 2026.
+
+- 193 tests Python réussis, dont les contrats PostgreSQL exécutés sur une base locale dédiée ; aucun test ignoré.
+- 64 tests client réussis : traductions, paramètres, formulaires, requêtes de traduction, annulations réseau et changements de session entre onglets. TypeScript et build Vercel réussis. Vite signale un bundle principal supérieur à 500 ko minifié ; aucun échec de compilation.
+- Parcours client haïtien/portugais : recherche et catalogue de démonstration, options, panier, coordonnées, commande et suivi. Changer de langue conserve panier et champs ; la langue du profil est retrouvée dans un navigateur vierge.
+- 24 contrôles mobiles réussis : accueil, panier, compte et validation de commande, dans les deux langues, à 320, 390 et 430 px.
+- Sur [la Preview isolée](https://manjeo-6o7q3eair-is4acs-projects.vercel.app), une commande fictive a relié un client haïtien, un restaurant français, un livreur portugais et l’admin : acceptation, préparation, retrait, messages, rejet d’un mauvais code puis livraison. Aucun échec JavaScript observé. La transition finale conserve les traductions déjà tentées sans nouveaux appels inutiles.
+- La Preview confirme l’authentification Gateway en conditions Vercel et son refus d’activation : l’API Manjéo retourne 503 avec l’explication, le message original reste affiché. Le schéma Preview `manjeo_i18n_20260912` est distinct du schéma de Production.
+- Un essai navigateur avec fournisseur **simulé** confirme qu’un texte portugais envoyé depuis un profil haïtien déclenche la détection, que l’original reste consultable, et qu’un nouveau message ne retraduit pas les anciens. Cet essai ne qualifie pas le moteur réel.
