@@ -31,6 +31,8 @@ Parcours navigateur exécutés sur une base PostgreSQL isolée :
 
 Les dialogues de compte, les anciens 401, la panne de relecture de session et le changement de rôle depuis le pied de page ont également été vérifiés. À 320, 390 et 430 px, les boutons de l’en-tête restent accessibles et la page ne déborde plus horizontalement.
 
+Le parcours complet des quatre comptes a ensuite réussi sur la [Preview Vercel de validation](https://manjeo-1m64v6rbe-is4acs-projects.vercel.app), construite depuis `7a27b8a`, avec un schéma PostgreSQL dédié (`manjeo_repair_20260912`). L’API d’adresses de cette Preview a renvoyé `source: "ign"`. La branche de réparation dispose de son propre réglage de schéma Preview ; ce réglage ne s’applique pas à la Production.
+
 ## Limites connues
 
 La démonstration n’effectue ni paiement ni livraison réelle. Aucun moteur serveur de traduction n’est configuré : les textes libres portugais/créole haïtien restent dans leur langue d’origine, avec indication explicite, jusqu’à la connexion d’un service compatible. Les formulations rapides préparées nécessitent une relecture linguistique avant une exploitation réelle.
