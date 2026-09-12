@@ -91,7 +91,7 @@ export default function Application() {
     } catch (error) { setAccountOpen(true); setAuthError((error as Error).message); }
     finally { setBusy(false); }
   }
-  if (loading || initialError) return <main className="app-startup"><span className="brand">manjéo✳</span><div className="startup-card"><ShoppingBag size={32}/><h1>{loading ? "Les bonnes adresses arrivent…" : "La cuisine se fait attendre"}</h1><p>{loading ? "Connexion à Manjéo." : initialError}</p>{initialError && <Button className="primary-btn" onClick={initialize}>Réessayer</Button>}</div></main>;
+  if (loading || initialError) return <main className="app-startup"><span className="brand">manjéo</span><div className="startup-card"><ShoppingBag size={32}/><h1>{loading ? "Les bonnes adresses arrivent…" : "La cuisine se fait attendre"}</h1><p>{loading ? "Connexion à Manjéo." : initialError}</p>{initialError && <Button onClick={initialize}>Réessayer</Button>}</div></main>;
   return <>
     {staff && user && user.role !== "client"
       ? <Staff key={user.id} user={user} onLogout={() => void logout()} onShop={() => {setStaff(false); void refreshCatalog().catch(() => {});}}/>
@@ -100,13 +100,13 @@ export default function Application() {
       {user ? <>
         <div className="account-symbol"><UserRound size={26}/></div><DialogTitle>Bonjour, {user.name}</DialogTitle><DialogDescription>{roleNames[user.role]} · Démonstration partagée</DialogDescription>
         <div className="account-identity"><strong>{user.email}</strong><span>Votre session est connectée.</span></div>
-        {user.role !== "client" && <Button className="primary-btn" onClick={() => {setAccountOpen(false);setStaff(true);}}>Ouvrir {user.role === "admin" ? "l’administration" : user.role === "courier" ? "mes livraisons" : "mon restaurant"}<ArrowRight size={17}/></Button>}
+        {user.role !== "client" && <Button onClick={() => {setAccountOpen(false);setStaff(true);}}>Ouvrir {user.role === "admin" ? "l’administration" : user.role === "courier" ? "mes livraisons" : "mon restaurant"}<ArrowRight size={17}/></Button>}
         {authError && <p role="alert" className="account-error">{authError}</p>}
         <Button variant="outline" disabled={busy} onClick={() => void logout()}><LogOut size={16}/>{busy ? "Déconnexion…" : "Se déconnecter / changer de compte"}</Button>
       </> : <>
         <div className="account-symbol"><UserRound size={26}/></div><DialogTitle>Bienvenue à table.</DialogTitle><DialogDescription>Connectez-vous pour commander ou gérer votre activité.</DialogDescription>
         <div className="demo-account-picker" aria-label="Comptes de démonstration">{demos.map(({role,label,email:demoEmail,icon:Icon}) => <button key={role} type="button" aria-pressed={email === demoEmail} onClick={() => {setEmail(demoEmail);setPassword("ManjeoDemo2026!");setAuthError("");}}><Icon size={20}/>{label}</button>)}</div>
-        <form className="account-form" onSubmit={login}><label>Adresse e-mail<Input type="email" name="email" autoComplete="username" required value={email} onChange={event => setEmail(event.target.value)}/></label><label>Mot de passe<Input type="password" name="password" autoComplete="current-password" required value={password} onChange={event => setPassword(event.target.value)}/></label>{authError && <p role="alert" className="account-error">{authError}</p>}<Button className="primary-btn" type="submit" disabled={busy}>{busy ? "Connexion…" : "Se connecter"}<ArrowRight size={17}/></Button></form>
+        <form className="account-form" onSubmit={login}><label>Adresse e-mail<Input type="email" name="email" autoComplete="username" required value={email} onChange={event => setEmail(event.target.value)}/></label><label>Mot de passe<Input type="password" name="password" autoComplete="current-password" required value={password} onChange={event => setPassword(event.target.value)}/></label>{authError && <p role="alert" className="account-error">{authError}</p>}<Button type="submit" disabled={busy}>{busy ? "Connexion…" : "Se connecter"}<ArrowRight size={17}/></Button></form>
         <p className="demo-credentials">4 comptes de démonstration partagés. Mot de passe commun :<br/><code>ManjeoDemo2026!</code></p>
       </>}
     </DialogContent></Dialog>

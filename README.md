@@ -32,6 +32,14 @@ Le compte restaurateur fourni gère uniquement Ti Kaz Kréol. Choisir cette ense
 
 Un livreur ne peut avoir qu’une course active. Les offres affichent le restaurant et la commune de destination ; les coordonnées de livraison deviennent visibles après affectation. Il peut libérer une course avant le retrait avec un motif. Le client peut annuler une commande encore en attente ; le restaurant ou l’admin peuvent l’annuler avant le retrait. Une livraison terminée ne peut pas être modifiée.
 
+## Direction visuelle
+
+L’interface suit la direction « Punch » : fond crème, un seul jaune en aplat, encre noire pour tout le
+texte, titres Archivo Black en capitales sur Figtree, bordures de 2 px et pastilles. Les jetons sont
+déclarés une seule fois dans `:root` au début de `app/globals.css` ; aucun composant ne doit coder une
+couleur en dur. Les règles complètes, la typographie, les états et les écarts assumés par rapport au
+handoff sont dans [la direction « Punch »](docs/DIRECTION-PUNCH.md).
+
 ## Modifier la carte
 
 Dans l’espace restaurateur, ouvrir **Ma carte** : créer, renommer et réordonner des catégories ; ajouter ou modifier un produit, sa description, son prix, sa photo, ses allergènes, sa disponibilité et ses groupes d’options. Chaque groupe définit un minimum, un maximum et les suppléments de prix de ses choix. Les produits peuvent être archivés puis restaurés. Les photos JPEG, PNG ou WebP sont enregistrées dans la base après validation et réencodage (1 Mo maximum à l’envoi).
