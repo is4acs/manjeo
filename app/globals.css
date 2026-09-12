@@ -331,6 +331,36 @@ button,input,select,textarea,a,img{transition:background var(--ease),color var(-
 .city-picker button:hover{background:#1b1a170f}
 .city-picker button.selected{font-family:var(--display);font-weight:400;text-transform:uppercase;background:var(--ink);color:var(--cream)}
 
+/* Messagerie de commande */
+.order-chat{display:flex;flex-direction:column;gap:12px;background:var(--cream-2);border:2px solid var(--ink);border-radius:20px;padding:16px;margin-top:14px}
+.chat-contacts{display:flex;flex-direction:column;gap:8px;list-style:none;margin:0;padding:0}
+.chat-contacts li{display:flex;align-items:center;gap:12px;background:var(--cream);border:2px solid var(--line);border-radius:16px;padding:12px 14px}
+.chat-contacts li>span{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.chat-contacts strong{font-size:14px;font-weight:600}
+.chat-contacts small{font-size:12px;color:var(--ink-soft);overflow-wrap:anywhere}
+.chat-call{display:inline-flex;align-items:center;gap:8px;background:var(--punch);color:var(--ink);border-radius:999px;padding:0 16px;min-height:44px;font-family:var(--display);font-size:12px;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;text-decoration:none}
+.chat-call:hover{background:var(--punch-hover)}
+.chat-closed{font-size:11px;color:var(--ink-mute);max-width:9em;text-align:right}
+.chat-messages{display:flex;flex-direction:column;gap:10px;max-height:320px;overflow-y:auto;padding-right:4px}
+.chat-message{align-self:flex-start;max-width:85%;background:var(--cream);border:2px solid var(--line);border-radius:18px;padding:10px 14px}
+.chat-message.mine{align-self:flex-end;background:var(--ink);color:var(--cream);border-color:var(--ink)}
+.chat-author{display:flex;align-items:baseline;gap:8px;font-family:var(--display);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+.chat-author small{font-family:var(--body);font-size:11px;letter-spacing:0;color:var(--ink-mute)}
+.chat-message.mine .chat-author small{color:var(--ink-on-dark)}
+.chat-message p{font-size:14px;line-height:1.5;margin-top:4px;overflow-wrap:anywhere}
+.chat-origin{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:11px;color:var(--ink-mute);margin-top:6px}
+.chat-message.mine .chat-origin{color:var(--ink-on-dark)}
+.chat-origin button{font-size:11px;font-weight:700;text-decoration:underline;text-underline-offset:3px;color:inherit;min-height:32px}
+.chat-empty{font-size:13px;color:var(--ink-soft);padding:12px 0}
+.chat-replies{display:flex;flex-wrap:wrap;gap:8px}
+.chat-replies button{font-size:12px;font-weight:600;border:2px solid var(--ink);border-radius:999px;padding:0 14px;min-height:40px;text-align:left}
+.chat-replies button:hover:not(:disabled){background:var(--punch)}
+.chat-form{display:flex;gap:8px}
+.chat-form input{flex:1;min-width:0;min-height:52px;border:2px solid var(--ink);border-radius:999px;background:var(--cream);padding:0 18px;font-size:14px;color:var(--ink)}
+.chat-note{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-mute);line-height:1.5}
+.account-notice{background:var(--punch);color:var(--ink);border-radius:16px;padding:10px 14px;font-size:13px;font-weight:600}
+.profile-form label small{font-size:12px;font-weight:400;color:var(--ink-soft);line-height:1.5}
+
 /* Pied de page */
 .site-footer{border-top:2px solid var(--ink);margin-top:48px;padding:34px 0 40px;font-size:13px;color:var(--ink-soft)}
 .footer-columns{display:grid;grid-template-columns:1.4fr repeat(3,1fr);gap:32px}

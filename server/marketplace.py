@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 from .app import APIError, CITIES, now_iso, text_field
+from .messaging import initialize_messaging
 from .promotions import initialize_promotions, release_use
 
 ACCEPTANCE_SECONDS = 600
@@ -85,6 +86,7 @@ def initialize_marketplace(db):
     ):
         db.execute(statement)
     initialize_promotions(db)
+    initialize_messaging(db)
     restaurants = {}
     for row in db.execute("SELECT * FROM restaurants ORDER BY sort_order, id").fetchall():
         restaurant = json.loads(row["data"])

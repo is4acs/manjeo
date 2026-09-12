@@ -58,6 +58,28 @@ Une modification ne change jamais le prix ni les options d’une commande déjà
 
 Le restaurant peut aussi modifier sa présentation, son adresse de retrait, son délai et l’ouverture des commandes. Les règles détaillées et les références utilisées sont dans [le contrat des quatre espaces](docs/FOUR-ROLES-CONTRACT.md).
 
+## Coordonnées, messagerie et langues
+
+Chaque compte porte un téléphone et une langue, modifiables depuis **Mon compte** — accessible aussi
+depuis les espaces restaurateur, livreur et administration.
+
+- **Les numéros ne sont ouverts que le temps utile.** Le client joint le restaurant pendant que sa
+  commande est en cours, et le livreur seulement entre le retrait et la remise. Le livreur affecté
+  joint le client et le restaurant. Hors de cette fenêtre, le serveur ne renvoie aucun numéro.
+- **Une conversation est attachée à chaque commande.** Elle s’ouvre à l’acceptation, se ferme une
+  demi-heure après la livraison, et n’est lisible que par le client, le restaurant, le livreur
+  affecté et l’administration. Les messages non lus sont comptés pour chaque rôle.
+- **Chacun écrit dans sa langue.** Un message est conservé tel qu’il a été écrit et traduit à la
+  lecture. Les **réponses rapides** sont traduites à la main en français, créole haïtien, créole
+  guyanais, portugais, anglais, espagnol et chinois : un livreur brésilien qui envoie « Estou a
+  caminho » est lu « Mwen sou wout la » par un client haïtien, sans aucun moteur. Le texte libre
+  passe par le moteur du navigateur (API Translator) quand la paire existe, sinon par un moteur
+  configuré côté serveur (`MANJEO_TRANSLATE_URL`, `MANJEO_TRANSLATE_KEY`). Sans moteur, le message
+  reste dans sa langue et l’interface le dit ; l’original est toujours consultable.
+
+Les traductions des réponses rapides doivent être relues par des locuteurs natifs avant une mise en
+service réelle.
+
 ## Données et déploiement
 
 La base Neon dédiée au projet utilise le schéma PostgreSQL `manjeo`. Les quatre comptes et le catalogue initial sont créés à l’initialisation. Les migrations ajoutent le rôle livreur et les nouveaux champs aux bases existantes sans remplacer les cartes modifiées, comptes, sessions ou commandes. Les commandes sont conservées entre les déploiements Vercel. Les prévisualisations utilisent le schéma distinct `manjeo_preview` (`MANJEO_DB_SCHEMA` dans l’environnement Preview), pour séparer leurs essais de la démonstration principale.

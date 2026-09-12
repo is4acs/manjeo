@@ -1,5 +1,5 @@
 export type Role = "client" | "restaurant" | "courier" | "admin";
-export type User = { id: string; email: string; name: string; role: Role; restaurantId: string | null };
+export type User = { id: string; email: string; name: string; role: Role; restaurantId: string | null; phone: string; language: string };
 export type OrderStatus = "pending" | "accepted" | "preparing" | "ready" | "picked_up" | "delivered" | "cancelled";
 export type Order = {
   id: string; restaurantId: string; restaurant: string; customerId: string;
@@ -12,6 +12,10 @@ export type Order = {
   items: { productId: string; name: string; option: string; price: number; quantity: number }[];
   history: { status: OrderStatus; date: string; label?: string; actorName?: string }[];
 };
+export type ThreadMessage = { id: string; senderRole: Role; senderName: string; body: string; language: string; phraseId: string; date: string };
+export type ContactCard = { role: Role; label: string; name: string; phone: string; language: string; note: string };
+export type Thread = { messages: ThreadMessage[]; contacts: ContactCard[]; viewerRole: Role; language: string; open: boolean };
+export type LanguageOption = { code: string; label: string };
 export type AddressSuggestion = { label: string; number: string; street: string; city: string };
 export type Promotion = { code: string; label: string; conditions: string; discount: number };
 export type PublicPromotion = { code: string; label: string; conditions: string; restaurantId: string | null; minimum: number };

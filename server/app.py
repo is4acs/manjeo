@@ -433,15 +433,20 @@ class Handler(BaseHTTPRequestHandler):
 
     def api(self, db, path, data):
         from .marketplace import expire_pending_orders, handle_marketplace, projected_order
+        from .messaging import handle_messaging
         if path.startswith("/api/orders") or path in {"/api/deliveries", "/api/couriers"}:
             expire_pending_orders(self, db)
+        response = handle_messaging(self, db, path, data)
+        if response is not None:
+            return response
         response = handle_marketplace(self, db, path, data)
         if response is not None:
             return response
         method = self.command
         if method == "GET" and path == "/api/session":
+            from .messaging import profile
             user = self.user(db)
-            return 200, {"user": public_user(user) if user else None}, None
+            return 200, {"user": {**public_user(user), **profile(db, user["id"])} if user else None}, None
         if method == "POST" and path == "/api/login":
             email = text_field(data, "email", 3, 254).lower()
             password = text_field(data, "password", 1, 200)
@@ -468,7 +473,8 @@ class Handler(BaseHTTPRequestHandler):
             token = secrets.token_urlsafe(32)
             db.execute("DELETE FROM sessions WHERE token_hash = ? OR expires_at <= ?", (self.session_hash(), int(time.time())))
             db.execute("INSERT INTO sessions VALUES (?, ?, ?)", (hashlib.sha256(token.encode()).hexdigest(), row["id"], int(time.time()) + SESSION_SECONDS))
-            return 200, {"user": public_user(row)}, self.session_cookie(token, SESSION_SECONDS)
+            from .messaging import profile
+            return 200, {"user": {**public_user(row), **profile(db, row["id"])}}, self.session_cookie(token, SESSION_SECONDS)
         if method == "POST" and path == "/api/logout":
             db.execute("DELETE FROM sessions WHERE token_hash = ?", (self.session_hash(),))
             return 200, {"ok": True}, self.session_cookie()
@@ -481,14 +487,17 @@ class Handler(BaseHTTPRequestHandler):
             return 200, {"restaurants": [self.state.database.restaurant(db, row) for row in rows]}, None
         if method == "GET" and path == "/api/users":
             self.user(db, {"admin"})
-            return 200, {"users": [public_user(row) for row in db.execute("SELECT * FROM users ORDER BY id")]}, None
+            from .messaging import profile
+            return 200, {"users": [{**public_user(row), **profile(db, row["id"])} for row in db.execute("SELECT * FROM users ORDER BY id")]}, None
         if method == "GET" and path == "/api/orders":
             user = self.user(db, {"client", "restaurant", "courier", "admin"})
             clause, args = (" WHERE customer_id = ?", (user["id"],)) if user["role"] == "client" else ((" WHERE restaurant_id = ?", (user["restaurant_id"],)) if user["role"] == "restaurant" else ("", ()))
             if user["role"] == "courier":
                 clause, args = " WHERE id IN (SELECT order_id FROM order_assignments WHERE courier_id = ?)", (user["id"],)
+            from .messaging import unread_counts
             rows = db.execute("SELECT data FROM orders" + clause + " ORDER BY created_at DESC, id DESC", args)
-            return 200, {"orders": [projected_order(json.loads(row["data"]), user) for row in rows]}, None
+            return 200, {"orders": [projected_order(json.loads(row["data"]), user) for row in rows],
+                         "unread": unread_counts(db, user)}, None
         if method == "POST" and path == "/api/orders":
             return self.create_order(db, data)
         match = re.fullmatch(r"/api/restaurants/([A-Za-z0-9-]+)/products/([A-Za-z0-9-]+)", path)
