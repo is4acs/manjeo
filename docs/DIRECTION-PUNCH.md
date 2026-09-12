@@ -59,7 +59,8 @@ primitives `components/ui/*` héritent de la direction sans feuille de style par
   15,55:1 et 1,37:1. Dans le menu de langue, le fond jaune du choix pointé garde un
   contour intérieur encre de 2 px pour rester repérable au clavier.
 - Transitions fonctionnelles seulement, 150 ms `ease-out`. Aucun parallax, aucun `hover:scale`.
-- `prefers-reduced-motion: reduce` coupe animations et défilements animés, marquee comprise.
+- `prefers-reduced-motion: reduce` coupe animations et défilements animés.
+- Aucun bandeau défilant : le bandeau de promesses de la maquette a été retiré de l’accueil, l’en-tête encre porte seul la marque, l’adresse, le panier et la langue.
 
 ## Écrans
 
@@ -70,9 +71,10 @@ primitives `components/ui/*` héritent de la direction sans feuille de style par
 | Connexion et comptes de démonstration | `app/application.tsx`, `app/accounts.css` |
 | Espaces restaurateur, livreur, administration | `app/staff.css`, `app/courier.css`, `app/menu-editor.css` |
 
-Le bandeau de promesses, le héros et les lignes de liste lisent le catalogue (`lib/catalog.json` via
-`lib/api.ts`) : nombre de tables ouvertes, délais, frais de livraison et plat du jour ne sont jamais
-écrits en dur. Les prix restent en centimes et sont formatés par `money()` (`lib/menu.ts`).
+Le héros et les lignes de liste lisent le catalogue (`lib/catalog.json` via
+`lib/api.ts`) : délais, frais de livraison, plat du jour et prix d’appel ne sont jamais écrits en dur. Le prix
+d’appel d’une ligne est le plat le moins cher de la carte principale du restaurant, pas la boisson la
+moins chère. Les prix restent en centimes et sont formatés par `money()` (`lib/menu.ts`).
 
 ## Icône d’application et favicons
 

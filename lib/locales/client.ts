@@ -280,10 +280,6 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Livrezon pou pran",
     "Entregas para retirar"
   ],
-  "Cuisiné à Cayenne": [
-    "Kwit nan Cayenne",
-    "Preparado em Cayenne"
-  ],
   "Diminuer la quantité": [
     "Diminye kantite a",
     "Diminuir a quantidade"
@@ -540,10 +536,6 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Livrezon: {price}",
     "Entrega: {price}"
   ],
-  "Livraison dès {price}": [
-    "Livrezon apati {price}",
-    "Entrega a partir de {price}"
-  ],
   "Livraison estimée vers {time} — le retard est signalé au restaurant et au livreur.": [
     "Livrezon estime bò {time} — restoran an ak livrè a enfòme sou reta a.",
     "Entrega estimada por volta de {time} — o atraso foi informado ao restaurante e ao entregador."
@@ -603,10 +595,6 @@ export const clientTranslations: Record<string, [string, string]> = {
   "Motif de l’annulation": [
     "Rezon anilasyon an",
     "Motivo do cancelamento"
-  ],
-  "Nos promesses": [
-    "Sa nou pwomèt",
-    "Nossos compromissos"
   ],
   "Obtenir de l’aide": [
     "Jwenn èd",
@@ -675,6 +663,10 @@ export const clientTranslations: Record<string, [string, string]> = {
   "Partenaires": [
     "Patnè",
     "Parceiros"
+  ],
+  "Panier": [
+    "Panye",
+    "Sacola"
   ],
   "Passer commande · {total}": [
     "Pase kòmann · {total}",
@@ -876,9 +868,9 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Yon pwen referans pou jwenn ou pi fasil…",
     "Um ponto de referência para encontrar você…"
   ],
-  "Un resto, un plat, une envie…": [
-    "Yon restoran, yon plat, yon anvi…",
-    "Um restaurante, um prato, uma vontade…"
+  "Un resto, un plat…": [
+    "Yon restoran, yon plat…",
+    "Um restaurante, um prato…"
   ],
   "Un service de livraison de repas imaginé pour Cayenne, réalisé comme démonstration technique.": [
     "Yon sèvis livrezon manje imajine pou Cayenne, ki fèt kòm demonstrasyon teknik.",
@@ -1060,17 +1052,9 @@ export const clientTranslations: Record<string, [string, string]> = {
     "{count} chwa obligatwa",
     "{count} escolhas obrigatórias"
   ],
-  "{count} table ouverte maintenant": [
-    "{count} restoran louvri kounye a",
-    "{count} restaurante aberto agora"
-  ],
   "{count} tables du centre, de Rémire-Montjoly et de Matoury. Vous commandez, un livreur du coin passe prendre votre plat et vous le pose chez vous.": [
     "{count} restoran nan sant vil la, Rémire-Montjoly ak Matoury. Ou pase kòmann, yon livrè nan zòn nan al pran plat ou a epi pote l lakay ou.",
     "{count} restaurantes do centro, de Rémire-Montjoly e de Matoury. Você faz o pedido e um entregador da região busca seu prato e leva até sua casa."
-  ],
-  "{count} tables ouvertes maintenant": [
-    "{count} restoran louvri kounye a",
-    "{count} restaurantes abertos agora"
   ],
   "{minutes} min · {price} de livraison": [
     "{minutes} min · {price} pou livrezon",
@@ -1079,10 +1063,6 @@ export const clientTranslations: Record<string, [string, string]> = {
   "{min} à {max} choix": [
     "{min} a {max} chwa",
     "{min} a {max} escolhas"
-  ],
-  "{min} à {max} min chrono": [
-    "{min} a {max} min sou mont",
-    "{min} a {max} min no relógio"
   ],
   "{min} à {max} min · {price} de livraison": [
     "{min} a {max} min · {price} pou livrezon",
