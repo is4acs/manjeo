@@ -534,7 +534,7 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
             <div className="hero-copy">
               <span className="hero-badge">{t("La Guyane a bon goût")}</span>
               <h1>{t("Le marché de Cayenne, livré chaud.")}</h1>
-              <p>{t("{count} tables du centre, de Rémire-Montjoly et de Matoury. Vous commandez, un livreur du coin passe prendre votre plat et vous le pose chez vous.", {count: restaurants.length})}</p>
+              <p>{t("{count} restaurants du centre, de Rémire-Montjoly et de Matoury. Vous commandez, un livreur du coin passe prendre votre plat et vous le pose chez vous.", {count: restaurants.length})}</p>
               <form className="hero-address" onSubmit={startOrder}><AddressField value={address} city={city} onChange={setAddress} onPick={suggestion => setCity(suggestion.city)} inputProps={{disabled: submitting, "aria-label": t("Votre adresse de livraison"), placeholder: t("Ex. 12 rue Lallouette, Cayenne"), maxLength: 180}}/><Button type="submit" disabled={submitting}>{t("Commander")}</Button></form>
             </div>
             {heroRestaurant && <div className="hero-visual">

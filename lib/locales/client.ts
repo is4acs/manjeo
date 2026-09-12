@@ -1052,7 +1052,7 @@ export const clientTranslations: Record<string, [string, string]> = {
     "{count} chwa obligatwa",
     "{count} escolhas obrigatórias"
   ],
-  "{count} tables du centre, de Rémire-Montjoly et de Matoury. Vous commandez, un livreur du coin passe prendre votre plat et vous le pose chez vous.": [
+  "{count} restaurants du centre, de Rémire-Montjoly et de Matoury. Vous commandez, un livreur du coin passe prendre votre plat et vous le pose chez vous.": [
     "{count} restoran nan sant vil la, Rémire-Montjoly ak Matoury. Ou pase kòmann, yon livrè nan zòn nan al pran plat ou a epi pote l lakay ou.",
     "{count} restaurantes do centro, de Rémire-Montjoly e de Matoury. Você faz o pedido e um entregador da região busca seu prato e leva até sua casa."
   ],
