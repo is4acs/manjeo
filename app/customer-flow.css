@@ -22,6 +22,10 @@
 .dynamic-options label:has(input:disabled){opacity:.45;cursor:not-allowed}
 .option-clear{font-size:13px;font-weight:700;text-decoration:underline;text-underline-offset:3px;margin-top:10px;min-height:40px}
 
+.tracking-deadline{display:flex;align-items:flex-start;gap:10px;background:var(--punch);color:var(--ink);border-radius:16px;padding:12px 14px;font-size:13px;line-height:1.5;margin:0 0 14px}
+.tracking-deadline svg{margin-top:2px}
+.tracking-deadline strong{font-family:var(--display);font-weight:400;font-variant-numeric:tabular-nums}
+
 /* Suivi de la commande */
 .customer-tracking{margin:16px 0 0;text-align:left;min-width:0}
 .tracking-explanation{font-size:13px!important;color:var(--ink-soft)!important;line-height:1.6!important;margin:0 0 14px!important}

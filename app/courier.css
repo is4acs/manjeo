@@ -6,3 +6,5 @@
 .courier-notice,.courier-wait{border-radius:20px}
 .courier-mission-action,.courier-release,.courier-action-copy{border-radius:999px}
 .courier-stop-icon,.courier-history-icon,.courier-bag{background:var(--punch);color:var(--ink)}
+
+.courier-wait.urgent{background:var(--punch);color:var(--ink);border-color:var(--ink)}

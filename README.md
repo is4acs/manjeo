@@ -40,6 +40,14 @@ déclarés une seule fois dans `:root` au début de `app/globals.css` ; aucun c
 couleur en dur. Les règles complètes, la typographie, les états et les écarts assumés par rapport au
 handoff sont dans [la direction « Punch »](docs/DIRECTION-PUNCH.md).
 
+## Délais, codes promo et adresses
+
+- **Le restaurant a dix minutes pour accepter.** Passé ce délai la commande s’annule d’elle-même, l’historique porte la mention « annulation automatique » et le code promo utilisé est rendu. Le client voit le compte à rebours dans son suivi, le restaurateur le voit sur la commande. L’hébergement n’exécutant aucune tâche de fond, l’expiration est constatée à la première requête qui suit l’échéance.
+- **Une estimation apparaît à l’acceptation** (préparation annoncée + quinze minutes de course). Elle est affichée au client, au restaurateur et au livreur, et le retard est signalé aux trois.
+- **Trois codes de démonstration** : `BIENVENUE` (20 % dès 15 €, une fois par compte), `LIVRAISON` (livraison offerte dès 25 €) et `TIKAZ5` (5 € chez Ti Kaz Kréol dès 20 €). Le code se saisit dans le panier ; la remise affichée n’est qu’un aperçu, le serveur la recalcule à la confirmation et refuse tout total qui ne correspond pas. Un code est rendu quand la commande est annulée.
+- **Un client ne peut pas cumuler plus de cinq commandes en cours**, pour que la démonstration partagée reste lisible.
+- **La saisie d’adresse propose des complétions** pour Cayenne, Rémire-Montjoly et Matoury. Ce répertoire est une liste fixe embarquée dans l’API (`server/addresses.py`), sans appel réseau ni clé : en production, le remplacer par la Base Adresse Nationale, l’interface consomme déjà la même forme de réponse.
+
 ## Modifier la carte
 
 Dans l’espace restaurateur, ouvrir **Ma carte** : créer, renommer et réordonner des catégories ; ajouter ou modifier un produit, sa description, son prix, sa photo, ses allergènes, sa disponibilité et ses groupes d’options. Chaque groupe définit un minimum, un maximum et les suppléments de prix de ses choix. Les produits peuvent être archivés puis restaurés. Les photos JPEG, PNG ou WebP sont enregistrées dans la base après validation et réencodage (1 Mo maximum à l’envoi).

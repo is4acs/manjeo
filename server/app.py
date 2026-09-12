@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
 # Python ne connaît pas ce type ; sans lui le manifeste part en octet-stream et nosniff le rejette.
@@ -394,9 +394,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.serve_static(path)
             data = self.read_json() if self.command in {"POST", "PATCH"} else None
             database = self.state.database
+            self.in_write = False
             with database.connect() as db:
                 if data is not None:
-                    database.begin_write(db)
+                    self.ensure_write(db)
                 match = re.fullmatch(r"/api/images/([a-f0-9]{32})", path)
                 if self.command == "GET" and match:
                     row = db.execute("SELECT content_type, content_base64 FROM menu_images WHERE id = ?", (match[1],)).fetchone()
@@ -424,8 +425,16 @@ class Handler(BaseHTTPRequestHandler):
             traceback.print_exc()
             self.json_response(500, {"error": "Le serveur a rencontré une erreur. Réessayez."})
 
+    def ensure_write(self, db):
+        """Ouvre la transaction d’écriture une seule fois, même si une lecture la déclenche."""
+        if not getattr(self, "in_write", False):
+            self.state.database.begin_write(db)
+            self.in_write = True
+
     def api(self, db, path, data):
-        from .marketplace import handle_marketplace, projected_order
+        from .marketplace import expire_pending_orders, handle_marketplace, projected_order
+        if path.startswith("/api/orders") or path in {"/api/deliveries", "/api/couriers"}:
+            expire_pending_orders(self, db)
         response = handle_marketplace(self, db, path, data)
         if response is not None:
             return response
@@ -463,6 +472,10 @@ class Handler(BaseHTTPRequestHandler):
         if method == "POST" and path == "/api/logout":
             db.execute("DELETE FROM sessions WHERE token_hash = ?", (self.session_hash(),))
             return 200, {"ok": True}, self.session_cookie()
+        if method == "GET" and path == "/api/addresses":
+            from .addresses import suggest
+            query = parse_qs(urlsplit(self.path).query)
+            return 200, {"addresses": suggest((query.get("q") or [""])[0], (query.get("city") or [None])[0])}, None
         if method == "GET" and path == "/api/restaurants":
             rows = db.execute("SELECT * FROM restaurants ORDER BY sort_order, id").fetchall()
             return 200, {"restaurants": [self.state.database.restaurant(db, row) for row in rows]}, None
@@ -498,7 +511,8 @@ class Handler(BaseHTTPRequestHandler):
         raise APIError(404, "Cette ressource API n’existe pas.")
 
     def create_order(self, db, data):
-        from .marketplace import selected_price
+        from .marketplace import ACCEPTANCE_SECONDS, selected_price, shifted
+        from .promotions import evaluate, normalized_code, record_use
         user = self.user(db, {"client"})
         request_id = text_field(data, "requestId", 36, 36)
         try:
@@ -516,6 +530,10 @@ class Handler(BaseHTTPRequestHandler):
         # a changed menu price or turn a previous fixed option into a new choice.
         if type(data.get("expectedTotal")) is not int:
             raise APIError(409, "La carte a évolué. Rechargez la page et mettez votre panier à jour avant de commander.")
+        running = db.execute("SELECT COUNT(*) FROM orders JOIN order_assignments ON orders.id = order_assignments.order_id "
+                             "WHERE customer_id = ? AND state NOT IN ('delivered','cancelled')", (user["id"],)).fetchone()[0]
+        if running >= 5:
+            raise APIError(409, "Vous avez déjà cinq commandes en cours dans cette démonstration. Terminez-les ou annulez-en une.")
         restaurant_id = text_field(data, "restaurantId", 1, 80)
         row = db.execute("SELECT * FROM restaurants WHERE id = ?", (restaurant_id,)).fetchone()
         if not row:
@@ -569,7 +587,11 @@ class Handler(BaseHTTPRequestHandler):
             raise APIError(400, "Le panier est limité à 100 articles pour cette démonstration.")
         subtotal = sum(item["price"] * item["quantity"] for item in items)
         delivery = restaurant["delivery"] + (0 if city == "Cayenne" else 100)
-        if data["expectedTotal"] != subtotal + delivery:
+        code = normalized_code(data.get("promoCode"), required=False)
+        promo, discount = (None, 0)
+        if code:
+            promo, discount = evaluate(db, code, user, restaurant_id, subtotal, delivery)
+        if data["expectedTotal"] != subtotal + delivery - discount:
             raise APIError(409, "Le total a changé. Vérifiez votre panier avant de confirmer la commande.")
         stamp = now_iso()
         order = {
@@ -577,7 +599,10 @@ class Handler(BaseHTTPRequestHandler):
             "restaurantId": restaurant_id, "restaurant": restaurant["name"],
             "customerId": user["id"], "customerName": customer_name,
             "phone": phone, "address": address, "city": city, "details": details, "notes": notes,
-            "status": "pending", "subtotal": subtotal, "delivery": delivery, "total": subtotal + delivery,
+            "status": "pending", "subtotal": subtotal, "delivery": delivery,
+            "discount": discount, "total": subtotal + delivery - discount,
+            "promoCode": promo["code"] if promo else None, "promoLabel": promo["label"] if promo else "",
+            "acceptBy": shifted(stamp, ACCEPTANCE_SECONDS), "eta": None,
             "count": count, "date": stamp, "updatedAt": stamp, "items": items,
             "history": [{"status": "pending", "date": stamp}],
             "courierId": None, "courierName": None,
@@ -586,6 +611,7 @@ class Handler(BaseHTTPRequestHandler):
         }
         db.execute("INSERT INTO orders VALUES (?, ?, ?, ?, ?, ?, ?)", (order["id"], user["id"], restaurant_id, request_id, request_hash, stamp, json.dumps(order, ensure_ascii=False)))
         db.execute("INSERT INTO order_assignments(order_id, courier_id, state) VALUES (?, ?, ?)", (order["id"], None, "pending"))
+        record_use(db, order, user)
         return 201, {"order": order}, None
 
     def serve_static(self, path):

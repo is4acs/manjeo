@@ -10,10 +10,14 @@ import secrets
 import time
 import uuid
 import warnings
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 from .app import APIError, CITIES, now_iso, text_field
+from .promotions import initialize_promotions, release_use
 
+ACCEPTANCE_SECONDS = 600
+COURSE_SECONDS = 15 * 60
 ACTIVE_STATUSES = {"accepted", "preparing", "ready", "picked_up"}
 CLAIM_STATUSES = {"accepted", "preparing", "ready"}
 TERMINAL_STATUSES = {"delivered", "cancelled"}
@@ -80,6 +84,7 @@ def initialize_marketplace(db):
         )""",
     ):
         db.execute(statement)
+    initialize_promotions(db)
     restaurants = {}
     for row in db.execute("SELECT * FROM restaurants ORDER BY sort_order, id").fetchall():
         restaurant = json.loads(row["data"])
@@ -116,10 +121,55 @@ def initialize_marketplace(db):
         order.setdefault("pickupCity", restaurant["pickupCity"])
         if order["status"] not in TERMINAL_STATUSES:
             order.setdefault("deliveryCode", "%04d" % secrets.randbelow(10_000))
+        order.setdefault("acceptBy", shifted(order["date"], ACCEPTANCE_SECONDS))
+        order.setdefault("eta", None)
+        order.setdefault("promoCode", None)
+        order.setdefault("promoLabel", "")
+        order.setdefault("discount", 0)
         if order != initial:
             db.execute("UPDATE orders SET data = ? WHERE id = ?", (dumps(order), row["id"]))
         db.execute("INSERT INTO order_assignments(order_id, courier_id, state) VALUES (?, ?, ?) ON CONFLICT(order_id) DO NOTHING", (order["id"], order["courierId"], order["status"]))
     db.execute("DELETE FROM delivery_attempts WHERE attempted_at <= ?", (int(time.time()) - 300,))
+
+
+def shifted(stamp, seconds):
+    """Décale un horodatage ISO sans dépendre du fuseau local."""
+    moment = datetime.fromisoformat(stamp.replace("Z", "+00:00")) + timedelta(seconds=seconds)
+    return moment.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def expire_pending_orders(handler, db):
+    """Le restaurant dispose de dix minutes pour accepter ; ensuite la commande tombe seule.
+
+    Aucune tâche de fond n'existe sur cet hébergement : l'expiration est constatée
+    à la première lecture ou écriture qui suit l'échéance.
+    """
+    stamp = now_iso()
+    late = [row["order_id"] for row in db.execute(
+        "SELECT order_id FROM order_assignments WHERE state = 'pending'").fetchall()]
+    if not late:
+        return
+    expired = []
+    for order_id in late:
+        row = db.execute("SELECT data FROM orders WHERE id = ?", (order_id,)).fetchone()
+        order = json.loads(row["data"]) if row else None
+        if order and order["status"] == "pending" and order.get("acceptBy", "") <= stamp:
+            expired.append(order)
+    if not expired:
+        return
+    handler.ensure_write(db)
+    for order in expired:
+        # Un autre appel a pu accepter la commande entre la lecture et le verrou.
+        current = json.loads(db.execute("SELECT data FROM orders WHERE id = ?", (order["id"],)).fetchone()["data"])
+        if current["status"] != "pending":
+            continue
+        current["status"] = "cancelled"
+        current["updatedAt"] = now_iso()
+        current["history"].append({"status": "cancelled", "date": current["updatedAt"],
+                                   "label": "Annulation automatique — le restaurant n’a pas répondu dans les dix minutes"})
+        db.execute("UPDATE orders SET data = ? WHERE id = ?", (dumps(current), current["id"]))
+        db.execute("UPDATE order_assignments SET state = ? WHERE order_id = ?", ("cancelled", current["id"]))
+        release_use(db, current["id"])
 
 
 def projected_order(order, user):
@@ -465,9 +515,37 @@ def transition_order(handler, db, order_id, data):
             db.execute("DELETE FROM delivery_attempts WHERE order_id = ?", (order_id,))
     else:
         raise APIError(403, "Votre compte ne permet pas ce changement de statut.")
+    if target == "accepted":
+        # L'estimation n'est posée qu'une fois, à l'acceptation : préparation + course.
+        row = db.execute("SELECT data FROM restaurants WHERE id = ?", (order["restaurantId"],)).fetchone()
+        minutes = json.loads(row["data"]).get("minutes", 25) if row else 25
+        order["eta"] = shifted(now_iso(), minutes * 60 + COURSE_SECONDS)
+        order["acceptBy"] = None
     order["status"] = target
     save_order(db, order, user, label)
+    if target == "cancelled":
+        release_use(db, order["id"])
     return 200, {"order": projected_order(order, user)}, None
+
+
+def check_promotion(handler, db, data):
+    """Aperçu de la remise avant commande ; le total qui fait foi est recalculé à la création."""
+    from .promotions import conditions, evaluate, normalized_code
+    user = handler.user(db, {"client"})
+    code = normalized_code(data.get("code"))
+    restaurant_id = identifier(data.get("restaurantId"), "restaurant")
+    row = db.execute("SELECT * FROM restaurants WHERE id = ?", (restaurant_id,)).fetchone()
+    if not row:
+        raise APIError(404, "Restaurant introuvable.")
+    restaurant = json.loads(row["data"])
+    city = text_field(data, "city", 1, 50)
+    if city not in CITIES:
+        raise APIError(400, "Cette ville n’est pas desservie dans la démo.")
+    subtotal = integer(data.get("subtotal"), "sous-total", 1, 10_000_000)
+    delivery = restaurant["delivery"] + (0 if city == "Cayenne" else 100)
+    promo, discount = evaluate(db, code, user, restaurant_id, subtotal, delivery)
+    return 200, {"promotion": {"code": promo["code"], "label": promo["label"],
+                               "conditions": conditions(promo), "discount": discount}}, None
 
 
 def delivery_offer(order):
@@ -495,6 +573,11 @@ def handle_marketplace(handler, db, path, data):
     match = re.fullmatch(r"/api/restaurants/([A-Za-z0-9-]+)/images", path)
     if match and method == "POST":
         return upload_image(handler, db, handler.managed_restaurant(db, match[1]), data)
+    if method == "GET" and path == "/api/promotions":
+        from .promotions import public_promotions
+        return 200, {"promotions": public_promotions(db)}, None
+    if method == "POST" and path == "/api/promotions/check":
+        return check_promotion(handler, db, data)
     if method == "GET" and path == "/api/deliveries":
         return deliveries(handler, db)
     if path == "/api/courier/profile" and method == "PATCH":

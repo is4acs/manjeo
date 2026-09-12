@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Bike, CheckCircle2, ChefHat, ChevronDown, Clock3, ClipboardList, CreditCard, LogOut, MapPin, PackageCheck, Phone, RefreshCw, Search, ShieldCheck, ShoppingBag, Store, Users, UtensilsCrossed, X } from "lucide-react";
 import { api, type User, type Order, type OrderStatus, type CourierProfile, statusLabels } from "@/lib/api";
 import { money, type Restaurant } from "@/lib/menu";
+import { clockLabel, countdown, isLate, useCountdown } from "./deadline";
 import MenuEditor from "./menu-editor";
 import Courier from "./courier";
 import "./staff.css";
@@ -23,6 +24,16 @@ function StatusBadge({ status }: { status: OrderStatus }) {
   return <span className={`staff-status staff-status-${status}`}><span />{statusLabels[status]}</span>;
 }
 
+// Le restaurateur voit le temps qu'il lui reste pour accepter, puis son retard éventuel.
+function OrderDeadline({ order }: { order: Order }) {
+  const seconds = useCountdown(order.status === "pending" ? order.acceptBy : null);
+  if (order.status === "pending" && order.acceptBy) {
+    return <span className={`staff-deadline ${seconds <= 120 ? "urgent" : ""}`}><Clock3 size={14} />{seconds > 0 ? <>À accepter sous <strong>{countdown(seconds)}</strong></> : <>Délai dépassé — annulation en cours</>}</span>;
+  }
+  if (!order.eta || ["delivered", "cancelled"].includes(order.status)) return null;
+  return <span className={`staff-deadline ${isLate(order.eta, order.status) ? "urgent" : ""}`}><Clock3 size={14} />{isLate(order.eta, order.status) ? <>En retard sur {clockLabel(order.eta)}</> : <>Attendue vers <strong>{clockLabel(order.eta)}</strong></>}</span>;
+}
+
 function OrderCard({ order, admin, busy, onStatus, couriers, onAssign }: { order: Order; admin: boolean; busy: boolean; onStatus: (order: Order, status: OrderStatus, reason?: string) => void; couriers: CourierProfile[]; onAssign: (order: Order, courierId: string | null, reason: string) => void }) {
   const next = nextActions[order.status];
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -35,6 +46,7 @@ function OrderCard({ order, admin, busy, onStatus, couriers, onAssign }: { order
   return <article className={`staff-order ${order.status === "pending" ? "staff-order-new" : ""}`}>
     <div className="staff-order-top">
       <div className="staff-order-id"><strong>{order.id}</strong><span>{dateLabel(order.date)}</span></div>
+      <OrderDeadline order={order} />
       <StatusBadge status={order.status} />
     </div>
     <div className="staff-order-body">
@@ -46,7 +58,7 @@ function OrderCard({ order, admin, busy, onStatus, couriers, onAssign }: { order
         {order.notes && <p className="staff-order-note"><ClipboardList size={16} /><span><strong>Note du client</strong>{order.notes}</span></p>}
       </div>
       <div className="staff-order-summary">
-        <div className="staff-order-price"><span>Total de la commande</span><strong>{money(order.total)}</strong><small>dont {money(order.delivery)} de livraison simulée</small></div>
+        <div className="staff-order-price"><span>Total de la commande</span><strong>{money(order.total)}</strong><small>dont {money(order.delivery)} de livraison simulée{order.discount > 0 ? ` · remise ${order.promoCode} de ${money(order.discount)}` : ""}</small></div>
         {next && <button type="button" className="staff-button staff-button-primary" disabled={busy} onClick={() => onStatus(order, next.status)}>{busy ? "Mise à jour…" : next.label}{!busy && <ArrowRight size={16} />}</button>}
         {canCancel && <button type="button" className="staff-cancel" disabled={busy} onClick={() => setCancelOpen(!cancelOpen)}><X size={14} />Annuler la commande</button>}
         {order.status === "ready" && <p className="staff-order-complete"><Bike size={17} />{order.courierName ? `Retrait attendu par ${order.courierName}` : "En attente d’un livreur"}</p>}

@@ -4,13 +4,17 @@ export type OrderStatus = "pending" | "accepted" | "preparing" | "ready" | "pick
 export type Order = {
   id: string; restaurantId: string; restaurant: string; customerId: string;
   customerName: string; phone: string; address: string; city: string; details: string; notes: string;
-  status: OrderStatus; subtotal: number; delivery: number; total: number; count: number;
-  date: string; updatedAt: string;
+  status: OrderStatus; subtotal: number; delivery: number; discount: number; total: number; count: number;
+  promoCode: string | null; promoLabel: string;
+  date: string; updatedAt: string; acceptBy: string | null; eta: string | null;
   courierId: string | null; courierName: string | null;
   pickupAddress: string; pickupCity: string; deliveryCode?: string;
   items: { productId: string; name: string; option: string; price: number; quantity: number }[];
   history: { status: OrderStatus; date: string; label?: string; actorName?: string }[];
 };
+export type AddressSuggestion = { label: string; number: string; street: string; city: string };
+export type Promotion = { code: string; label: string; conditions: string; discount: number };
+export type PublicPromotion = { code: string; label: string; conditions: string; restaurantId: string | null; minimum: number };
 export type CourierProfile = { id: string; name: string; email: string; online: boolean; activeOrderId: string | null };
 export type DeliveryOffer = Pick<Order, "id" | "restaurantId" | "restaurant" | "pickupAddress" | "pickupCity" | "city" | "count" | "status" | "delivery" | "date">;
 export const statusLabels: Record<OrderStatus, string> = {

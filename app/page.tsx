@@ -1,6 +1,6 @@
 "use client";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, Bike, Check, CheckCheck, ChevronLeft, Clock3, CreditCard, MapPin, Minus, PackageCheck, Plus, Search, ShoppingBag, Utensils, UserRound, RefreshCw, X } from "lucide-react";
+import { ArrowRight, Bike, Check, CheckCheck, ChevronLeft, Clock3, CreditCard, MapPin, Minus, PackageCheck, Plus, Search, ShoppingBag, Tag, Utensils, UserRound, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -9,8 +9,10 @@ import { categories, money, type Restaurant, type Product, type Selection } from
 import { defaultSelections, selectionsValid, selectionPrice, makeLine, lineNeedsUpdate, validStoredLine, type CartLine as Line } from "@/lib/cart";
 import "./customer-flow.css";
 import OrderTracking from "./order-tracking";
+import AddressField from "./address-field";
+import SiteFooter from "./site-footer";
 
-import { api, statusLabels, type Order, type User } from "@/lib/api";
+import { api, statusLabels, type Order, type Promotion, type PublicPromotion, type User } from "@/lib/api";
 
 type View = "home" | "restaurant" | "checkout" | "success";
 const normalize = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -50,6 +52,11 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState("");
   const [visible, setVisible] = useState(pageSize);
+  const [promoCode, setPromoCode] = useState("");
+  const [promotion, setPromotion] = useState<Promotion | null>(null);
+  const [promoError, setPromoError] = useState("");
+  const [promoBusy, setPromoBusy] = useState(false);
+  const [offers, setOffers] = useState<PublicPromotion[]>([]);
   const [activeGroup, setActiveGroup] = useState("");
   const listRef = useRef<HTMLElement>(null);
   const groupRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -76,7 +83,8 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   const subtotal = cart.reduce((sum, line) => sum + line.price * line.quantity, 0);
   const count = cart.reduce((sum, line) => sum + line.quantity, 0);
   const delivery = cartRestaurant ? cartRestaurant.delivery + (city === "Cayenne" ? 0 : 100) : 0;
-  const total = subtotal + delivery;
+  const discount = Math.min(promotion?.discount || 0, subtotal + delivery);
+  const total = subtotal + delivery - discount;
   const cartUnavailable = !!cart.length && (!cartRestaurant?.acceptingOrders || cart.some(line => !cartRestaurant.products.find(item => item.id === line.productId)?.available));
   const cartOutdated = cart.some(line => lineNeedsUpdate(line, cartRestaurant?.products.find(item => item.id === line.productId)));
   const productCurrent = product && restaurant.products.find(item => item.id === product.id);
@@ -88,6 +96,7 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   // Les quatre promesses du bandeau se lisent dans le catalogue : rien n’y est annoncé que la démo ne tienne.
   const openNow = restaurants.filter(item => item.acceptingOrders).length;
   const promises = restaurants.length ? [
+    ...offers.slice(0, 2).map(offer => offer.label),
     `Livraison dès ${money(Math.min(...restaurants.map(item => item.delivery)) + surcharge)}`,
     `${openNow} table${openNow > 1 ? "s" : ""} ouverte${openNow > 1 ? "s" : ""} maintenant`,
     `${Math.min(...restaurants.map(item => item.minutes))} à ${Math.max(...restaurants.map(item => item.minutes + 10))} min chrono`,
@@ -135,6 +144,8 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   }, [refreshCatalog]);
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(""), 3200); return () => clearTimeout(timer); }, [notice]);
   useEffect(() => { window.scrollTo({ top: 0, behavior: "instant" }); }, [view, selectedId]);
+  // Le bandeau annonce les codes réellement ouverts, jamais une promesse que la démo ne tient pas.
+  useEffect(() => { void api<{promotions: PublicPromotion[]}>("/api/promotions").then(data => setOffers(data.promotions)).catch(() => {}); }, []);
   useEffect(() => { setVisible(pageSize); }, [category, search, sort]);
   useEffect(() => { setActiveGroup(""); groupRefs.current = {}; }, [selectedId]);
   const filtered = useMemo(() => restaurants.filter(r => (category === "Tout" || r.category === category) && normalize(`${r.name} ${r.description} ${r.products.map(p => p.name).join(" ")}`).includes(normalize(search))).sort((a, b) => sort === "fast" ? a.minutes - b.minutes : sort === "price" ? a.from - b.from : b.rating - a.rating), [category, search, sort, restaurants]);
@@ -188,6 +199,44 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
     } catch (error) { setOrderError((error as Error).message); }
     finally { setUpdatingCart(false); }
   }
+  async function checkPromo(code: string, silent = false) {
+    if (!cartRestaurant || !subtotal) return;
+    setPromoBusy(true);
+    try {
+      const data = await api<{promotion: Promotion}>("/api/promotions/check", {method: "POST", body: JSON.stringify({code, restaurantId: cartRestaurant.id, city, subtotal})});
+      setPromotion(data.promotion); setPromoError("");
+      if (!silent) setNotice(`Code ${data.promotion.code} appliqué`);
+    } catch (error) {
+      setPromotion(null);
+      setPromoError((error as Error).message);
+    } finally { setPromoBusy(false); }
+  }
+  function applyPromo(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const code = promoCode.trim();
+    if (!code || promoBusy || submitting) return;
+    void checkPromo(code);
+  }
+  function clearPromo() { setPromotion(null); setPromoCode(""); setPromoError(""); }
+  // Le panier, la commune ou le compte changent : la remise est revérifiée avant d’être affichée.
+  useEffect(() => {
+    if (!promotion) return;
+    if (!cart.length) { clearPromo(); return; }
+    const timer = window.setTimeout(() => void checkPromo(promotion.code, true), 250);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [promotion?.code, subtotal, city, cartRestaurant?.id, user?.id, cart.length]);
+  function renderPromo() {
+    return <div className="promo-block">
+      {promotion ? <div className="promo-applied"><Tag size={16}/><span><strong>{promotion.code}</strong><small>{promotion.label}</small></span><b>− {money(discount)}</b><button type="button" onClick={clearPromo} disabled={submitting}>Retirer</button></div>
+        : <form className="promo-form" onSubmit={applyPromo}>
+            <Input aria-label="Code promo" placeholder="Code promo" value={promoCode} maxLength={24} disabled={submitting}
+              onChange={event => { setPromoCode(event.target.value.toUpperCase()); setPromoError(""); }}/>
+            <Button type="submit" variant="outline" disabled={promoBusy || submitting || !promoCode.trim()}>{promoBusy ? "Vérification…" : "Appliquer"}</Button>
+          </form>}
+      {promoError && <p className="checkout-error" role="alert">{promoError}</p>}
+    </div>;
+  }
   function requestCancel(order: Order) {
     setHistoryOpen(false); setCancelOrder(order); setCancelReason(""); setCancelError("");
   }
@@ -232,6 +281,7 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
       restaurantId: cartRestaurant.id,
       expectedTotal: total,
       items: cart.map(line => ({productId: line.productId, quantity: line.quantity, selections: line.selections, unitPrice: line.price, productVersion: line.productVersion})),
+      promoCode: promotion?.code || null,
       customerName: String(form.get("name") || "").trim(), phone: phoneDigits,
       address: address.trim(), city, details: String(form.get("details") || "").trim(), notes: String(form.get("notes") || "").trim(),
     };
@@ -242,7 +292,7 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
       const data = await api<{order: Order}>("/api/orders", {method: "POST", body: JSON.stringify({...payload, requestId: request.current.id})});
       if (activeUser.current !== user.id) return;
       setCurrentOrder(data.order); setOrders(current => [data.order, ...current.filter(order => order.id !== data.order.id)]);
-      setCart([]); setView("success"); request.current = {key: "", id: ""};
+      setCart([]); clearPromo(); setView("success"); request.current = {key: "", id: ""};
       try { sessionStorage.removeItem("manjeo-request-v1"); } catch {}
     } catch (error) {
       if (activeUser.current === user.id) {
@@ -297,9 +347,10 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
             <span className="cart-rule"/>
             <div><Clock3 size={16}/><span>Au plus vite — {cartRestaurant?.minutes} à {(cartRestaurant?.minutes || 25) + 10} min</span></div>
           </div>
+          {renderPromo()}
           {renderCartUpdate()}
           {cartUnavailable && <p className="checkout-error">Le restaurant est en pause ou un article est indisponible. Retirez les articles indisponibles ou choisissez une autre adresse.</p>}
-          <div className="cart-totals"><div><span>Sous-total</span><span>{money(subtotal)}</span></div><div><span>Livraison à {city}</span><span>{money(delivery)}</span></div><div className="total"><strong>Total</strong><strong>{money(total)}</strong></div></div>
+          <div className="cart-totals"><div><span>Sous-total</span><span>{money(subtotal)}</span></div><div><span>Livraison à {city}</span><span>{money(delivery)}</span></div>{discount > 0 && <div className="promo-line"><span>Remise {promotion?.code}</span><span>− {money(discount)}</span></div>}<div className="total"><strong>Total</strong><strong>{money(total)}</strong></div></div>
         </>}
       </div>
       {!!cart.length && view !== "checkout" && <div className="cart-foot"><Button disabled={cartUnavailable || cartOutdated || updatingCart} className="cart-checkout" onClick={checkout}>Passer commande · {money(total)}</Button></div>}
@@ -328,7 +379,7 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
               <span className="hero-badge">La Guyane a bon goût</span>
               <h1>Le marché de Cayenne, livré chaud.</h1>
               <p>{restaurants.length} tables du centre, de Rémire-Montjoly et de Matoury. Vous commandez, un livreur du coin passe prendre votre plat et vous le pose chez vous.</p>
-              <form className="hero-address" onSubmit={startOrder}><Input aria-label="Votre adresse de livraison" placeholder="12 rue Lallouette, Cayenne" value={address} onChange={event => setAddress(event.target.value)} maxLength={180}/><Button type="submit">Commander</Button></form>
+              <form className="hero-address" onSubmit={startOrder}><AddressField value={address} city={city} onChange={setAddress} onPick={suggestion => setCity(suggestion.city)} inputProps={{"aria-label": "Votre adresse de livraison", placeholder: "12 rue Lallouette, Cayenne", maxLength: 180}}/><Button type="submit">Commander</Button></form>
             </div>
             {heroRestaurant && <div className="hero-visual">
               <div className="hero-photo"><img src={heroRestaurant.image} alt={heroRestaurant.imageAlt}/></div>
@@ -403,8 +454,9 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
           <div className="checkout-account-note"><UserRound size={19}/><div><strong>{user?.role === "client" ? `Connecté en tant que ${user.name}` : "Un compte client pour passer commande"}</strong><p>{user?.role === "client" ? "Votre commande sera transmise à l’espace restaurateur de cette démo." : "Utilisez client@manjeo.test pour tester votre première commande."}</p></div><button onClick={onAccount}>{user?.role === "client" ? "Mon compte" : "Se connecter"}</button></div>
           <form key={user?.id || "guest"} className="checkout-form" onSubmit={submitOrder}>
             <section><h2><span>1</span> Vos coordonnées</h2><div className="form-grid"><label>Prénom et nom<Input disabled={submitting} defaultValue={user?.role === "client" ? user.name : ""} name="name" onInput={e => e.currentTarget.setCustomValidity("")} autoComplete="name" placeholder="Camille Dupont" required minLength={2} maxLength={80}/></label><label>Téléphone<Input disabled={submitting} name="phone" type="tel" autoComplete="tel" placeholder="0694 00 00 00" required onInput={e => e.currentTarget.setCustomValidity("")}/></label></div></section>
-            <section><h2><span>2</span> Adresse de livraison</h2><label>Rue et numéro<Input disabled={submitting} name="address" onInput={e => e.currentTarget.setCustomValidity("")} autoComplete="street-address" placeholder="12 avenue du Général de Gaulle" value={address} onChange={e => setAddress(e.target.value)} required minLength={5} maxLength={180}/></label><div className="form-grid"><label>Commune<select disabled={submitting} name="city" value={city} onChange={e => setCity(e.target.value)}>{cities.map(c => <option key={c}>{c}</option>)}</select></label><label>Bâtiment, étage (facultatif)<Input disabled={submitting} name="details" placeholder="Bâtiment A, 2e étage" maxLength={120}/></label></div><label>Instructions de livraison (facultatif)<textarea disabled={submitting} name="notes" placeholder="Un repère pour vous trouver plus facilement…" rows={2} maxLength={300}/></label><div className="delivery-estimate"><Clock3 size={20}/><div><strong>Au plus vite — {cartRestaurant?.minutes} à {(cartRestaurant?.minutes || 25) + 10} min</strong><p>Délai fictif pour tester le parcours.</p></div></div></section>
+            <section><h2><span>2</span> Adresse de livraison</h2><label>Rue et numéro<AddressField value={address} city={city} onChange={setAddress} onPick={suggestion => setCity(suggestion.city)} inputProps={{disabled: submitting, name: "address", placeholder: "12 avenue du Général de Gaulle", required: true, minLength: 5, maxLength: 180, onInput: event => event.currentTarget.setCustomValidity("")}}/></label><div className="form-grid"><label>Commune<select disabled={submitting} name="city" value={city} onChange={e => setCity(e.target.value)}>{cities.map(c => <option key={c}>{c}</option>)}</select></label><label>Bâtiment, étage (facultatif)<Input disabled={submitting} name="details" placeholder="Bâtiment A, 2e étage" maxLength={120}/></label></div><label>Instructions de livraison (facultatif)<textarea disabled={submitting} name="notes" placeholder="Un repère pour vous trouver plus facilement…" rows={2} maxLength={300}/></label><div className="delivery-estimate"><Clock3 size={20}/><div><strong>Au plus vite — {cartRestaurant?.minutes} à {(cartRestaurant?.minutes || 25) + 10} min</strong><p>Délai fictif pour tester le parcours.</p></div></div></section>
             <section><h2><span>3</span> Paiement de démonstration</h2><div className="payment-demo"><CreditCard size={23}/><div><strong>Carte de test</strong><p>Aucune carte bancaire requise. Aucun débit.</p></div><Check size={19}/></div></section>
+            {renderPromo()}
             <div className="checkout-mobile-total"><span>Total, livraison incluse</span><strong>{money(total)}</strong></div>
             {renderCartUpdate()}
             {orderError && <p className="checkout-error" role="alert">{orderError}</p>}
@@ -433,7 +485,9 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
           <button className="text-link" onClick={openHistory}>Voir mes commandes test</button>
         </div>}
       </div>
-      <footer className="site-footer"><span className="footer-brand">manjéo</span><span>La Guyane a bon goût.</span><button onClick={openHistory}>Mes commandes test</button><span>Démo en ligne · aucune commande réelle</span></footer>
+      <SiteFooter city={city} cities={cities} onCity={setCity} onAccount={onAccount} onOrders={openHistory}
+        onNearby={() => { setView("home"); setCategory("Tout"); setSearch(""); window.setTimeout(() => scrollToBlock(listRef.current), 0); }}
+        onStaff={() => { if (user && user.role !== "client") onStaff(); else onAccount(); }}/>
     </main>
     {count > 0 && (view === "home" || view === "restaurant") && <div className="order-bar">
       <div><small>{count} article{count > 1 ? "s" : ""}</small><strong>{money(total)}</strong></div>
