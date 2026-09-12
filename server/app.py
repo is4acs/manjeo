@@ -262,8 +262,10 @@ class Database:
     def product(row):
         return {**json.loads(row["data"]), "available": bool(row["available"])}
 
-    def restaurant(self, db, row):
-        products = [self.product(item) for item in db.execute("SELECT * FROM products WHERE restaurant_id = ? ORDER BY sort_order, id", (row["id"],))]
+    def restaurant(self, db, row, product_rows=None):
+        if product_rows is None:
+            product_rows = db.execute("SELECT * FROM products WHERE restaurant_id = ? ORDER BY sort_order, id", (row["id"],))
+        products = [self.product(item) for item in product_rows]
         products = [product for product in products if not product.get("archived", False)]
         result = {
             **json.loads(row["data"]),
@@ -273,6 +275,13 @@ class Database:
         available = [product["price"] for product in products if product["available"]]
         result["from"] = min(available) if available else 0
         return result
+
+    def restaurants(self, db):
+        rows = db.execute("SELECT * FROM restaurants ORDER BY sort_order, id").fetchall()
+        products = {}
+        for row in db.execute("SELECT * FROM products ORDER BY restaurant_id, sort_order, id"):
+            products.setdefault(row["restaurant_id"], []).append(row)
+        return [self.restaurant(db, row, products.get(row["id"], [])) for row in rows]
 
 
 class ManjeoServer(ThreadingHTTPServer):
@@ -576,8 +585,7 @@ class Handler(BaseHTTPRequestHandler):
             db.execute("DELETE FROM sessions WHERE token_hash = ?", (self.session_hash(),))
             return 200, {"ok": True}, self.session_cookie()
         if method == "GET" and path == "/api/restaurants":
-            rows = db.execute("SELECT * FROM restaurants ORDER BY sort_order, id").fetchall()
-            return 200, {"restaurants": [self.state.database.restaurant(db, row) for row in rows]}, None
+            return 200, {"restaurants": self.state.database.restaurants(db)}, None
         if method == "GET" and path == "/api/users":
             self.user(db, {"admin"})
             from .messaging import profile
