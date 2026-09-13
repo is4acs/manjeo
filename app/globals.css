@@ -57,22 +57,32 @@ button,input,select,textarea,a,img{transition:background var(--ease),color var(-
 
 /* Barre de navigation — pleine encre */
 .site-header{background:var(--ink);color:var(--cream);position:sticky;top:0;z-index:30}
-.header-inner{max-width:1240px;margin:auto;display:flex;align-items:center;gap:26px;padding:16px 36px}
-.brand{font-family:var(--display);font-size:22px;text-transform:uppercase;letter-spacing:-.01em;color:var(--cream);line-height:1;margin-right:6px}
-.desktop-nav{display:flex;align-items:center;gap:22px;font-size:14px}
-.desktop-nav button{color:var(--cream)}
-.desktop-nav button:hover{color:var(--punch)}
-.desktop-nav button.active{color:var(--punch);font-weight:700}
-.header-actions{margin-left:0;display:flex;align-items:center;gap:12px;min-width:0}
-.location-button{margin-left:auto;min-width:0;display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--cream);border:2px solid var(--line-on-dark);padding:8px 15px;border-radius:999px;max-width:280px;min-height:40px}
+.header-inner{max-width:1240px;margin:auto;display:flex;align-items:center;gap:10px;padding:14px 36px}
+.brand{font-family:var(--display);font-size:22px;text-transform:uppercase;letter-spacing:-.01em;color:var(--cream);line-height:1;margin-right:4px}
+/* Bascule livraison / à emporter : une pilule active, l'autre en texte crème. */
+.service-toggle{display:flex;align-items:center;gap:4px;background:#fff0dd1f;border-radius:999px;padding:4px;flex:none}
+.service-toggle button{font-size:13px;font-weight:600;color:var(--cream);padding:8px 14px;border-radius:999px;min-height:38px;white-space:nowrap}
+.service-toggle button:hover{color:var(--punch)}
+.service-toggle button.selected{font-family:var(--display);font-weight:400;font-size:12px;text-transform:uppercase;background:var(--punch);color:var(--ink)}
+.service-toggle button.selected:hover{color:var(--ink)}
+.header-search{flex:1 1 280px;min-width:170px;display:flex;align-items:center;gap:10px;background:var(--cream-2);border-radius:999px;padding:0 18px;min-height:46px;color:var(--ink)}
+.header-search input{border:0;background:transparent;font-size:15px!important;padding:0;min-height:42px;width:100%;box-shadow:none;border-radius:999px}
+.header-search input::placeholder{color:var(--ink-mute)}
+.header-search input:focus-visible{outline:none}
+.header-search:focus-within{outline:3px solid var(--punch);outline-offset:2px}
+.header-search button{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;flex:none}
+.header-search button:hover{background:#1b1a171a}
+.header-actions{margin-left:0;display:flex;align-items:center;gap:10px;min-width:0;flex:none}
+.location-button{min-width:0;display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:var(--cream);border:2px solid var(--line-on-dark);padding:8px 15px;border-radius:999px;max-width:230px;min-height:40px;flex:none}
 .location-button:hover:not(:disabled){border-color:var(--punch)}
 .location-button svg{color:var(--punch)}
-.location-button strong{font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.location-button strong{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .account-header-button,.account-staff-button{display:inline-flex;align-items:center;gap:8px;font-size:14px;color:var(--cream);min-height:40px}
 .account-header-button span{max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .account-header-button:hover,.account-staff-button:hover{color:var(--punch)}
 .account-staff-button{border:2px solid var(--line-on-dark);border-radius:999px;padding:8px 15px}
-.account-mobile-orders{display:none;width:40px;height:40px;border-radius:50%;border:2px solid var(--line-on-dark);color:var(--cream);place-items:center}
+.account-mobile-orders{display:grid;width:40px;height:40px;border-radius:50%;border:2px solid var(--line-on-dark);color:var(--cream);place-items:center;flex:none}
+.account-mobile-orders:hover{border-color:var(--punch);color:var(--punch)}
 .header-cart{display:inline-flex;align-items:center;gap:9px;font-family:var(--display);font-size:14px;text-transform:uppercase;background:var(--punch);color:var(--ink);padding:11px 18px;border-radius:999px;min-height:44px}
 .header-cart:hover{background:var(--punch-hover)}
 
@@ -82,70 +92,132 @@ button,input,select,textarea,a,img{transition:background var(--ease),color var(-
 .page-shell:has(~.order-bar){padding-bottom:100px}
 .main-content{min-width:0}
 
-/* Héros */
-.hero{display:grid;grid-template-columns:1.02fr .98fr;gap:44px;align-items:center;padding:48px 0 44px}
-.hero-copy{display:flex;flex-direction:column;align-items:flex-start;gap:20px;min-width:0}
-.hero-badge{font-family:var(--display);font-size:12px;text-transform:uppercase;letter-spacing:.08em;background:var(--ink);color:var(--cream);padding:7px 14px;border-radius:999px}
-.hero-copy p{font-size:18px;line-height:1.5;color:var(--ink-soft);max-width:29em;text-wrap:pretty}
-.hero h1{max-width:10em;overflow-wrap:anywhere}
-.hero-address{display:flex;gap:10px;width:100%;max-width:540px;margin-top:4px}
-.hero-address input{flex:1;min-height:54px;font-size:15px;padding:0 20px;border:2px solid var(--ink);border-radius:999px;background:var(--cream-2);color:var(--ink);width:100%}
-.hero-address input::placeholder{color:var(--ink-mute)}
-.hero-visual{position:relative;display:flex;justify-content:flex-end}
-.hero-photo{width:100%;height:430px;border-radius:24px;overflow:hidden;background:var(--punch)}
-.hero-photo img{width:100%;height:100%}
-.hero-sticker{position:absolute;left:-30px;top:28px;width:104px;height:104px;border-radius:50%;background:var(--punch);border:3px solid var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;transform:rotate(-9deg);text-align:center}
-.hero-sticker small{font-family:var(--display);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
-.hero-sticker strong{font-family:var(--display);font-weight:400;font-size:22px;line-height:1.1}
-.hero-caption{position:absolute;left:-24px;bottom:26px;background:var(--ink);color:var(--cream);padding:12px 20px;border-radius:999px;font-size:14px;max-width:calc(100% - 40px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hero-caption strong{font-family:var(--display);font-weight:400;text-transform:uppercase;font-size:13px}
+/* Rangée d'envies — pastille ronde + libellé, jamais d'emoji */
+.taste-row{display:flex;align-items:flex-start;gap:12px;padding:26px 0 22px;overflow-x:auto;scrollbar-width:none}
+.taste-row::-webkit-scrollbar{display:none}
+.taste{flex:1 0 auto;min-width:96px;display:flex;flex-direction:column;align-items:center;gap:9px;text-align:center}
+.taste-badge{width:62px;height:62px;border-radius:50%;background:var(--punch);color:var(--ink);display:grid;place-items:center;border:2px solid transparent}
+.taste-label{font-size:13px;font-weight:600}
+.taste:hover .taste-badge{background:var(--punch-hover)}
+.taste.selected .taste-badge{background:var(--ink);color:var(--punch)}
+.taste.selected .taste-label{font-weight:700}
+.taste .lucide{stroke-width:2.5}
 
-/* Rail d'envies */
-.category-list{display:flex;align-items:center;gap:8px;padding:0 0 34px;overflow-x:auto;scrollbar-width:none}
-@media(max-width:860px){.category-reset{margin-left:0}}
-.category-list::-webkit-scrollbar{display:none}
-.category-label{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-mute);margin-right:8px;white-space:nowrap}
-.category{font-size:13px;font-weight:600;border:2px solid var(--ink);padding:8px 16px;border-radius:999px;white-space:nowrap;min-height:40px}
-.category:hover{background:#1b1a170f}
-.category.selected{font-family:var(--display);font-weight:400;text-transform:uppercase;background:var(--ink);color:var(--cream);border-color:var(--ink)}
-.category-reset{margin-left:auto;padding-left:16px;font-size:13px;font-weight:700;text-decoration:underline;text-underline-offset:3px;white-space:nowrap;min-height:40px}
+/* Quatre filtres, pas douze */
+.quick-filters{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:0 0 24px;border-bottom:2px solid var(--line)}
+.quick-filter-pills{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.quick-filter-pills button{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;border:2px solid var(--ink);padding:9px 16px;border-radius:999px;min-height:42px;white-space:nowrap}
+.quick-filter-pills button:hover{background:#1b1a170f}
+.quick-filter-pills button.selected{font-family:var(--display);font-weight:400;font-size:13px;text-transform:uppercase;background:var(--ink);color:var(--cream)}
+.quick-filter-pills button.selected:hover{background:var(--ink-hover)}
+.quick-filter-pills button.selected svg{color:var(--punch)}
+.open-count{margin-left:auto;font-size:13px;color:var(--ink-mute)}
 
-/* Bloc « Ouvert maintenant » */
-.restaurants-section{background:var(--cream-2);margin:0 -36px;padding:42px 36px 48px}
+/* Rayons d'offres */
+.offer-rail{padding:30px 0 34px}
+.rail-heading{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+.rail-heading h2{font-size:clamp(24px,3vw,32px);letter-spacing:-.025em;line-height:1}
+.rail-meta{font-size:13px;color:var(--ink-mute)}
+.rail-tools{margin-left:auto;display:flex;align-items:center;gap:12px}
+.rail-arrows{display:flex;gap:8px}
+.rail-arrow{width:40px;height:40px;border-radius:50%;border:2px solid var(--line-2);color:var(--ink-mute);display:grid;place-items:center}
+.rail-arrow:hover:not(:disabled){border-color:var(--ink);color:var(--ink)}
+.rail-arrow.next{background:var(--ink);border-color:var(--ink);color:var(--cream)}
+.rail-arrow.next:hover:not(:disabled){background:var(--ink-hover)}
+/* overflow-anchor : sans cela, l’insertion des cartes après le chargement des offres décale le rayon. */
+.rail-track{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(248px,1fr);gap:16px;overflow-x:auto;overflow-anchor:none;scroll-snap-type:x proximity;scrollbar-width:none;padding-bottom:2px}
+.rail-track::-webkit-scrollbar{display:none}
+.rail-track>*{scroll-snap-align:start}
+.rail-dots{display:flex;justify-content:center;gap:6px;padding-top:16px}
+.rail-dots span{width:8px;height:8px;border-radius:50%;background:#1b1a174d}
+.rail-dots span.current{background:var(--ink)}
+
+/* Les bons plans — trois traitements, dans cet ordre */
+.bargain{display:flex;flex-direction:column;gap:12px;min-height:214px;border-radius:20px;padding:24px;border:2px solid transparent}
+.bargain h3{font-size:clamp(23px,2.6vw,30px);line-height:1;letter-spacing:-.03em}
+.bargain p{font-size:15px;line-height:1.45}
+.bargain-period{align-self:flex-start;font-family:var(--display);font-size:11px;text-transform:uppercase;letter-spacing:.06em;padding:6px 12px;border-radius:999px}
+.bargain-action{margin-top:auto;align-self:flex-start;font-family:var(--display);font-size:13px;text-transform:uppercase;padding:12px 20px;border-radius:999px;min-height:44px}
+.bargain.tone-0{background:var(--punch);color:var(--ink)}
+.bargain.tone-0 .bargain-period,.bargain.tone-0 .bargain-action{background:var(--ink);color:var(--cream)}
+.bargain.tone-0 .bargain-action:hover{background:var(--ink-hover)}
+.bargain.tone-1{background:var(--cream-2);border-color:var(--ink);color:var(--ink)}
+.bargain.tone-1 p{color:var(--ink-soft)}
+.bargain.tone-1 .bargain-period{background:var(--punch);color:var(--ink)}
+.bargain.tone-1 .bargain-action{background:var(--ink);color:var(--cream)}
+.bargain.tone-1 .bargain-action:hover{background:var(--ink-hover)}
+.bargain.tone-2{background:var(--ink);color:var(--cream)}
+.bargain.tone-2 h3{color:var(--punch)}
+.bargain.tone-2 p{color:var(--ink-on-dark)}
+.bargain.tone-2 .bargain-period,.bargain.tone-2 .bargain-action{background:var(--punch);color:var(--ink)}
+.bargain.tone-2 .bargain-action:hover{background:var(--punch-hover)}
+.bargain.tone-2 :focus-visible{outline-color:var(--cream)}
+
+/* En promotion maintenant */
+.promoted-block{background:var(--cream-2);margin:0 -36px;padding:4px 36px 8px;border-top:2px solid var(--line);border-bottom:2px solid var(--line)}
+.promo-card{display:flex;flex-direction:column;background:var(--cream);border:2px solid var(--ink);border-radius:20px;overflow:hidden}
+.promo-card-open{display:flex;flex-direction:column;text-align:left;width:100%}
+.promo-photo{position:relative;display:block;height:158px;background:var(--punch)}
+.promo-photo img{width:100%;height:100%}
+/* L'étiquette d'offre sort du bord gauche, à la même place sur toutes les cartes du site. */
+.offer-flag{position:absolute;left:0;top:14px;max-width:calc(100% - 20px);font-family:var(--display);font-size:12px;text-transform:uppercase;background:var(--punch);color:var(--ink);padding:7px 12px;border-radius:0 999px 999px 0;text-wrap:balance}
+.promo-body{display:flex;flex-direction:column;gap:6px;padding:14px 16px 16px;border-top:2px solid var(--ink);min-width:0}
+.promo-name{font-family:var(--display);font-size:18px;text-transform:uppercase;letter-spacing:-.015em;line-height:1.1}
+.promo-place{font-size:13px;color:var(--ink-soft)}
+.promo-meta{font-size:13px;font-weight:700}
+.promo-price{position:relative;font-family:var(--display);font-size:16px;margin-top:2px}
+.promo-price s{font-family:var(--body);font-weight:600;font-size:13px;color:var(--ink-mute)}
+.promo-terms{font-size:12px;color:var(--ink-mute);padding:0 16px 14px}
+.promo-card:hover{box-shadow:var(--shadow-md)}
+
+/* Bloc « Tous les restaurants » */
+.restaurants-section{margin:0 -36px;padding:34px 36px 38px}
 .section-heading{display:flex;align-items:baseline;flex-wrap:wrap;gap:16px;margin-bottom:22px}
 .section-heading>.section-tools{align-self:center}
 .section-time{font-size:13px;color:var(--ink-mute)}
 .section-tools{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.search-box{display:flex;align-items:center;gap:8px;background:var(--cream);border:2px solid var(--ink);border-radius:999px;padding:0 16px;min-height:40px;width:250px;color:var(--ink)}
-.search-box input{border:0;background:transparent;font-size:13px!important;padding:0;min-height:36px;width:100%;box-shadow:none}
-.search-box input:focus-visible{outline:none}
-.search-box:focus-within{outline:3px solid var(--ink);outline-offset:2px}
-.search-box button{display:grid;place-items:center;width:24px;height:24px;border-radius:50%}
 .sort-control{display:flex;flex-wrap:wrap;gap:8px;min-width:0;max-width:100%}
 .sort-control button{font-size:12px;font-weight:600;border:2px solid var(--line-2);color:var(--ink-soft);padding:7px 14px;border-radius:999px;min-height:38px;white-space:nowrap}
 .sort-control button:hover{border-color:var(--ink)}
 .sort-control button.selected{background:var(--ink);color:var(--cream);border-color:var(--ink);font-weight:700}
 .restaurant-list{display:flex;flex-direction:column;gap:12px}
-.restaurant-row{display:grid;grid-template-columns:128px 1fr auto;gap:22px;align-items:center;background:var(--cream);border:2px solid var(--line);border-radius:20px;padding:14px 20px 14px 14px;text-align:left;width:100%}
+.restaurant-row{display:grid;grid-template-columns:96px 1fr auto;gap:20px;align-items:center;background:var(--cream-2);border:2px solid var(--line);border-radius:20px;padding:12px 18px 12px 12px;text-align:left;width:100%}
 .restaurant-row:hover:not(:disabled){border-color:var(--ink)}
-.restaurant-row.featured{border-color:var(--ink)}
-.restaurant-image{display:block;height:100px;border-radius:14px;overflow:hidden;background:var(--punch)}
+.restaurant-row.featured{background:var(--cream);border-color:var(--ink)}
+.restaurant-image{display:block;height:76px;border-radius:14px;overflow:hidden;background:var(--punch)}
 .restaurant-image img{width:100%;height:100%}
-.restaurant-info{display:flex;flex-direction:column;gap:6px;min-width:0}
+.restaurant-info{display:flex;flex-direction:column;gap:4px;min-width:0}
 .restaurant-title{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.restaurant-name{font-family:var(--display);font-size:23px;text-transform:uppercase;letter-spacing:-.015em;line-height:1.05}
+.restaurant-name{font-family:var(--display);font-size:20px;text-transform:uppercase;letter-spacing:-.015em;line-height:1.05}
 .restaurant-tag{font-family:var(--display);font-size:11px;text-transform:uppercase;background:var(--punch);color:var(--ink);padding:5px 10px;border-radius:999px}
 .restaurant-tag.paused{background:var(--ink);color:var(--cream)}
 .restaurant-desc{font-size:14px;color:var(--ink-soft)}
-.restaurant-meta{font-size:13px;font-weight:600;color:var(--ink)}
-.restaurant-action{display:flex;flex-direction:column;align-items:flex-end;gap:10px}
-.restaurant-price{font-family:var(--display);font-size:20px;white-space:nowrap}
-.row-button{font-family:var(--display);font-size:13px;text-transform:uppercase;background:var(--ink);color:var(--cream);border-radius:999px;padding:11px 20px;white-space:nowrap}
+.restaurant-meta{font-size:13px;font-weight:700;color:var(--ink)}
+.restaurant-action{display:flex;align-items:center;gap:18px}
+/* Le libellé « au lieu de » est en .sr-only, donc absolu : ce bloc doit le contenir,
+   sans quoi il échappe au rayon défilant et allonge la largeur du document. */
+.restaurant-price{position:relative;font-family:var(--display);font-size:19px;white-space:nowrap}
+.restaurant-price s{font-family:var(--body);font-weight:600;font-size:13px;color:var(--ink-mute)}
+.row-button{font-family:var(--display);font-size:13px;text-transform:uppercase;background:var(--ink);color:var(--cream);border-radius:999px;padding:12px 20px;white-space:nowrap}
 .restaurant-row:hover .row-button{background:var(--ink-hover)}
 .list-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:26px;flex-wrap:wrap}
 .list-foot span{font-size:13px;color:var(--ink-mute)}
-.no-results{display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;padding:52px 20px;border:2px solid var(--line);border-radius:20px;background:var(--cream)}
+.list-foot-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.no-results{display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;padding:52px 20px;border:2px solid var(--line);border-radius:20px;background:var(--cream-2)}
 .no-results p{font-size:14px;color:var(--ink-soft)}
+
+/* Bandeau de réassurance */
+.reassurance{background:var(--ink);color:var(--cream);margin:0 -36px;padding:28px 36px;display:grid;grid-template-columns:repeat(3,1fr);gap:28px}
+.reassurance>div{display:flex;align-items:center;gap:14px;min-width:0}
+.reassurance-badge{width:44px;height:44px;border-radius:50%;background:var(--punch);color:var(--ink);display:grid;place-items:center;flex:none}
+.reassurance strong{font-family:var(--display);font-weight:400;font-size:15px;text-transform:uppercase;display:block}
+.reassurance p{font-size:13px;color:var(--ink-on-dark);margin-top:3px;text-wrap:pretty}
+
+/* Barre d'onglets — mobile seulement */
+.tab-bar{display:none;position:fixed;left:0;right:0;bottom:0;z-index:24;background:var(--cream-2);border-top:2px solid var(--line);justify-content:space-around;padding:10px 12px calc(14px + env(safe-area-inset-bottom))}
+.tab-bar button{display:flex;flex-direction:column;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--ink-mute);min-width:64px;min-height:44px}
+.tab-bar button.selected{color:var(--ink);font-weight:700}
+.tab-count{font-weight:700;color:var(--ink)}
 
 /* Fiche restaurant */
 .back-link{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin:22px 0 14px;min-height:40px}
@@ -419,22 +491,29 @@ body:has(.order-bar) .toast,body:has([data-slot=sheet-content]) .toast{bottom:ca
 
 /* Réponses aux largeurs — les titres Archivo Black ne descendent jamais sous 44 px (h1) et 28 px (h2) */
 @media(max-width:1100px){
-.hero{grid-template-columns:minmax(0,1fr);gap:28px;padding:34px 0 32px}
-.hero-visual{justify-content:stretch}
-.hero-photo{height:300px}
-.hero-sticker{left:auto;right:18px;top:18px}
-.hero-caption{left:18px;bottom:18px;max-width:calc(100% - 36px)}
-.hero h1{max-width:none}
+.header-inner{flex-wrap:wrap}
+.header-search{order:9;flex-basis:100%;min-height:44px}
+.header-actions{margin-left:auto}
+.promoted-block{padding-left:22px;padding-right:22px;margin-left:-22px;margin-right:-22px}
+.reassurance{grid-template-columns:1fr 1fr}
 }
 @media(max-width:860px){
-.header-inner{padding:14px 22px;gap:16px}
-.desktop-nav,.account-header-button span,.account-staff-button{display:none}
-.account-mobile-orders{display:grid}
+.header-inner{padding:14px 22px;gap:12px}
+.account-header-button span,.account-staff-button{display:none}
 .location-button{max-width:190px}
 .page-shell{padding:0 22px}
-.restaurants-section{margin:0 -22px;padding:32px 22px 40px}
+.taste-row{gap:16px;padding:20px 0 18px;margin:0 -22px;padding-left:22px;padding-right:22px}
+.taste{min-width:64px}
+.taste-badge{width:56px;height:56px}
+.taste-label{font-size:12px}
+.quick-filters{padding-bottom:18px}
+.open-count{margin-left:0;flex-basis:100%}
+.offer-rail{padding:24px 0 26px}
+.rail-track{grid-auto-columns:min(86%,320px)}
+.restaurants-section{margin:0 -22px;padding:28px 22px 36px}
+.promoted-block{margin:0 -22px;padding:4px 22px 8px}
+.reassurance{grid-template-columns:1fr;gap:18px;margin:0 -22px;padding:24px 22px}
 .section-tools{width:100%;margin-left:0}
-.search-box{width:100%}
 .restaurant-row{grid-template-columns:104px 1fr;gap:16px;padding:12px}
 .restaurant-image{height:88px}
 .restaurant-action{grid-column:1/-1;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between;min-width:0}
@@ -444,26 +523,31 @@ body:has(.order-bar) .toast,body:has([data-slot=sheet-content]) .toast{bottom:ca
 .footer-brand-column{grid-column:1/-1}
 .footer-legal a{margin-left:0}
 .checkout-mobile-total{display:flex}
-.hero-address{flex-direction:column;max-width:none}
-.hero-address .primary-btn{width:100%}
+/* La barre d'onglets prend le bas de l'écran : le contenu et la notification reculent. */
+.tab-bar{display:flex}
+body:has(.tab-bar) .main-content{padding-bottom:82px}
+body:has(.tab-bar) .toast{bottom:calc(96px + env(safe-area-inset-bottom))}
 .restaurant-hero{border-radius:0;margin:0 -22px;height:238px}
 .restaurant-sheet{margin-left:-22px;margin-right:-22px;padding:24px 22px 0}
 .order-bar .punch-btn{max-width:none}
 .site-footer>span:last-child{margin-left:0;width:100%}
 }
 @media(max-width:520px){
-.header-inner{padding:10px 12px;gap:6px;flex-wrap:nowrap}
+.header-inner{padding:10px 12px;gap:8px 6px;flex-wrap:wrap}
 .header-inner .brand{font-size:19px;margin-right:0;flex:none}
 .header-actions{gap:6px;flex:none;margin-left:auto}
 .account-header-button,.account-mobile-orders{width:38px;height:38px;flex:none;justify-content:center}
 .header-inner>.location-button{flex:none;width:38px;height:38px;max-width:none;min-height:38px;padding:0;justify-content:center;gap:0}
 .header-inner>.location-button strong{display:none}
 .header-cart{padding:9px 11px;font-size:12px;gap:6px;flex:none;white-space:nowrap}
-.hero-copy p{font-size:16px}
-.hero-photo{height:230px}
-.hero-sticker{width:92px;height:92px}
-.hero-sticker small{font-size:9px}
-.hero-sticker strong{font-size:17px}
+/* Sur un petit écran l'en-tête tient sur deux rangées : la bascule et la recherche partagent la seconde. */
+.service-toggle{order:8;flex:none}
+.service-toggle button{padding:7px 12px;min-height:36px;font-size:12px}
+.header-search{order:9;flex:1 1 130px;min-width:110px;padding:0 14px;min-height:40px}
+.header-search input{font-size:14px!important;min-height:36px}
+.bargain{padding:20px;min-height:0}
+.promo-photo{height:132px}
+.offer-flag{font-size:11px;padding:6px 10px}
 .cart-heading{padding:22px 64px 16px 18px}
 .cart-body,.cart-foot{padding-left:18px;padding-right:18px}
 .app-dialog{padding:22px 18px;border-radius:20px}
@@ -475,8 +559,7 @@ body:has(.order-bar) .toast,body:has([data-slot=sheet-content]) .toast{bottom:ca
 .history-order>.history-icon{display:none}
 }
 @media(min-width:861px) and (max-width:1100px){
-.header-inner{gap:16px;padding-left:22px;padding-right:22px}
-.desktop-nav{gap:14px}
+.header-inner{gap:12px;padding-left:22px;padding-right:22px}
 .header-inner>.location-button{max-width:160px}
 .account-staff-button{display:none}
 .account-header-button span{max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

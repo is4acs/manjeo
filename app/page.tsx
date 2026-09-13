@@ -1,12 +1,13 @@
 "use client";
 import { t, localeTag, tEvent, formatDate, getLanguage } from "@/lib/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, Bike, Check, CheckCheck, ChevronLeft, Clock3, MapPin, Minus, PackageCheck, Plus, Search, ShoppingBag, Tag, Utensils, UserRound, RefreshCw, X } from "lucide-react";
+import { ArrowRight, Check, CheckCheck, ChevronLeft, ChevronRight, Clock3, CreditCard, Drumstick, Fish, Flame, House, LayoutGrid, MapPin, Minus, PackageCheck, Pizza, Plus, Salad, Sandwich, Search, ShoppingBag, Tag, Utensils, UserRound, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { categories, money, type Restaurant, type Product, type Selection } from "@/lib/menu";
+import { categories, money, startingPrice, type Restaurant, type Product, type Selection } from "@/lib/menu";
+import { cardConditions, cheapestDelivery, cheapestDeliveryCount, conditionParts, endsSoon, houseOffers, offerBadge, offersByRestaurant, startingOffer } from "@/lib/offers";
 import { defaultSelections, selectionsValid, selectionPrice, makeLine, lineNeedsUpdate, validStoredLine, type CartLine as Line } from "@/lib/cart";
 import "./customer-flow.css";
 import OrderTracking from "./order-tracking";
@@ -19,17 +20,72 @@ import { prepareOrderRequest, restoreOrderRequest, type OrderRequest } from "@/l
 import { readPendingOrder, writePendingOrder, clearPendingOrder, orderMatchesCart } from './checkout-state';
 import { promotionContext, quotedDiscount, shouldAdoptProfileLocation, hasOrderConversation, type ProfileLocation } from "./customer-state";
 
-import { api, ApiError, statusLabels, type Order, type Promotion, type User, type Role, type AddressCandidate, type PaymentMethod, type PaymentConfig } from "@/lib/api";
+import { api, ApiError, statusLabels, type Order, type Promotion, type PublicPromotion, type User, type Role, type AddressCandidate, type PaymentMethod, type PaymentConfig } from "@/lib/api";
 
 type View = "home" | "restaurant" | "checkout" | "success";
-const startingPrice = (restaurant: Restaurant) => {
-  const main = restaurant.categories?.[0];
-  const available = restaurant.products.filter(item => item.available && !item.archived);
-  const dishes = main ? available.filter(item => item.group === main) : available;
-  const prices = (dishes.length ? dishes : available).map(item => item.price);
-  return prices.length ? Math.min(...prices) : restaurant.from;
-};
 const normalize = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+// Une pastille par envie du catalogue. L'icône est un glyphe Lucide : la direction interdit les emoji.
+const tasteIcons: Record<string, typeof Utensils> = {
+  "Tout": LayoutGrid, "Créole": Flame, "De la mer": Fish, "Burgers": Sandwich,
+  "Poulet": Drumstick, "Pizzas": Pizza, "Healthy": Salad,
+};
+const fastFilter = 25;
+const topRating = 4.8;
+type QuickFilter = "offers" | "fast" | "delivery" | "rated";
+
+/**
+ * Rayon d'offres à défilement : les flèches avancent d'une carte, se désactivent en
+ * butée, et les points ne s'affichent que s'il reste quelque chose à faire défiler.
+ * Aucun défilement automatique — la maquette l'interdit.
+ */
+function OfferRail({title, meta, count, children}: {title: string; meta?: React.ReactNode; count: number; children: React.ReactNode}) {
+  const track = useRef<HTMLDivElement | null>(null);
+  const [reach, setReach] = useState({start: false, end: false, index: 0});
+  const measure = useCallback(() => {
+    const node = track.current;
+    if (!node) return;
+    const card = node.firstElementChild as HTMLElement | null;
+    const step = card ? card.getBoundingClientRect().width + 16 : node.clientWidth || 1;
+    setReach({
+      start: node.scrollLeft > 4,
+      end: node.scrollLeft + node.clientWidth < node.scrollWidth - 4,
+      index: Math.min(count - 1, Math.max(0, Math.round(node.scrollLeft / step))),
+    });
+  }, [count]);
+  useEffect(() => {
+    // Un rayon s'ouvre toujours sur sa première carte : les offres arrivent après le
+    // premier rendu, et l'ancrage du navigateur pousserait sinon le rayon vers la fin.
+    if (track.current) track.current.scrollLeft = 0;
+    measure();
+    const node = track.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [measure, count]);
+  const scrollable = reach.start || reach.end;
+  function step(direction: number) {
+    const node = track.current;
+    if (!node) return;
+    const card = node.firstElementChild as HTMLElement | null;
+    const width = card ? card.getBoundingClientRect().width + 16 : node.clientWidth;
+    node.scrollBy({left: direction * width, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth"});
+  }
+  return <section className="offer-rail" aria-label={title}>
+    <div className="rail-heading">
+      <h2>{title}</h2>
+      {meta}
+      <div className="rail-tools">
+        {scrollable && <div className="rail-arrows">
+          <button className="rail-arrow" aria-label={t("Offres précédentes")} disabled={!reach.start} onClick={() => step(-1)}><ChevronLeft size={17}/></button>
+          <button className="rail-arrow next" aria-label={t("Offres suivantes")} disabled={!reach.end} onClick={() => step(1)}><ChevronRight size={17}/></button>
+        </div>}
+      </div>
+    </div>
+    <div className="rail-track" ref={track} onScroll={measure}>{children}</div>
+    {scrollable && count > 1 && <div className="rail-dots" aria-hidden="true">{Array.from({length: count}, (_, index) => <span key={index} className={index === reach.index ? "current" : ""}/>)}</div>}
+  </section>;
+}
 const cities = ["Cayenne", "Rémire-Montjoly", "Matoury"];
 const sorts = [{id: "recommended", label: "Recommandés"}, {id: "fast", label: "Le plus rapide"}, {id: "price", label: "Prix croissant"}];
 const pageSize = 4;
@@ -42,7 +98,10 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   const [selectedId, setSelectedId] = useState("ti-kreol");
   const [category, setCategory] = useState("Tout");
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState("recommended");
+  const [sort, setSort] = useState("fast");
+  const [quick, setQuick] = useState<Record<QuickFilter, boolean>>({offers: false, fast: false, delivery: false, rated: false});
+  const [promotions, setPromotions] = useState<PublicPromotion[]>([]);
+  const [clock, setClock] = useState(() => new Date());
   const [cart, setCart] = useState<Line[]>([]);
   const [ready, setReady] = useState(false);
   const [city, setCity] = useState("Cayenne");
@@ -155,9 +214,13 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   const productCurrent = product && restaurant.products.find(item => item.id === product.id);
   const productOutdated = !!product && (!productCurrent || productCurrent.version !== product.version || !productCurrent.available || !restaurant.acceptingOrders);
   const groups = (restaurant?.categories || [...new Set(restaurant?.products.map(item => item.group) || [])]).filter(group => restaurant?.products.some(item => item.group === group));
-  const heroRestaurant = restaurants[0];
-  const heroProduct = heroRestaurant?.products.find(item => item.popular && item.available) || heroRestaurant?.products[0];
   const surcharge = city === "Cayenne" ? 0 : 100;
+  const offers = useMemo(() => offersByRestaurant(promotions), [promotions]);
+  const house = useMemo(() => houseOffers(promotions), [promotions]);
+  const minDelivery = useMemo(() => cheapestDelivery(restaurants), [restaurants]);
+  const minDeliveryCount = useMemo(() => cheapestDeliveryCount(restaurants), [restaurants]);
+  const openCount = restaurants.filter(item => item.acceptingOrders).length;
+  const tastes = useMemo(() => ["Tout", ...categories.filter(name => name !== "Tout" && restaurants.some(item => item.category === name))], [restaurants]);
   useEffect(() => {
     try {
       const stored = JSON.parse(localStorage.getItem("manjeo-cart-v2") || "[]");
@@ -227,9 +290,60 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(""), 3200); return () => clearTimeout(timer); }, [notice]);
   useEffect(() => { window.scrollTo({ top: 0, behavior: "instant" }); }, [view, selectedId]);
   // Le bandeau annonce les codes réellement ouverts, jamais une promesse que la démo ne tient pas.
-  useEffect(() => { setVisible(pageSize); }, [category, search, sort]);
+  useEffect(() => { setVisible(pageSize); }, [category, search, sort, quick]);
+  // L'accueil n'annonce que des codes que le serveur accepte encore aujourd'hui.
+  useEffect(() => {
+    const lifecycle = new AbortController();
+    api<{promotions: PublicPromotion[]}>("/api/promotions", {signal: lifecycle.signal})
+      .then(data => { if (!lifecycle.signal.aborted) setPromotions(Array.isArray(data.promotions) ? data.promotions : []); })
+      .catch(() => { if (!lifecycle.signal.aborted) setPromotions([]); });
+    return () => lifecycle.abort();
+  }, []);
+  // L'heure affichée à côté du nombre d'adresses ouvertes ne doit pas figer au chargement.
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(new Date()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
   useEffect(() => { setActiveGroup(""); groupRefs.current = {}; }, [selectedId]);
-  const filtered = useMemo(() => restaurants.filter(r => (category === "Tout" || r.category === category) && normalize(`${r.name} ${r.description} ${t(r.description)} ${r.products.map(p => `${p.name} ${t(p.name)}`).join(" ")}`).includes(normalize(search))).sort((a, b) => sort === "fast" ? a.minutes - b.minutes : sort === "price" ? startingPrice(a) - startingPrice(b) : b.rating - a.rating), [category, search, sort, restaurants, locale]);
+  const filtered = useMemo(() => restaurants.filter(r =>
+    (category === "Tout" || r.category === category)
+    && (!quick.offers || offers.has(r.id))
+    && (!quick.fast || r.minutes < fastFilter)
+    && (!quick.delivery || r.delivery <= minDelivery)
+    && (!quick.rated || r.rating >= topRating)
+    && normalize(`${r.name} ${r.area || ""} ${r.description} ${t(r.description)} ${r.products.map(p => `${p.name} ${t(p.name)}`).join(" ")}`).includes(normalize(search))
+  ).sort((a, b) => sort === "fast" ? a.minutes - b.minutes : sort === "price" ? startingPrice(a) - startingPrice(b) : b.rating - a.rating), [category, search, sort, quick, offers, minDelivery, restaurants, locale]);
+  const promoted = useMemo(() => filtered.filter(r => r.acceptingOrders && offers.has(r.id)), [filtered, offers]);
+  /** Les bons plans : les codes ouverts à tous, puis le tarif de livraison le plus bas — un fait vérifiable. */
+  const bargains = useMemo(() => {
+    const cards = house.map(promotion => ({
+      key: promotion.code,
+      period: endsSoon(promotion, clock) ? t("Jusqu’au {date}", {date: formatDate(promotion.endsAt, {day: "numeric", month: "long"})}) : t("Tous les jours"),
+      title: t(promotion.label),
+      body: t("Code {code} · {conditions}", {code: promotion.code, conditions: conditionParts(promotion.conditions).map(part => t(part)).join(" · ")}),
+      action: t("Prendre le code"),
+      act: () => { setPromoCode(promotion.code); setPromoError(""); setNotice({source: "Code {code} prêt : appliquez-le dans le panier.", params: {code: promotion.code}}); scrollToBlock(listRef.current); },
+    }));
+    if (minDelivery > 0 && minDeliveryCount) cards.push({
+      key: "livraison-la-moins-chere",
+      period: t("Tous les jours"),
+      title: t("Livraison à {price}", {price: money(minDelivery + surcharge)}),
+      body: t(minDeliveryCount > 1 ? "Le tarif le plus bas du catalogue, chez {count} restaurants ouverts." : "Le tarif le plus bas du catalogue, chez {count} restaurant ouvert.", {count: minDeliveryCount}),
+      action: t("Voir ces restaurants"),
+      act: () => { setQuick(current => ({...current, delivery: true})); scrollToBlock(listRef.current); },
+    });
+    return cards;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [house, minDelivery, minDeliveryCount, surcharge, clock, locale]);
+  const filtersOn = Object.values(quick).some(Boolean) || category !== "Tout" || !!search.trim();
+  function clearFilters() { setQuick({offers: false, fast: false, delivery: false, rated: false}); setCategory("Tout"); setSearch(""); }
+  function toggleQuick(name: QuickFilter) { setQuick(current => ({...current, [name]: !current[name]})); }
+  /** Ouvre la carte du restaurant et pose son code : le client n'a plus qu'à l'appliquer au panier. */
+  function takeOffer(restaurant: Restaurant, promotion: PublicPromotion) {
+    setPromoCode(promotion.code); setPromoError("");
+    openRestaurant(restaurant);
+    setNotice({source: "Code {code} prêt : appliquez-le dans le panier.", params: {code: promotion.code}});
+  }
   function openRestaurant(r: Restaurant) { setSelectedId(r.id); setView("restaurant"); }
   function showProduct(p: Product) { if (!restaurant.acceptingOrders || !p.available) return; setProduct(p); setSelections(defaultSelections(p)); setQuantity(1); }
   function addLine(line: Line, replace = false) {
@@ -455,11 +569,6 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
     return () => lifecycle.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cart, restaurants, submitting]);
-  function startOrder(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!address.trim()) { setLocationOpen(true); return; }
-    scrollToBlock(listRef.current);
-  }
   function renderPendingOrder() {
     if (!pendingOrder || submitting) return null;
     const payload = pendingOrder.payload;
@@ -515,8 +624,12 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
   return <>
     <header className="site-header"><div className="header-inner">
       <button className="brand" aria-label={t("manjéo, accueil")} onClick={() => setView("home")}>manjéo</button>
-      <nav className="desktop-nav"><button className={view === "home" || view === "restaurant" ? "active" : ""} onClick={() => setView("home")}>{t("Restaurants")}</button><button onClick={openHistory}>{t("Mes commandes")}</button></nav>
+      <div className="service-toggle" role="group" aria-label={t("Mode de service")}>
+        <button className="selected" aria-pressed={true} onClick={() => setNotice("La livraison est le seul mode de cette démonstration.")}>{t("Livraison")}</button>
+        <button aria-pressed={false} onClick={() => setNotice("À emporter : pas encore branché dans cette démonstration.")}>{t("À emporter")}</button>
+      </div>
       <button disabled={submitting} className="location-button" aria-label={t("Adresse de livraison : {address}", {address: address ? `${address}, ${city}` : city})} onClick={() => setLocationOpen(true)}><MapPin size={15}/><strong>{address ? `${address}, ${city}` : city}</strong></button>
+      {view === "home" && <label className="header-search"><Search size={17}/><Input aria-label={t("Rechercher un restaurant ou un plat")} placeholder={t("Chercher un plat, un restaurant")} value={search} onChange={event => setSearch(event.target.value)}/>{search && <button aria-label={t("Effacer la recherche")} onClick={() => setSearch("")}><X size={14}/></button>}</label>}
       <div className="header-actions">
         {user && user.role !== "client" && <button className="account-staff-button" onClick={onStaff}>{user.role === "admin" ? t("Administration") : user.role === "courier" ? t("Mes livraisons") : t("Mon restaurant")}</button>}
         <button className="account-header-button" aria-label={user ? t("Mon compte, {name}", {name: user.name}) : t("Se connecter")} onClick={() => onAccount()}><UserRound size={17}/><span>{user ? user.name : t("Se connecter")}</span></button>
@@ -530,47 +643,92 @@ export default function Home({user, restaurants, refreshCatalog, onAccount, onSt
       <div className="main-content">
         {renderPendingOrder()}
         {view === "home" && <>
-          <section className="hero">
-            <div className="hero-copy">
-              <span className="hero-badge">{t("La Guyane a bon goût")}</span>
-              <h1>{t("Le marché de Cayenne, livré chaud.")}</h1>
-              <p>{t("{count} restaurants du centre, de Rémire-Montjoly et de Matoury. Vous commandez, un livreur du coin passe prendre votre plat et vous le pose chez vous.", {count: restaurants.length})}</p>
-              <form className="hero-address" onSubmit={startOrder}><AddressField value={address} city={city} onChange={setAddress} onPick={suggestion => setCity(suggestion.city)} inputProps={{disabled: submitting, "aria-label": t("Votre adresse de livraison"), placeholder: t("Ex. 12 rue Lallouette, Cayenne"), maxLength: 180}}/><Button type="submit" disabled={submitting}>{t("Commander")}</Button></form>
-            </div>
-            {heroRestaurant && <div className="hero-visual">
-              <div className="hero-photo"><img src={heroRestaurant.image} alt={t(heroRestaurant.imageAlt)}/></div>
-              {heroProduct && <><div className="hero-sticker"><small>{t("Plat du jour")}</small><strong>{money(heroProduct.price)}</strong></div><p className="hero-caption"><strong>{t(heroProduct.name)}</strong> · {heroRestaurant.name}</p></>}
-            </div>}
-          </section>
-          <div className="category-list" role="group" aria-label={t("Types de cuisine")}>
-            <span className="category-label">{t("Une envie")}</span>
-            {categories.filter(name => name !== "Tout").map(name => <button key={name} className={`category ${category === name ? "selected" : ""}`} onClick={() => setCategory(name)} aria-pressed={category === name}>{t(name)}</button>)}
-            <button className="category-reset" onClick={() => { setCategory("Tout"); setSearch(""); }}>{t("Tout voir")}</button>
+          <h1 className="sr-only">{t("manjéo — commander à Cayenne")}</h1>
+          <div className="taste-row" role="group" aria-label={t("Types de cuisine")}>
+            {tastes.map(name => { const Icon = tasteIcons[name] || Utensils; return <button key={name} className={`taste ${category === name ? "selected" : ""}`} aria-pressed={category === name} onClick={() => setCategory(name)}>
+              <span className="taste-badge"><Icon size={26} strokeWidth={2.5}/></span>
+              <span className="taste-label">{t(name)}</span>
+            </button>; })}
           </div>
+          <div className="quick-filters">
+            <div className="quick-filter-pills" role="group" aria-label={t("Affiner la liste")}>
+              <button className={quick.offers ? "selected" : ""} aria-pressed={quick.offers} onClick={() => toggleQuick("offers")}><Tag size={15}/>{t("Offres")}</button>
+              <button className={quick.fast ? "selected" : ""} aria-pressed={quick.fast} onClick={() => toggleQuick("fast")}>{t("Moins de {minutes} min", {minutes: fastFilter})}</button>
+              <button className={quick.delivery ? "selected" : ""} aria-pressed={quick.delivery} onClick={() => toggleQuick("delivery")}>{t("Livraison à {price}", {price: money(minDelivery + surcharge)})}</button>
+              <button className={quick.rated ? "selected" : ""} aria-pressed={quick.rated} onClick={() => toggleQuick("rated")} aria-describedby="rated-hint">{t("Mieux notés")}</button>
+              <span id="rated-hint" className="sr-only">{t("★ {rating} et plus", {rating: topRating.toLocaleString(locale, {minimumFractionDigits: 1})})}</span>
+            </div>
+            <span className="open-count">{t(openCount > 1 ? "{count} restaurants ouverts" : "{count} restaurant ouvert", {count: openCount})} · {formatDate(clock.toISOString(), {weekday: "long", hour: "2-digit", minute: "2-digit"})}</span>
+          </div>
+          {!!bargains.length && <OfferRail
+            title={t("Les bons plans du moment")}
+            count={bargains.length}
+            meta={<span className="rail-meta">{t(bargains.length > 1 ? "{count} offres ouvertes à tous" : "{count} offre ouverte à tous", {count: bargains.length})}</span>}>
+            {bargains.map((bargain, index) => <article className={`bargain tone-${index % 3}`} key={bargain.key}>
+              <span className="bargain-period">{bargain.period}</span>
+              <h3>{bargain.title}</h3>
+              <p>{bargain.body}</p>
+              <button className="bargain-action" onClick={bargain.act}>{bargain.action}</button>
+            </article>)}
+          </OfferRail>}
+          {!!promoted.length && <div className="promoted-block">
+            <OfferRail
+              title={t("En promotion maintenant")}
+              count={promoted.length}
+              meta={<button className="text-link" onClick={() => { setQuick(current => ({...current, offers: true})); scrollToBlock(listRef.current); }}>{t("Tout afficher")}</button>}>
+              {promoted.map(r => { const offer = offers.get(r.id)!; const start = startingOffer(r, offer); return <article className="promo-card" key={r.id}>
+                <button className="promo-card-open" onClick={() => openRestaurant(r)} aria-label={t("Voir la carte de {name}", {name: r.name})}>
+                  <span className="promo-photo"><img src={r.image} alt={t(r.imageAlt)} loading="lazy"/><span className="offer-flag">{t(offer.label)}</span></span>
+                  <span className="promo-body">
+                    <span className="promo-name">{r.name}</span>
+                    <span className="promo-place">{t(r.category)} · {r.area || r.pickupCity}</span>
+                    <span className="promo-meta">★ {r.rating.toLocaleString(locale, {minimumFractionDigits: 1})} · {t("{minutes} min · {price}", {minutes: r.minutes, price: money(r.delivery + surcharge)})}</span>
+                    <span className="promo-price">{start
+                      ? <>{t("dès {price}", {price: money(start.price)})} <s><i className="sr-only">{t("au lieu de")} </i>{money(start.previous)}</s></>
+                      : t("dès {price}", {price: money(startingPrice(r))})}</span>
+                  </span>
+                </button>
+                <span className="promo-terms">{t("Code {code} · {conditions}", {code: offer.code, conditions: cardConditions(offer.conditions).map(part => t(part)).join(" · ")})}</span>
+              </article>; })}
+            </OfferRail>
+          </div>}
           <section className="restaurants-section" ref={listRef}>
             <div className="section-heading">
-              <h2>{search ? t("Résultats") : category === "Tout" ? t("Les restaurants") : t("Envie de {category} ?", {category: t(category)})}</h2>
-              <span className="section-time">{t(filtered.length > 1 ? "{count} adresses près de vous" : "{count} adresse près de vous", {count: filtered.length})}</span>
+              <h2>{search ? t("Résultats") : category === "Tout" ? t("Tous les restaurants") : t("Envie de {category} ?", {category: t(category)})}</h2>
+              <span className="section-time">{t(filtered.length > 1 ? "{count} adresses · de Cayenne à Matoury" : "{count} adresse · de Cayenne à Matoury", {count: filtered.length})}</span>
               <div className="section-tools">
-                <label className="search-box"><Search size={16}/><Input aria-label={t("Rechercher un restaurant ou un plat")} placeholder={t("Un resto, un plat…")} value={search} onChange={event => setSearch(event.target.value)}/>{search && <button aria-label={t("Effacer la recherche")} onClick={() => setSearch("")}><X size={14}/></button>}</label>
                 <div className="sort-control" role="group" aria-label={t("Trier les restaurants")}>{sorts.map(option => <button key={option.id} className={sort === option.id ? "selected" : ""} aria-pressed={sort === option.id} onClick={() => setSort(option.id)}>{t(option.label)}</button>)}</div>
               </div>
             </div>
-            <div className="restaurant-list">{filtered.slice(0, visible).map(r => <button className={`restaurant-row ${r.tag === "Coup de cœur" && r.acceptingOrders ? "featured" : ""}`} key={r.id} onClick={() => openRestaurant(r)}>
+            <div className="restaurant-list">{filtered.slice(0, visible).map(r => { const offer = offers.get(r.id); const start = startingOffer(r, offer); return <button className={`restaurant-row ${r.tag === "Coup de cœur" && r.acceptingOrders ? "featured" : ""}`} key={r.id} onClick={() => openRestaurant(r)}>
               <span className="restaurant-image"><img src={r.image} alt={t(r.imageAlt)} loading="lazy"/></span>
               <span className="restaurant-info">
-                <span className="restaurant-title"><span className="restaurant-name">{r.name}</span>{(!r.acceptingOrders || r.tag === "Coup de cœur") && <span className={`restaurant-tag ${r.acceptingOrders ? "" : "paused"}`}>{r.acceptingOrders ? t(r.tag) : t("En pause")}</span>}</span>
-                <span className="restaurant-desc">{t(r.description)} — {r.pickupCity || city}</span>
+                <span className="restaurant-title"><span className="restaurant-name">{r.name}</span>{!r.acceptingOrders ? <span className="restaurant-tag paused">{t("En pause")}</span> : offer ? <span className="restaurant-tag" title={t(offer.label)}>{t(offerBadge(offer).source, offerBadge(offer).params)}</span> : r.tag === "Coup de cœur" ? <span className="restaurant-tag">{t(r.tag)}</span> : null}</span>
+                <span className="restaurant-desc">{t(r.description)} — {r.area || r.pickupCity || city}</span>
                 <span className="restaurant-meta">★ {r.rating.toLocaleString(localeTag(), {minimumFractionDigits: 1})} · {t("{minutes} min · {price} de livraison", {minutes: r.minutes, price: money(r.delivery + surcharge)})}</span>
               </span>
-              <span className="restaurant-action"><span className="restaurant-price">{t("dès {price}", {price: money(startingPrice(r))})}</span><span className="row-button">{t("Voir la carte")}</span></span>
-            </button>)}</div>
-            {!filtered.length && <div className="no-results"><Search size={32}/><h3>{t("Aucune adresse pour cette envie")}</h3><p>{t("Essayez « poulet », « burger » ou une autre cuisine.")}</p><Button variant="outline" onClick={() => { setSearch(""); setCategory("Tout"); }}>{t("Voir tous les restaurants")}</Button></div>}
+              <span className="restaurant-action"><span className="restaurant-price">{start ? <>{t("dès {price}", {price: money(start.price)})} <s><i className="sr-only">{t("au lieu de")} </i>{money(start.previous)}</s></> : t("dès {price}", {price: money(startingPrice(r))})}</span><span className="row-button">{t("Commander")}</span></span>
+            </button>; })}</div>
+            {!filtered.length && <div className="no-results"><Search size={32}/><h3>{t("Aucun restaurant ne correspond")}</h3><p>{t("Essayez « poulet », « burger » ou une autre cuisine.")}</p><Button variant="outline" onClick={clearFilters}>{t("Effacer les filtres")}</Button></div>}
             <div className="list-foot">
               <span>{t("Restaurants et produits fictifs — démonstration.")}</span>
-              {filtered.length > visible && <Button variant="outline" onClick={() => setVisible(current => current + 2)}>{filtered.length - visible === 1 ? t("Le suivant") : t("Les deux suivants")}</Button>}
+              <span className="list-foot-actions">
+                {filtersOn && <Button variant="ghost" onClick={clearFilters}>{t("Effacer les filtres")}</Button>}
+                {filtered.length > visible && <Button variant="outline" onClick={() => setVisible(current => current + 2)}>{filtered.length - visible === 1 ? t("Le suivant") : t("Les deux suivants")}</Button>}
+              </span>
             </div>
           </section>
+          <section className="reassurance" aria-label={t("Ce que la démonstration garantit")}>
+            <div><span className="reassurance-badge"><Clock3 size={21}/></span><div><strong>{t("Suivi en direct")}</strong><p>{t("Vous voyez où en est votre commande, étape par étape.")}</p></div></div>
+            <div><span className="reassurance-badge"><MapPin size={21}/></span><div><strong>{t("Cuisiné à Cayenne")}</strong><p>{t("{count} restaurants du centre, de Rémire-Montjoly et de Matoury.", {count: restaurants.length})}</p></div></div>
+            <div><span className="reassurance-badge"><CreditCard size={21}/></span><div><strong>{t("Paiement de démonstration")}</strong><p>{t("Aucun débit réel : rien n’est encaissé sur ce site.")}</p></div></div>
+          </section>
+          <nav className="tab-bar" aria-label={t("Navigation principale")}>
+            <button className="selected" aria-current="page" onClick={() => window.scrollTo({top: 0, behavior: "instant"})}><House size={22}/>{t("Accueil")}</button>
+            <button onClick={() => { setQuick(current => ({...current, offers: true})); scrollToBlock(listRef.current); }}><Tag size={22}/>{t("Offres")}</button>
+            <button onClick={() => setCartOpen(true)}><ShoppingBag size={22}/>{count ? <span className="tab-count">{t("Panier · {count}", {count})}</span> : t("Panier")}</button>
+            <button onClick={() => onAccount()}><UserRound size={22}/>{t("Compte")}</button>
+          </nav>
         </>}
         {view === "restaurant" && <>
           <div className="restaurant-hero">

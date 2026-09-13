@@ -11,10 +11,20 @@ from .app import APIError, now_iso
 CODE = re.compile(r"[A-Z0-9][A-Z0-9-]{2,23}")
 KINDS = {"percent", "amount", "delivery"}
 # Codes de démonstration. Fenêtre large : la démo doit rester utilisable dans le temps.
+WINDOW = ("2026-01-01T00:00:00Z", "2030-12-31T23:59:59Z")
 SEED = [
-    ("BIENVENUE", "20 % sur votre première commande", "percent", 20, 1500, None, "2026-01-01T00:00:00Z", "2030-12-31T23:59:59Z", 0, 1),
-    ("LIVRAISON", "Livraison offerte dès 25 €", "delivery", 0, 2500, None, "2026-01-01T00:00:00Z", "2030-12-31T23:59:59Z", 0, 3),
-    ("TIKAZ5", "5 € de remise chez Ti Kaz Kréol", "amount", 500, 2000, "ti-kreol", "2026-01-01T00:00:00Z", "2030-12-31T23:59:59Z", 200, 2),
+    ("BIENVENUE", "20 % sur votre première commande", "percent", 20, 1500, None, *WINDOW, 0, 1),
+    ("LIVRAISON", "Livraison offerte dès 25 €", "delivery", 0, 2500, None, *WINDOW, 0, 3),
+    ("TIKAZ5", "5 € de remise chez Ti Kaz Kréol", "amount", 500, 2000, "ti-kreol", *WINDOW, 200, 2),
+    # Une offre par restaurant, pour que chaque étiquette de l'accueil corresponde à un
+    # code que le serveur applique réellement au paiement. La Marée n'en a pas : la
+    # maquette montre aussi une ligne sans offre.
+    # Minimums calés sous le prix d'appel de la carte : la remise s'applique dès un seul
+    # plat, donc le prix barré affiché sur l'accueil correspond à ce que le client paie.
+    ("SMASH15", "15 % chez Smash Club", "percent", 15, 1200, "smash-club", *WINDOW, 0, 2),
+    ("BOWL10", "10 % chez Bowl Tropical", "percent", 10, 1000, "bowl-tropical", *WINDOW, 0, 2),
+    ("CRISPY3", "3 € de remise chez Crispy Kaz", "amount", 300, 1000, "crispy-kaz", *WINDOW, 0, 2),
+    ("CIAO2", "Livraison offerte chez Ciao Cayenne", "delivery", 0, 2000, "ciao-cayenne", *WINDOW, 0, 2),
 ]
 
 
@@ -146,7 +156,8 @@ def public_promotions(db):
         if promo["max_uses"] and db.execute("SELECT COUNT(*) FROM promo_uses WHERE code = ?", (promo["code"],)).fetchone()[0] >= promo["max_uses"]:
             continue
         offers.append({"code": promo["code"], "label": promo["label"], "conditions": conditions(promo),
-                       "restaurantId": promo["restaurant_id"], "minimum": promo["minimum"]})
+                       "restaurantId": promo["restaurant_id"], "minimum": promo["minimum"],
+                       "kind": promo["kind"], "value": promo["value"], "endsAt": promo["ends_at"]})
     return offers
 
 

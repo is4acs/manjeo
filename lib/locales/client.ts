@@ -100,10 +100,6 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Pa gen kòd ki disponib kounye a.",
     "Nenhum cupom disponível no momento."
   ],
-  "Aucune adresse pour cette envie": [
-    "Pa gen restoran pou sa ou vle a",
-    "Nenhum restaurante para essa vontade"
-  ],
   "Aucune carte bancaire requise. Aucun débit.": [
     "Ou pa bezwen kat labank. Pa gen lajan k ap soti.",
     "Não é necessário cartão. Nenhuma cobrança."
@@ -332,10 +328,6 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Egz. 12 rue Lallouette",
     "Ex.: 12 rue Lallouette"
   ],
-  "Ex. 12 rue Lallouette, Cayenne": [
-    "Egz. 12 rue Lallouette, Cayenne",
-    "Ex.: 12 rue Lallouette, Cayenne"
-  ],
   "Ex. Camille Dupont": [
     "Egz. Camille Dupont",
     "Ex.: Camille Dupont"
@@ -420,10 +412,6 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Entèfas React ak Vite, API Python, bazdone PostgreSQL. Kòd la piblik.",
     "Interface React e Vite, API Python, banco PostgreSQL. O código é público."
   ],
-  "La Guyane a bon goût": [
-    "Giyàn gen bon gou",
-    "A Guiana tem sabor"
-  ],
   "La Guyane a bon goût. Vos restos de Cayenne, Rémire-Montjoly et Matoury, livrés chaud.": [
     "Giyàn gen bon gou. Manje restoran Cayenne, Rémire-Montjoly ak Matoury yo rive cho lakay ou.",
     "A Guiana tem sabor. Seus restaurantes de Cayenne, Rémire-Montjoly e Matoury, com entrega quentinha."
@@ -467,10 +455,6 @@ export const clientTranslations: Record<string, [string, string]> = {
   "Le livreur a récupéré votre commande. Gardez votre code de remise à portée de main.": [
     "Livrè a pran kòmann ou an. Kenbe kòd pou resevwa li a toupre ou.",
     "O entregador retirou seu pedido. Tenha seu código de recebimento em mãos."
-  ],
-  "Le marché de Cayenne, livré chaud.": [
-    "Mache Cayenne lan, cho jouk lakay ou.",
-    "O mercado de Cayenne, entregue quente."
   ],
   "Le panier est limité à 100 articles et 50 lignes.": [
     "Panye a limite a 100 atik ak 50 liy.",
@@ -680,10 +664,6 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Foto ilistrasyon · restoran ak meni fiktif",
     "Fotos ilustrativas · restaurantes e cardápios fictícios"
   ],
-  "Plat du jour": [
-    "Plat jounen an",
-    "Prato do dia"
-  ],
   "Presque à table": [
     "Prèske lè pou manje",
     "Quase na mesa"
@@ -836,10 +816,6 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Total, livrezon enkli",
     "Total com entrega"
   ],
-  "Tout voir": [
-    "Wè tout",
-    "Ver tudo"
-  ],
   "Trier les restaurants": [
     "Klase restoran yo",
     "Ordenar restaurantes"
@@ -868,10 +844,6 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Yon pwen referans pou jwenn ou pi fasil…",
     "Um ponto de referência para encontrar você…"
   ],
-  "Un resto, un plat…": [
-    "Yon restoran, yon plat…",
-    "Um restaurante, um prato…"
-  ],
   "Un service de livraison de repas imaginé pour Cayenne, réalisé comme démonstration technique.": [
     "Yon sèvis livrezon manje imajine pou Cayenne, ki fèt kòm demonstrasyon teknik.",
     "Um serviço de entrega de refeições pensado para Cayenne, criado como demonstração técnica."
@@ -883,10 +855,6 @@ export const clientTranslations: Record<string, [string, string]> = {
   "Une commande se fait auprès d’un seul restaurant. Ajouter ce plat remplacera votre panier de {restaurant}.": [
     "Ou ka pase yon kòmann nan yon sèl restoran. Ajoute plat sa a ap ranplase panye ou nan {restaurant}.",
     "Cada pedido é feito em um único restaurante. Adicionar este prato substituirá seu carrinho de {restaurant}."
-  ],
-  "Une envie": [
-    "Yon anvi",
-    "Deu vontade"
   ],
   "Une nouvelle bonne adresse ?": [
     "Yon nouvo bon restoran?",
@@ -920,10 +888,6 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Wè kòmann tès mwen yo",
     "Ver meus pedidos de teste"
   ],
-  "Voir tous les restaurants": [
-    "Wè tout restoran yo",
-    "Ver todos os restaurantes"
-  ],
   "Vos commandes arrivent…": [
     "Kòmann ou yo ap chaje…",
     "Carregando seus pedidos…"
@@ -939,10 +903,6 @@ export const clientTranslations: Record<string, [string, string]> = {
   "Vos coordonnées": [
     "Enfòmasyon kontak ou",
     "Seus dados de contato"
-  ],
-  "Votre adresse de livraison": [
-    "Adrès livrezon ou",
-    "Seu endereço de entrega"
   ],
   "Votre code de remise": [
     "Kòd pou resevwa kòmann ou",
@@ -1020,14 +980,6 @@ export const clientTranslations: Record<string, [string, string]> = {
     "{city}, sant vil la",
     "{city}, centro"
   ],
-  "{count} adresse près de vous": [
-    "{count} restoran toupre ou",
-    "{count} restaurante perto de você"
-  ],
-  "{count} adresses près de vous": [
-    "{count} restoran toupre ou",
-    "{count} restaurantes perto de você"
-  ],
   "{count} article": [
     "{count} atik",
     "{count} item"
@@ -1051,10 +1003,6 @@ export const clientTranslations: Record<string, [string, string]> = {
   "{count} choix obligatoires": [
     "{count} chwa obligatwa",
     "{count} escolhas obrigatórias"
-  ],
-  "{count} restaurants du centre, de Rémire-Montjoly et de Matoury. Vous commandez, un livreur du coin passe prendre votre plat et vous le pose chez vous.": [
-    "{count} restoran nan sant vil la, Rémire-Montjoly ak Matoury. Ou pase kòmann, yon livrè nan zòn nan al pran plat ou a epi pote l lakay ou.",
-    "{count} restaurantes do centro, de Rémire-Montjoly e de Matoury. Você faz o pedido e um entregador da região busca seu prato e leva até sua casa."
   ],
   "{minutes} min · {price} de livraison": [
     "{minutes} min · {price} pou livrezon",
@@ -1135,5 +1083,217 @@ export const clientTranslations: Record<string, [string, string]> = {
   "Service d’adresses momentanément indisponible. Suggestions de démonstration ; vous pouvez saisir votre adresse librement.": [
     "Sèvis adrès la pa disponib pou kounye a. Sijesyon demonstrasyon; ou ka ekri adrès ou jan ou vle.",
     "Serviço de endereços temporariamente indisponível. Sugestões de demonstração; você pode digitar seu endereço livremente."
+  ],
+  "Offres précédentes": [
+    "Òf anvan yo",
+    "Ofertas anteriores"
+  ],
+  "Offres suivantes": [
+    "Òf apre yo",
+    "Próximas ofertas"
+  ],
+  "Jusqu’au {date}": [
+    "Jiska {date}",
+    "Até {date}"
+  ],
+  "Tous les jours": [
+    "Chak jou",
+    "Todos os dias"
+  ],
+  "Code {code} · {conditions}": [
+    "Kòd {code} · {conditions}",
+    "Código {code} · {conditions}"
+  ],
+  "Prendre le code": [
+    "Pran kòd la",
+    "Pegar o código"
+  ],
+  "Livraison à {price}": [
+    "Livrezon {price}",
+    "Entrega a {price}"
+  ],
+  "Le tarif le plus bas du catalogue, chez {count} restaurants ouverts.": [
+    "Pi bon pri nan tout katalòg la, nan {count} restoran ki louvri.",
+    "O menor preço do catálogo, em {count} restaurantes abertos."
+  ],
+  "Le tarif le plus bas du catalogue, chez {count} restaurant ouvert.": [
+    "Pi bon pri nan tout katalòg la, nan {count} restoran ki louvri.",
+    "O menor preço do catálogo, em {count} restaurante aberto."
+  ],
+  "Voir ces restaurants": [
+    "Wè restoran sa yo",
+    "Ver esses restaurantes"
+  ],
+  "Mode de service": [
+    "Mòd sèvis",
+    "Modo de serviço"
+  ],
+  "À emporter": [
+    "Pou pote ale",
+    "Para retirar"
+  ],
+  "Chercher un plat, un restaurant": [
+    "Chèche yon plat, yon restoran",
+    "Buscar um prato, um restaurante"
+  ],
+  "manjéo — commander à Cayenne": [
+    "manjéo — kòmande nan Cayenne",
+    "manjéo — pedir em Caiena"
+  ],
+  "Affiner la liste": [
+    "Afine lis la",
+    "Refinar a lista"
+  ],
+  "Offres": [
+    "Òf",
+    "Ofertas"
+  ],
+  "Moins de {minutes} min": [
+    "Mwens pase {minutes} min",
+    "Menos de {minutes} min"
+  ],
+  "Mieux notés": [
+    "Pi byen note",
+    "Mais bem avaliados"
+  ],
+  "★ {rating} et plus": [
+    "★ {rating} epi plis",
+    "★ {rating} ou mais"
+  ],
+  "{count} restaurants ouverts": [
+    "{count} restoran louvri",
+    "{count} restaurantes abertos"
+  ],
+  "{count} restaurant ouvert": [
+    "{count} restoran louvri",
+    "{count} restaurante aberto"
+  ],
+  "Les bons plans du moment": [
+    "Bon plan moman an",
+    "As melhores ofertas do momento"
+  ],
+  "{count} offres ouvertes à tous": [
+    "{count} òf louvri pou tout moun",
+    "{count} ofertas abertas a todos"
+  ],
+  "{count} offre ouverte à tous": [
+    "{count} òf louvri pou tout moun",
+    "{count} oferta aberta a todos"
+  ],
+  "En promotion maintenant": [
+    "An promosyon kounye a",
+    "Em promoção agora"
+  ],
+  "Tout afficher": [
+    "Montre tout",
+    "Ver tudo"
+  ],
+  "Voir la carte de {name}": [
+    "Wè kat {name}",
+    "Ver o cardápio de {name}"
+  ],
+  "{minutes} min · {price}": [
+    "{minutes} min · {price}",
+    "{minutes} min · {price}"
+  ],
+  "{count} adresses · de Cayenne à Matoury": [
+    "{count} adrès · depi Cayenne rive Matoury",
+    "{count} endereços · de Caiena a Matoury"
+  ],
+  "{count} adresse · de Cayenne à Matoury": [
+    "{count} adrès · depi Cayenne rive Matoury",
+    "{count} endereço · de Caiena a Matoury"
+  ],
+  "Aucun restaurant ne correspond": [
+    "Okenn restoran pa koresponn",
+    "Nenhum restaurante corresponde"
+  ],
+  "Effacer les filtres": [
+    "Efase filtè yo",
+    "Limpar os filtros"
+  ],
+  "Ce que la démonstration garantit": [
+    "Sa demonstrasyon an garanti",
+    "O que a demonstração garante"
+  ],
+  "Suivi en direct": [
+    "Swivi an dirèk",
+    "Acompanhamento ao vivo"
+  ],
+  "Vous voyez où en est votre commande, étape par étape.": [
+    "Ou wè kote kòmann ou rive, etap pa etap.",
+    "Você vê em que ponto está seu pedido, etapa por etapa."
+  ],
+  "Cuisiné à Cayenne": [
+    "Kwit nan Cayenne",
+    "Cozinhado em Caiena"
+  ],
+  "{count} restaurants du centre, de Rémire-Montjoly et de Matoury.": [
+    "{count} restoran nan sant vil la, Rémire-Montjoly ak Matoury.",
+    "{count} restaurantes do centro, de Rémire-Montjoly e de Matoury."
+  ],
+  "Aucun débit réel : rien n’est encaissé sur ce site.": [
+    "Pa gen okenn vrè debi : anyen pa ankese sou sit sa a.",
+    "Nenhuma cobrança real: nada é recebido neste site."
+  ],
+  "Navigation principale": [
+    "Navigasyon prensipal",
+    "Navegação principal"
+  ],
+  "Accueil": [
+    "Akèy",
+    "Início"
+  ],
+  "Compte": [
+    "Kont",
+    "Conta"
+  ],
+  "Panier · {count}": [
+    "Panye · {count}",
+    "Sacola · {count}"
+  ],
+  "La livraison est le seul mode de cette démonstration.": [
+    "Livrezon se sèl mòd demonstrasyon sa a.",
+    "A entrega é o único modo desta demonstração."
+  ],
+  "À emporter : pas encore branché dans cette démonstration.": [
+    "Pou pote ale : li poko branche nan demonstrasyon sa a.",
+    "Para retirar: ainda não está ligado nesta demonstração."
+  ],
+  "Code {code} prêt : appliquez-le dans le panier.": [
+    "Kòd {code} pare : aplike l nan panye a.",
+    "Código {code} pronto: aplique-o na sacola."
+  ],
+  "15 % chez Smash Club": [
+    "15 % nan Smash Club",
+    "15% no Smash Club"
+  ],
+  "10 % chez Bowl Tropical": [
+    "10 % nan Bowl Tropical",
+    "10% no Bowl Tropical"
+  ],
+  "3 € de remise chez Crispy Kaz": [
+    "3 € rabè nan Crispy Kaz",
+    "3 € de desconto no Crispy Kaz"
+  ],
+  "Livraison offerte chez Ciao Cayenne": [
+    "Livrezon gratis nan Ciao Cayenne",
+    "Entrega grátis no Ciao Cayenne"
+  ],
+  "−{value} %": [
+    "−{value} %",
+    "−{value}%"
+  ],
+  "−{price}": [
+    "−{price}",
+    "−{price}"
+  ],
+  "Livraison offerte": [
+    "Livrezon gratis",
+    "Entrega grátis"
+  ],
+  "au lieu de": [
+    "olye pou",
+    "em vez de"
   ]
 };

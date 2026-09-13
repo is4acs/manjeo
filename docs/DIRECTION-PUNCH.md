@@ -50,9 +50,10 @@ primitives `components/ui/*` héritent de la direction sans feuille de style par
 ## Géométrie et états
 
 - Bordures : **2 px partout** (la signature de la direction) ; 3 px seulement pour la pastille ronde
-  du héros. Aucun filet d’1 px.
-- Rayons : blocs 18–20 px · vignettes 12–14 px · photo du héros 24 px · feuille mobile 28 px ·
-  boutons, champs, pastilles **999 px**.
+  du suivi de commande. Aucun filet d’1 px.
+- Rayons : blocs 18–20 px · vignettes 12–14 px · photo de la fiche restaurant 24 px ·
+  feuille mobile 28 px · boutons, champs, pastilles **999 px** ; l’étiquette d’offre est le seul
+  rayon asymétrique du produit (`0 999px 999px 0`), parce qu’elle sort du bord de la photo.
 - États définis une seule fois (`.primary-btn`, `.punch-btn`, `.outline-btn`) : survol, pressé,
   `:focus-visible` en `3px solid var(--ink)` (cream sur fond encre), désactivé à 45 %.
   Le contour encre remplace le jaune sur crème : leurs contrastes sont respectivement
@@ -60,21 +61,77 @@ primitives `components/ui/*` héritent de la direction sans feuille de style par
   contour intérieur encre de 2 px pour rester repérable au clavier.
 - Transitions fonctionnelles seulement, 150 ms `ease-out`. Aucun parallax, aucun `hover:scale`.
 - `prefers-reduced-motion: reduce` coupe animations et défilements animés.
-- Aucun bandeau défilant : le bandeau de promesses de la maquette a été retiré de l’accueil, l’en-tête encre porte seul la marque, l’adresse, le panier et la langue.
+- Aucun bandeau défilant : le bandeau de promesses de la maquette a été retiré de l’accueil, l’en-tête encre porte seul la marque, la bascule de service, l’adresse, la recherche, le panier et la langue.
+
+## L’accueil mené par les offres
+
+L’accueil suit `ACCUEIL.md` du handoff : plus de héros, la page répond d’emblée à
+« qu’est-ce qui est intéressant, près de moi, maintenant ». Les blocs, dans cet ordre :
+
+1. **En-tête encre** — marque, bascule Livraison / À emporter, pilule d’adresse, champ de
+   recherche, compte, commandes, panier, langue.
+2. **Rangée d’envies** — une pastille ronde de 62 px par catégorie réellement présente au
+   catalogue, glyphe Lucide à `stroke-width: 2.5`, jamais d’emoji. « Tout » est l’état actif par
+   défaut ; il n’y a pas de pastille « Voir tout » puisque toutes les envies tiennent déjà sur la
+   rangée.
+3. **Quatre filtres** — Offres · Moins de 25 min · Livraison au tarif le plus bas du catalogue ·
+   Mieux notés (★ 4,8 et plus). Cumulables avec l’envie ; une combinaison vide affiche « Aucun
+   restaurant ne correspond » et un bouton « Effacer les filtres », jamais une page blanche. À
+   droite, le nombre d’adresses ouvertes et l’heure de Cayenne, rafraîchie chaque minute.
+4. **« Les bons plans du moment »** — les codes valables partout, puis le tarif de livraison le
+   plus bas du catalogue. Trois traitements dans cet ordre : aplat jaune, crème cadré d’encre,
+   aplat encre à titre jaune.
+5. **« En promotion maintenant »** — une carte par adresse qui porte une offre : photo non lavée,
+   **étiquette d’offre en drapeau** sortant du bord gauche à 14 px du haut (la même place sur
+   toutes les cartes du site), pied séparé d’un filet 2 px encre, prix d’appel et prix barré.
+6. **« Tous les restaurants »** — les lignes de liste, avec le tri complet : c’est ici qu’il vit,
+   pas dans les quatre filtres.
+7. **Bandeau de réassurance** encre, trois colonnes, et sur mobile une **barre d’onglets** basse
+   (Accueil · Offres · Panier · Compte, cibles ≥ 44 px) — le seul endroit du produit où le texte
+   descend sous 13 px.
+
+Les rayons 4 et 5 défilent horizontalement : une carte par pas, flèches désactivées en butée,
+aucun défilement automatique, et les cartes gardent 248 px minimum plutôt que de s’écraser. Un
+rayon s’ouvre toujours sur sa première carte.
+
+### Les offres ne sont jamais décoratives
+
+Le handoff prévoyait un champ `promos` dans `lib/catalog.json`. Il n’a pas été ajouté : une
+étiquette qui ne change pas ce que le client paie serait un mensonge d’affichage. Les offres de
+l’accueil sont donc **les codes promotionnels réels** de `server/promotions.py`, lus par
+`GET /api/promotions` — libellé, barème, minimum et échéance viennent du serveur, celui-là même
+qui accorde la remise au paiement.
+
+- une seule offre par adresse : seuls les codes réservés à un restaurant font une étiquette ;
+  les codes valables partout alimentent les bons plans (`lib/offers.ts`) ;
+- le **prix barré** n’apparaît que si la remise s’applique vraiment à une commande d’un seul
+  plat — bon barème et minimum atteint. Une livraison offerte ne barre jamais un prix de plat ;
+- sur une ligne de liste, la pastille résume le barème (`−15 %`, `−3,00 €`, « Livraison offerte »)
+  parce que le nom du restaurant est déjà écrit juste à côté ; sur une carte, l’étiquette porte le
+  libellé complet du serveur ;
+- « Prendre le code » et « Commander » posent le code dans le panier ; c’est le serveur qui
+  l’accepte ou le refuse, et un code refusé n’est jamais réessayé en silence.
+
+`server/test_business.py` vérifie que la remise que l’accueil annoncerait sur une commande d’un
+seul plat est exactement celle que `/api/promotions/check` accorde — ou aucune, s’il la refuse.
 
 ## Écrans
 
 | Écran | Fichiers |
 | --- | --- |
 | Accueil, liste, fiche restaurant, panier, commande, suivi | `app/page.tsx`, `app/globals.css` |
+| Lecture des offres de l’accueil | `lib/offers.ts`, `server/promotions.py` |
 | Options de produit, suivi, annulation | `app/customer-flow.css` |
 | Connexion et comptes de démonstration | `app/application.tsx`, `app/accounts.css` |
 | Espaces restaurateur, livreur, administration | `app/staff.css`, `app/courier.css`, `app/menu-editor.css` |
 
-Le héros et les lignes de liste lisent le catalogue (`lib/catalog.json` via
-`lib/api.ts`) : délais, frais de livraison, plat du jour et prix d’appel ne sont jamais écrits en dur. Le prix
-d’appel d’une ligne est le plat le moins cher de la carte principale du restaurant, pas la boisson la
-moins chère. Les prix restent en centimes et sont formatés par `money()` (`lib/menu.ts`).
+Les rayons et les lignes de liste lisent le catalogue (`lib/catalog.json` via `lib/api.ts`) :
+délais, frais de livraison, quartier et prix d’appel ne sont jamais écrits en dur. Le prix d’appel
+d’une ligne est le plat le moins cher de la carte principale du restaurant, pas la boisson la moins
+chère (`startingPrice`, `lib/menu.ts`). Les prix restent en centimes et sont formatés par `money()`.
+Le champ `area` du catalogue porte le quartier affiché sous le nom ; `seed()` (`server/app.py`)
+ajoute aux fiches déjà en base les champs de catalogue qui leur manquent, sans jamais réécrire ce
+qu’un restaurateur a modifié.
 
 ## Icône d’application et favicons
 
@@ -109,3 +166,9 @@ type, `X-Content-Type-Options: nosniff` ferait rejeter le manifeste par le navig
   sans fonction dans l’application.
 - Le stepper descendu à zéro retire la ligne du panier, comme le demande le handoff ; le bouton
   corbeille a donc disparu.
+- La bascule **« À emporter »** est présente mais n’est pas branchée : la démonstration ne sait
+  faire que de la livraison, et un mode de retrait qui facturerait quand même la livraison et
+  enverrait un livreur serait faux. Le bouton le dit au lieu de le simuler.
+- La troisième colonne du bandeau de réassurance dit « Paiement de démonstration » et non
+  « Payé à la livraison » : aucun encaissement réel n’a lieu.
+- Le champ `promos` du handoff n’existe pas : voir « Les offres ne sont jamais décoratives ».

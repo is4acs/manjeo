@@ -235,7 +235,15 @@ class Database:
     def seed(self, db):
         for position, source in enumerate(json.loads(self.catalog_path.read_text())):
             restaurant = {key: value for key, value in source.items() if key not in ("products", "acceptingOrders")}
-            if db.execute("SELECT id FROM restaurants WHERE id = ?", (restaurant["id"],)).fetchone():
+            row = db.execute("SELECT data FROM restaurants WHERE id = ?", (restaurant["id"],)).fetchone()
+            if row:
+                # Une fiche existante appartient à son exploitant : la graine ne peut
+                # qu'ajouter les champs de catalogue qu'elle n'a pas encore.
+                stored = json.loads(row["data"])
+                added = {key: value for key, value in restaurant.items() if key not in stored}
+                if added:
+                    db.execute("UPDATE restaurants SET data = ? WHERE id = ?",
+                               (json.dumps({**stored, **added}, ensure_ascii=False), restaurant["id"]))
                 continue
             db.execute("INSERT INTO restaurants(id, data, sort_order) VALUES (?, ?, ?) ON CONFLICT(id) DO NOTHING", (restaurant["id"], json.dumps(restaurant, ensure_ascii=False), position))
             for product_position, item in enumerate(source["products"]):

@@ -4,6 +4,7 @@
     "name": "Ti Kaz Kréol",
     "description": "Créole · Plats du jour · Fait maison",
     "category": "Créole",
+    "area": "Cayenne centre",
     "image": "/images/chicken.jpg",
     "imageAlt": "Poulet grillé accompagné de riz",
     "tag": "Coup de cœur",
@@ -11,6 +12,8 @@
     "minutes": 25,
     "delivery": 250,
     "from": 1100,
+    "pickupAddress": "8 rue Lallouette — adresse fictive",
+    "pickupCity": "Cayenne",
     "products": [
       {
         "id": "kreol-poulet",
@@ -52,6 +55,7 @@
     "name": "Smash Club",
     "description": "Burgers · Frites fraîches · Bien gourmand",
     "category": "Burgers",
+    "area": "Rémire-Montjoly",
     "image": "/images/burger.jpg",
     "imageAlt": "Burger au fromage fondant",
     "tag": "Pour les gourmands",
@@ -59,6 +63,8 @@
     "minutes": 20,
     "delivery": 250,
     "from": 1250,
+    "pickupAddress": "24 route de Montabo — adresse fictive",
+    "pickupCity": "Rémire-Montjoly",
     "products": [
       {
         "id": "smash-classic",
@@ -98,6 +104,7 @@
     "name": "Bowl Tropical",
     "description": "Bowls · Fraîcheur · Plein de couleurs",
     "category": "Healthy",
+    "area": "Village Chinois",
     "image": "/images/bowl.jpg",
     "imageAlt": "Bowl coloré aux légumes frais",
     "tag": "La pause fraîcheur",
@@ -105,6 +112,8 @@
     "minutes": 20,
     "delivery": 200,
     "from": 1150,
+    "pickupAddress": "3 avenue Pasteur — adresse fictive",
+    "pickupCity": "Cayenne",
     "products": [
       {
         "id": "bowl-veggie",
@@ -144,6 +153,7 @@
     "name": "Ciao Cayenne",
     "description": "Pizzas · Pâte artisanale · À partager",
     "category": "Pizzas",
+    "area": "Cépérou",
     "image": "/images/pizza.jpg",
     "imageAlt": "Pizza cuite au four",
     "tag": "L’Italie au soleil",
@@ -151,6 +161,8 @@
     "minutes": 30,
     "delivery": 300,
     "from": 1200,
+    "pickupAddress": "17 rue Christophe Colomb — adresse fictive",
+    "pickupCity": "Cayenne",
     "products": [
       {
         "id": "pizza-margherita",
@@ -190,6 +202,7 @@
     "name": "Crispy Kaz",
     "description": "Poulet croustillant · Épices · Street food",
     "category": "Poulet",
+    "area": "Cabassou",
     "image": "/images/fried-chicken.jpg",
     "imageAlt": "Poulet frit croustillant",
     "tag": "Ça croustille ici",
@@ -197,6 +210,8 @@
     "minutes": 25,
     "delivery": 250,
     "from": 1050,
+    "pickupAddress": "9 route de Cabassou — adresse fictive",
+    "pickupCity": "Matoury",
     "products": [
       {
         "id": "crispy-tenders",
@@ -236,6 +251,7 @@
     "name": "La Marée Cayennaise",
     "description": "Poisson · Crevettes · Saveurs du littoral",
     "category": "De la mer",
+    "area": "Montjoly",
     "image": "/images/seafood.jpg",
     "imageAlt": "Crevettes et garniture fraîche",
     "tag": "Un air de littoral",
@@ -243,6 +259,8 @@
     "minutes": 35,
     "delivery": 300,
     "from": 1400,
+    "pickupAddress": "41 avenue des Palmiers — adresse fictive",
+    "pickupCity": "Rémire-Montjoly",
     "products": [
       {
         "id": "maree-crevettes",

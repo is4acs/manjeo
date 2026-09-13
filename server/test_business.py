@@ -141,7 +141,46 @@ class BusinessContracts:
                      {"code": "LIVRAISON", "restaurantId": "ti-kreol", "city": "Cayenne", "subtotal": 1000},
                      role="client", status=409)
         offered = self.request("GET", "/api/promotions")[0]["promotions"]
-        self.assertEqual({row["code"] for row in offered}, {"BIENVENUE", "LIVRAISON", "TIKAZ5"})
+        self.assertEqual({row["code"] for row in offered},
+                         {"BIENVENUE", "LIVRAISON", "TIKAZ5", "SMASH15", "BOWL10", "CRISPY3", "CIAO2"})
+        # L'accueil calcule le prix d'appel barré : il lui faut le barème, pas seulement le libellé.
+        smash = next(row for row in offered if row["code"] == "SMASH15")
+        self.assertEqual((smash["kind"], smash["value"], smash["restaurantId"]), ("percent", 15, "smash-club"))
+        self.assertTrue(smash["endsAt"].endswith("Z"))
+        # Le prix barré de l'accueil est calculé par `lib/offers.ts` avec le barème renvoyé ici.
+        # Pour chaque offre, la remise que la page annoncerait sur une commande d'un seul plat
+        # doit être exactement celle que le serveur accorde — ou aucune, s'il la refuse.
+        catalogue = {row["id"]: row for row in self.request("GET", "/api/restaurants")[0]["restaurants"]}
+        checked = 0
+        for row in offered:
+            if not row["restaurantId"]:
+                continue
+            restaurant = catalogue[row["restaurantId"]]
+            main = restaurant["categories"][0]
+            cheapest = min(item["price"] for item in restaurant["products"]
+                           if item["available"] and item["group"] == main)
+            # Ce que `startingOffer` afficherait pour une commande de ce seul plat.
+            announced = (min(cheapest * row["value"] // 100, cheapest) if row["kind"] == "percent"
+                         else min(row["value"], cheapest) if row["kind"] == "amount" else 0)
+            if cheapest < row["minimum"]:
+                announced = 0
+            accepted = cheapest >= row["minimum"]
+            body, _ = self.request("POST", "/api/promotions/check",
+                                   {"code": row["code"], "restaurantId": row["restaurantId"],
+                                    "city": "Cayenne", "subtotal": cheapest},
+                                   role="client", status=200 if accepted else 409)
+            granted = body["promotion"]["discount"] if accepted and row["kind"] != "delivery" else 0
+            self.assertEqual(announced, granted, row["code"])
+            checked += 1
+        self.assertEqual(checked, 5)
+        # Chaque étiquette affichée sur l'accueil est un code que le paiement honore vraiment.
+        for row in offered:
+            if not row["restaurantId"]:
+                continue
+            self.request("POST", "/api/promotions/check",
+                         {"code": row["code"], "restaurantId": row["restaurantId"],
+                          "city": "Cayenne", "subtotal": max(row["minimum"], 2500)},
+                         role="client")
 
     def test_a_code_is_consumed_once_and_released_by_a_cancellation(self):
         self.login("client")

@@ -174,6 +174,26 @@ class SQLiteLegacyMigrationTests(LegacyMigrationAssertions, unittest.TestCase):
                 self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
             self.assert_legacy_ready_can_be_delivered(database)
 
+    def test_new_catalog_fields_reach_existing_restaurants_without_overwriting_them(self):
+        """Une fiche déjà en base ne repart pas du catalogue, mais gagne ses champs manquants."""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "catalog.sqlite3"
+            database = Database(path)
+            with database.connect() as connection:
+                database.begin_write(connection)
+                stored = json.loads(connection.execute(
+                    "SELECT data FROM restaurants WHERE id = 'ti-kreol'").fetchone()["data"])
+                stored["name"] = "Ti Kaz Kréol — nom choisi par le restaurateur"
+                del stored["area"]
+                connection.execute("UPDATE restaurants SET data = ? WHERE id = 'ti-kreol'",
+                                   (json.dumps(stored, ensure_ascii=False),))
+            Database(path)
+            with Database(path).connect() as connection:
+                row = json.loads(connection.execute(
+                    "SELECT data FROM restaurants WHERE id = 'ti-kreol'").fetchone()["data"])
+            self.assertEqual(row["name"], "Ti Kaz Kréol — nom choisi par le restaurateur")
+            self.assertEqual(row["area"], "Cayenne centre")
+
 
 @unittest.skipUnless(os.environ.get("MANJEO_TEST_DATABASE_URL"), "MANJEO_TEST_DATABASE_URL absent : PostgreSQL non testé")
 class PostgresLegacyMigrationTests(LegacyMigrationAssertions, unittest.TestCase):
