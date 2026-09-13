@@ -4,6 +4,7 @@
     "name": "Ti Kaz Kréol",
     "description": "Créole · Plats du jour · Fait maison",
     "category": "Créole",
+    "area": "Cayenne centre",
     "image": "/images/chicken.jpg",
     "imageAlt": "Poulet grillé accompagné de riz",
     "tag": "Coup de cœur",
@@ -11,6 +12,18 @@
     "minutes": 25,
     "delivery": 250,
     "from": 1100,
+    "promos": [
+      {
+        "id": "tikaz-plats-20",
+        "kind": "percent",
+        "value": 20,
+        "label": "−20 % sur les plats du jour",
+        "scope": "Les plats",
+        "startsAt": "2026-01-01",
+        "endsAt": "2030-12-31",
+        "highlight": true
+      }
+    ],
     "products": [
       {
         "id": "kreol-poulet",
@@ -52,6 +65,7 @@
     "name": "Smash Club",
     "description": "Burgers · Frites fraîches · Bien gourmand",
     "category": "Burgers",
+    "area": "Rémire-Montjoly",
     "image": "/images/burger.jpg",
     "imageAlt": "Burger au fromage fondant",
     "tag": "Pour les gourmands",
@@ -59,6 +73,18 @@
     "minutes": 20,
     "delivery": 250,
     "from": 1250,
+    "promos": [
+      {
+        "id": "smash-duo-20",
+        "kind": "bundle",
+        "value": 2000,
+        "label": "2 burgers pour 20 €",
+        "scope": "Les plats",
+        "startsAt": "2026-01-01",
+        "endsAt": "2030-12-31",
+        "highlight": false
+      }
+    ],
     "products": [
       {
         "id": "smash-classic",
@@ -97,7 +123,8 @@
     "id": "bowl-tropical",
     "name": "Bowl Tropical",
     "description": "Bowls · Fraîcheur · Plein de couleurs",
-    "category": "Healthy",
+    "category": "Bowls",
+    "area": "Village Chinois",
     "image": "/images/bowl.jpg",
     "imageAlt": "Bowl coloré aux légumes frais",
     "tag": "La pause fraîcheur",
@@ -105,6 +132,18 @@
     "minutes": 20,
     "delivery": 200,
     "from": 1150,
+    "promos": [
+      {
+        "id": "bowl-dessert-offert",
+        "kind": "freeItem",
+        "value": 2000,
+        "label": "Dessert offert dès 20 €",
+        "scope": "Les petits plus",
+        "startsAt": "2026-01-01",
+        "endsAt": "2030-12-31",
+        "highlight": false
+      }
+    ],
     "products": [
       {
         "id": "bowl-veggie",
@@ -144,6 +183,7 @@
     "name": "Ciao Cayenne",
     "description": "Pizzas · Pâte artisanale · À partager",
     "category": "Pizzas",
+    "area": "Matoury",
     "image": "/images/pizza.jpg",
     "imageAlt": "Pizza cuite au four",
     "tag": "L’Italie au soleil",
@@ -151,6 +191,18 @@
     "minutes": 30,
     "delivery": 300,
     "from": 1200,
+    "promos": [
+      {
+        "id": "ciao-midi-15",
+        "kind": "percent",
+        "value": 15,
+        "label": "−15 % le midi",
+        "scope": "midi",
+        "startsAt": "2026-01-01",
+        "endsAt": "2030-12-31",
+        "highlight": false
+      }
+    ],
     "products": [
       {
         "id": "pizza-margherita",
@@ -190,6 +242,7 @@
     "name": "Crispy Kaz",
     "description": "Poulet croustillant · Épices · Street food",
     "category": "Poulet",
+    "area": "Cabassou",
     "image": "/images/fried-chicken.jpg",
     "imageAlt": "Poulet frit croustillant",
     "tag": "Ça croustille ici",
@@ -197,6 +250,18 @@
     "minutes": 25,
     "delivery": 250,
     "from": 1050,
+    "promos": [
+      {
+        "id": "crispy-box-boisson",
+        "kind": "bundle",
+        "value": 1250,
+        "label": "Box + boisson 12,50 €",
+        "scope": "Les plats",
+        "startsAt": "2026-01-01",
+        "endsAt": "2030-12-31",
+        "highlight": false
+      }
+    ],
     "products": [
       {
         "id": "crispy-tenders",
@@ -236,6 +301,7 @@
     "name": "La Marée Cayennaise",
     "description": "Poisson · Crevettes · Saveurs du littoral",
     "category": "De la mer",
+    "area": "Rémire-Montjoly",
     "image": "/images/seafood.jpg",
     "imageAlt": "Crevettes et garniture fraîche",
     "tag": "Un air de littoral",
@@ -243,6 +309,7 @@
     "minutes": 35,
     "delivery": 300,
     "from": 1400,
+    "promos": [],
     "products": [
       {
         "id": "maree-crevettes",

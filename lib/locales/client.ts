@@ -4,6 +4,14 @@ export const clientTranslations: Record<string, [string, string]> = {
     "(opinyon fiktif)",
     "(avaliações fictícias)"
   ],
+  "À emporter": [
+    "Pou pote ale",
+    "Para levar"
+  ],
+  "Accueil": [
+    "Akèy",
+    "Início"
+  ],
   "Actualisation…": [
     "Mizajou ap fèt…",
     "Atualizando…"
@@ -84,6 +92,10 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Aplike",
     "Aplicar"
   ],
+  "arrivée vers {time}": [
+    "rive vè {time}",
+    "chegada por volta de {time}"
+  ],
   "Articles commandés et adresse": [
     "Atik kòmann lan ak adrès",
     "Itens do pedido e endereço"
@@ -100,6 +112,10 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Pa gen kòd ki disponib kounye a.",
     "Nenhum cupom disponível no momento."
   ],
+  "Aucun encaissement réel : le paiement reste en mode test.": [
+    "Pa gen okenn peman reyèl : peman an rete an mòd tès.",
+    "Nenhuma cobrança real: o pagamento permanece em modo de teste."
+  ],
   "Aucune adresse pour cette envie": [
     "Pa gen restoran pou sa ou vle a",
     "Nenhum restaurante para essa vontade"
@@ -111,6 +127,10 @@ export const clientTranslations: Record<string, [string, string]> = {
   "Aucune suggestion pour cette saisie. Vous pouvez écrire votre adresse librement.": [
     "Pa gen sijesyon pou sa ou ekri a. Ou ka ekri adrès ou jan ou vle.",
     "Nenhuma sugestão para esta busca. Você pode digitar seu endereço livremente."
+  ],
+  "Aucune table ne correspond": [
+    "Okenn tab pa koresponn",
+    "Nenhuma mesa corresponde"
   ],
   "Aucune version publiée : utilisez cette démonstration depuis votre navigateur.": [
     "Pa gen vèsyon ki pibliye: sèvi ak demonstrasyon sa a nan navigatè ou.",
@@ -152,6 +172,10 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Pwodui sa a chanje depi ou te louvri li.",
     "Este produto mudou desde que você o abriu."
   ],
+  "Ce que fait cette démonstration": [
+    "Sa demonstrasyon sa a fè",
+    "O que esta demonstração faz"
+  ],
   "Ce qui est fictif": [
     "Sa ki fiktif",
     "O que é fictício"
@@ -184,17 +208,33 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Chanje",
     "Alterar"
   ],
+  "Chercher un plat ou un restaurant": [
+    "Chèche yon plat oswa yon restoran",
+    "Buscar um prato ou um restaurante"
+  ],
   "Chez {restaurant} · {city}": [
     "Nan {restaurant} · {city}",
     "No {restaurant} · {city}"
+  ],
+  "Choisir un bon plan": [
+    "Chwazi yon bon plan",
+    "Escolher uma promoção"
   ],
   "Choisir un restaurant": [
     "Chwazi yon restoran",
     "Escolher um restaurante"
   ],
+  "Choisir une table en promotion": [
+    "Chwazi yon tab an pwomosyon",
+    "Escolher uma mesa em promoção"
+  ],
   "Choisissez votre zone de livraison pour cette démo.": [
     "Chwazi zòn livrezon ou pou demonstrasyon sa a.",
     "Escolha sua área de entrega para esta demonstração."
+  ],
+  "Code appliqué": [
+    "Kòd aplike",
+    "Código aplicado"
   ],
   "Code de remise {code}": [
     "Kòd pou resevwa kòmann lan {code}",
@@ -216,6 +256,10 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Kòd {code} · rabè {discount}",
     "Cupom {code} · desconto de {discount}"
   ],
+  "Code {code} retenu. Ajoutez un plat : la remise s’applique dans le panier.": [
+    "Kòd {code} kenbe. Ajoute yon plat : rabè a ap aplike nan panye a.",
+    "Código {code} guardado. Adicione um prato: o desconto se aplica no carrinho."
+  ],
   "Commande annulée.": [
     "Kòmann anile.",
     "Pedido cancelado."
@@ -227,6 +271,38 @@ export const clientTranslations: Record<string, [string, string]> = {
   "Commande test": [
     "Kòmann tès",
     "Pedido de teste"
+  ],
+  "Commande {id} à confirmer": [
+    "Kòmann {id} pou konfime",
+    "Pedido {id} a confirmar"
+  ],
+  "Commande {id} acceptée": [
+    "Kòmann {id} aksepte",
+    "Pedido {id} aceito"
+  ],
+  "Commande {id} annulée": [
+    "Kòmann {id} anile",
+    "Pedido {id} cancelado"
+  ],
+  "Commande {id} en préparation": [
+    "Kòmann {id} ap prepare",
+    "Pedido {id} em preparo"
+  ],
+  "Commande {id} en route": [
+    "Kòmann {id} sou wout",
+    "Pedido {id} a caminho"
+  ],
+  "Commande {id} envoyée": [
+    "Kòmann {id} voye",
+    "Pedido {id} enviado"
+  ],
+  "Commande {id} livrée": [
+    "Kòmann {id} livre",
+    "Pedido {id} entregue"
+  ],
+  "Commande {id} prête": [
+    "Kòmann {id} pare",
+    "Pedido {id} pronto"
   ],
   "Commander": [
     "Pase kòmann",
@@ -243,6 +319,10 @@ export const clientTranslations: Record<string, [string, string]> = {
   "Complétez les choix obligatoires pour ajouter ce plat.": [
     "Ranpli chwa obligatwa yo pou ajoute plat sa a.",
     "Complete as escolhas obrigatórias para adicionar este prato."
+  ],
+  "Compte": [
+    "Kont",
+    "Conta"
   ],
   "Comptes de démonstration": [
     "Kont demonstrasyon",
@@ -272,6 +352,10 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Konekte kòm {name}",
     "Conectado como {name}"
   ],
+  "Connexion": [
+    "Koneksyon",
+    "Entrar"
+  ],
   "Continuer mes achats": [
     "Kontinye chwazi manje",
     "Continuar comprando"
@@ -279,6 +363,18 @@ export const clientTranslations: Record<string, [string, string]> = {
   "Courses à récupérer": [
     "Livrezon pou pran",
     "Entregas para retirar"
+  ],
+  "Cuisiné à Cayenne": [
+    "Kwit nan Cayenne",
+    "Cozinhado em Caiena"
+  ],
+  "de Cayenne à Matoury": [
+    "soti Cayenne rive Matoury",
+    "de Caiena a Matoury"
+  ],
+  "Dès {price}": [
+    "Apati {price}",
+    "A partir de {price}"
   ],
   "Diminuer la quantité": [
     "Diminye kantite a",
@@ -292,9 +388,17 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Demonstrasyon sou entènèt · restoran, pri ak livrezon fiktif",
     "Demonstração online · restaurantes, preços e entregas fictícios"
   ],
+  "Écrire à {name}": [
+    "Ekri {name}",
+    "Escrever para {name}"
+  ],
   "Effacer la recherche": [
     "Efase rechèch la",
     "Limpar busca"
+  ],
+  "Effacer les filtres": [
+    "Efase filtè yo",
+    "Limpar os filtros"
   ],
   "En attente de la prise en charge par un livreur.": [
     "N ap tann yon livrè pran kòmann lan.",
@@ -303,6 +407,10 @@ export const clientTranslations: Record<string, [string, string]> = {
   "En pause": [
     "An poz",
     "Pausado"
+  ],
+  "En promotion ce soir": [
+    "An pwomosyon aswè a",
+    "Em promoção hoje à noite"
   ],
   "En savoir plus": [
     "Konnen plis",
@@ -323,6 +431,14 @@ export const clientTranslations: Record<string, [string, string]> = {
   "Essayez « poulet », « burger » ou une autre cuisine.": [
     "Eseye « poul », « anmbègè » oswa yon lòt kalite manje.",
     "Tente “frango”, “hambúrguer” ou outro tipo de comida."
+  ],
+  "et {count} autre commande": [
+    "ak {count} lòt kòmann",
+    "e mais {count} pedido"
+  ],
+  "et {count} autres commandes": [
+    "ak {count} lòt kòmann",
+    "e mais {count} pedidos"
   ],
   "Ex. 12 avenue du Général de Gaulle": [
     "Egz. 12 avenue du Général de Gaulle",
@@ -359,6 +475,10 @@ export const clientTranslations: Record<string, [string, string]> = {
   "Faites vos courses": [
     "Fè pwovizyon ou",
     "Faça suas compras"
+  ],
+  "Filtrer les tables": [
+    "Filtre tab yo",
+    "Filtrar as mesas"
   ],
   "Garder mon panier actuel": [
     "Kenbe panye mwen genyen an",
@@ -420,6 +540,10 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Entèfas React ak Vite, API Python, bazdone PostgreSQL. Kòd la piblik.",
     "Interface React e Vite, API Python, banco PostgreSQL. O código é público."
   ],
+  "J’en profite": [
+    "Mwen pwofite",
+    "Quero aproveitar"
+  ],
   "La Guyane a bon goût": [
     "Giyàn gen bon gou",
     "A Guiana tem sabor"
@@ -455,6 +579,10 @@ export const clientTranslations: Record<string, [string, string]> = {
   "Le code du projet": [
     "Kòd pwojè a",
     "Código do projeto"
+  ],
+  "Le code {code} s’applique chez {restaurant}.": [
+    "Kòd {code} la aplike lakay {restaurant}.",
+    "O código {code} vale no {restaurant}."
   ],
   "Le délai est écoulé. Nous vérifions la réponse du restaurant.": [
     "Tan an fini. N ap verifye repons restoran an.",
@@ -512,6 +640,10 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Swivi a ap montre yon lè livrezon estime apre restoran an aksepte kòmann lan.",
     "O acompanhamento mostrará uma estimativa de entrega após a aceitação pelo restaurante."
   ],
+  "Les bons plans du moment": [
+    "Bon plan moman an",
+    "As promoções do momento"
+  ],
   "Les codes du moment": [
     "Kòd ki disponib kounye a",
     "Cupons do momento"
@@ -519,6 +651,10 @@ export const clientTranslations: Record<string, [string, string]> = {
   "Les deux suivants": [
     "De pwochen yo",
     "Os próximos dois"
+  ],
+  "Les horaires de retrait sont indicatifs : cette démonstration termine toujours la commande en livraison.": [
+    "Lè pou vin chèche yo se yon endikasyon : demonstrasyon sa a toujou fini kòmann nan an livrezon.",
+    "Os horários de retirada são indicativos: esta demonstração sempre conclui o pedido em entrega."
   ],
   "Les restaurants": [
     "Restoran yo",
@@ -535,6 +671,10 @@ export const clientTranslations: Record<string, [string, string]> = {
   "Livraison : {price}": [
     "Livrezon: {price}",
     "Entrega: {price}"
+  ],
+  "Livraison à {price}": [
+    "Livrezon a {price}",
+    "Entrega a {price}"
   ],
   "Livraison estimée vers {time} — le retard est signalé au restaurant et au livreur.": [
     "Livrezon estime bò {time} — restoran an ak livrè a enfòme sou reta a.",
@@ -576,9 +716,21 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Mete panye mwen ajou",
     "Atualizar meu carrinho"
   ],
+  "Mieux notés": [
+    "Pi byen note",
+    "Mais bem avaliados"
+  ],
   "Mise à jour automatique · 8 s": [
     "Mizajou otomatik · 8 s",
     "Atualização automática · 8 s"
+  ],
+  "Mode de service": [
+    "Mòd sèvis",
+    "Modo de serviço"
+  ],
+  "Moins de {minutes} min": [
+    "Mwens pase {minutes} min",
+    "Menos de {minutes} min"
   ],
   "Mon compte": [
     "Kont mwen",
@@ -596,9 +748,29 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Rezon anilasyon an",
     "Motivo do cancelamento"
   ],
+  "Navigation principale": [
+    "Navigasyon prensipal",
+    "Navegação principal"
+  ],
   "Obtenir de l’aide": [
     "Jwenn èd",
     "Obter ajuda"
+  ],
+  "Offre {position} sur {total}": [
+    "Òf {position} sou {total}",
+    "Oferta {position} de {total}"
+  ],
+  "Offres": [
+    "Òf",
+    "Ofertas"
+  ],
+  "Offres précédentes": [
+    "Òf anvan yo",
+    "Ofertas anteriores"
+  ],
+  "Offres suivantes": [
+    "Òf apre yo",
+    "Próximas ofertas"
   ],
   "On vous livre où ?": [
     "Ki kote pou nou livre ba ou?",
@@ -752,9 +924,17 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Retire {name} nan panye a",
     "Remover {name} do carrinho"
   ],
+  "Retirez un filtre ou choisissez une autre envie.": [
+    "Retire yon filtè oswa chwazi yon lòt anvi.",
+    "Remova um filtro ou escolha outro tipo de cozinha."
+  ],
   "Retour à la carte": [
     "Retounen nan meni an",
     "Voltar ao cardápio"
+  ],
+  "Retrait en {minutes} min": [
+    "Pou vin chèche nan {minutes} min",
+    "Retirada em {minutes} min"
   ],
   "Revenir à tous les restaurants": [
     "Retounen nan tout restoran yo",
@@ -812,9 +992,17 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Swivi kòmann ou an",
     "Acompanhamento do seu pedido"
   ],
+  "Suivi en direct": [
+    "Swivi an dirèk",
+    "Acompanhamento ao vivo"
+  ],
   "Suivi {id}": [
     "Swivi {id}",
     "Acompanhamento {id}"
+  ],
+  "Suivre la livraison": [
+    "Swiv livrezon an",
+    "Acompanhar a entrega"
   ],
   "Suivre les quatre espaces": [
     "Swiv kat espas yo",
@@ -836,13 +1024,33 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Total, livrezon enkli",
     "Total com entrega"
   ],
+  "Tous les jours": [
+    "Chak jou",
+    "Todos os dias"
+  ],
+  "Tout afficher": [
+    "Montre tout",
+    "Ver tudo"
+  ],
   "Tout voir": [
     "Wè tout",
     "Ver tudo"
   ],
+  "Toutes les tables ouvertes": [
+    "Tout tab ki ouvè",
+    "Todas as mesas abertas"
+  ],
+  "Trier :": [
+    "Klase :",
+    "Ordenar:"
+  ],
   "Trier les restaurants": [
     "Klase restoran yo",
     "Ordenar restaurantes"
+  ],
+  "Trier les tables": [
+    "Klase tab yo",
+    "Ordenar as mesas"
   ],
   "Types de cuisine": [
     "Kalite manje",
@@ -896,9 +1104,17 @@ export const clientTranslations: Record<string, [string, string]> = {
     "Yon ti grangou?",
     "Bateu uma fominha?"
   ],
+  "Utiliser le code {code}": [
+    "Sèvi ak kòd {code}",
+    "Usar o código {code}"
+  ],
   "Utilisez client@manjeo.test pour tester votre première commande.": [
     "Sèvi ak client@manjeo.test pou teste premye kòmann ou an.",
     "Use client@manjeo.test para testar seu primeiro pedido."
+  ],
+  "Valable sur toute la carte.": [
+    "Valab sou tout meni an.",
+    "Válido em todo o cardápio."
   ],
   "Valider mon adresse": [
     "Konfime adrès mwen",
@@ -923,6 +1139,18 @@ export const clientTranslations: Record<string, [string, string]> = {
   "Voir tous les restaurants": [
     "Wè tout restoran yo",
     "Ver todos os restaurantes"
+  ],
+  "Voir tout": [
+    "Gade tout",
+    "Ver todas"
+  ],
+  "Voir {count} table de plus": [
+    "Gade {count} tab anplis",
+    "Ver mais {count} mesa"
+  ],
+  "Voir {count} tables de plus": [
+    "Gade {count} tab anplis",
+    "Ver mais {count} mesas"
   ],
   "Vos commandes arrivent…": [
     "Kòmann ou yo ap chaje…",
@@ -979,6 +1207,10 @@ export const clientTranslations: Record<string, [string, string]> = {
   "Vérification pour ce panier…": [
     "Verifikasyon pou panye sa a…",
     "Verificando para este carrinho…"
+  ],
+  "Vous voyez où en est votre commande, étape par étape.": [
+    "Ou wè kote kòmann ou an ye, etap pa etap.",
+    "Você vê em que ponto está o seu pedido, etapa por etapa."
   ],
   "Zone de livraison": [
     "Zòn livrezon",
@@ -1052,9 +1284,37 @@ export const clientTranslations: Record<string, [string, string]> = {
     "{count} chwa obligatwa",
     "{count} escolhas obrigatórias"
   ],
+  "{count} offre à utiliser dans votre panier": [
+    "{count} òf pou sèvi nan panye ou",
+    "{count} oferta para usar no seu carrinho"
+  ],
+  "{count} offres à utiliser dans votre panier": [
+    "{count} òf pou sèvi nan panye ou",
+    "{count} ofertas para usar no seu carrinho"
+  ],
+  "{count} restaurants du centre, de Rémire-Montjoly et de Matoury. Entrez votre adresse : on vous montre qui livre chez vous, en combien de temps et à quel prix.": [
+    "{count} restoran nan sant lan, nan Rémire-Montjoly ak nan Matoury. Mete adrès ou : n ap montre ou kiyès ki livre lakay ou, nan konbyen tan ak a ki pri.",
+    "{count} restaurantes do centro, de Rémire-Montjoly e de Matoury. Informe seu endereço: mostramos quem entrega na sua casa, em quanto tempo e por qual preço."
+  ],
   "{count} restaurants du centre, de Rémire-Montjoly et de Matoury. Vous commandez, un livreur du coin passe prendre votre plat et vous le pose chez vous.": [
     "{count} restoran nan sant vil la, Rémire-Montjoly ak Matoury. Ou pase kòmann, yon livrè nan zòn nan al pran plat ou a epi pote l lakay ou.",
     "{count} restaurantes do centro, de Rémire-Montjoly e de Matoury. Você faz o pedido e um entregador da região busca seu prato e leva até sua casa."
+  ],
+  "{count} table ouverte · {day}, {time}": [
+    "{count} tab ouvè · {day}, {time}",
+    "{count} mesa aberta · {day}, {time}"
+  ],
+  "{count} tables du centre, de Rémire et de Matoury.": [
+    "{count} tab nan sant lan, nan Rémire ak nan Matoury.",
+    "{count} mesas do centro, de Rémire e de Matoury."
+  ],
+  "{count} tables ouvertes · {day}, {time}": [
+    "{count} tab ouvè · {day}, {time}",
+    "{count} mesas abertas · {day}, {time}"
+  ],
+  "{minutes} min · {price}": [
+    "{minutes} min · {price}",
+    "{minutes} min · {price}"
   ],
   "{minutes} min · {price} de livraison": [
     "{minutes} min · {price} pou livrezon",

@@ -1,0 +1,16 @@
+/* Bandeau « commande en cours » — bloc crème clair cadré d'un trait de 2 px encre. */
+.order-banner{display:flex;align-items:center;gap:18px;background:var(--cream-2);border:2px solid var(--ink);border-radius:20px;padding:16px 20px;margin:22px 0 0}
+.order-pulse{width:12px;height:12px;border-radius:50%;background:var(--punch);box-shadow:0 0 0 6px var(--punch-halo);flex:none}
+.order-banner-copy{display:flex;flex-direction:column;gap:2px;min-width:0}
+.order-banner-copy strong{font-family:var(--display);font-weight:400;font-size:17px;line-height:1.15;text-transform:uppercase;letter-spacing:-.01em;overflow-wrap:anywhere}
+.order-banner-copy span{font-size:14px;color:var(--ink-soft)}
+.order-banner-actions{margin-left:auto;display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
+.order-banner-more{font-size:13px;color:var(--ink-mute)}
+.order-banner-track{font-family:var(--display);font-size:13px;text-transform:uppercase;background:var(--ink);color:var(--cream);padding:12px 20px;border-radius:999px;min-height:44px;white-space:nowrap}
+.order-banner-track:hover{background:var(--ink-hover)}
+@media(max-width:760px){
+.order-banner{flex-wrap:wrap;gap:12px;padding:16px}
+.order-banner-copy{width:calc(100% - 24px)}
+.order-banner-actions{margin-left:0;width:100%;justify-content:space-between}
+.order-banner-track{flex:1;justify-content:center;display:inline-flex;align-items:center;text-align:center}
+}

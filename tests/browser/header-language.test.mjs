@@ -42,9 +42,10 @@ async function checkHeader(page, role, language, filled = false) {
     if (role === 'client') {
       const cart = await header.locator('.header-cart').boundingBox();
       const languageButton = await trigger.boundingBox();
-      assert.ok(languageButton.x >= cart.x + cart.width - 1, `${label}: language must follow basket`);
+      // La refonte de l'accueil place la pastille de langue à gauche du compte et du panier.
+      assert.ok(languageButton.x + languageButton.width <= cart.x + 1, `${label}: language must precede basket`);
       assert.ok(Math.abs(languageButton.y + languageButton.height / 2 - cart.y - cart.height / 2) < 3, `${label}: language and basket share a row`);
-      assert.equal(await header.locator('.header-cart').evaluate(element => element.nextElementSibling?.classList.contains('language-selector')), true);
+      assert.equal(await header.locator('.language-selector').evaluate(element => element.nextElementSibling?.classList.contains('account-header-button')), true);
       assert.ok(await header.locator('.location-button').isVisible());
       assert.ok(await header.locator('.account-header-button').isVisible());
     }

@@ -1,0 +1,21 @@
+/* « En promotion ce soir » — cartes bordées 2 px, photo non lavée, pied séparé d'un filet encre. */
+.promo-section{background:var(--cream-2);border-top:2px solid var(--line);padding:34px 36px 38px;margin:0 -36px}
+.promo-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.promo-card{display:flex;flex-direction:column;background:var(--cream);border:2px solid var(--ink);border-radius:20px;overflow:hidden;text-align:left}
+.promo-card:hover{background:var(--cream-2)}
+.promo-photo{position:relative;display:block;height:158px;background:var(--punch)}
+.promo-photo img{width:100%;height:100%}
+.promo-body{display:flex;flex-direction:column;gap:6px;padding:14px 16px 16px;border-top:2px solid var(--ink)}
+.promo-name{font-family:var(--display);font-size:18px;line-height:1.1;text-transform:uppercase;letter-spacing:-.015em}
+.promo-place{font-size:13px;color:var(--ink-soft)}
+.promo-meta{font-size:13px;font-weight:700}
+.offer-price{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-family:var(--display);font-size:16px;margin-top:2px}
+.offer-price s{font-family:var(--body);font-weight:600;font-size:13px;color:var(--ink-mute)}
+@media(max-width:1100px){.promo-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:860px){
+.promo-section{margin:0 -22px;padding:26px 22px 30px}
+.promo-photo{height:104px}
+.promo-body{padding:12px 16px 14px}
+.promo-name{font-size:19px}
+}
+@media(max-width:760px){.promo-grid{grid-template-columns:1fr}}

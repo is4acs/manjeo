@@ -1,0 +1,20 @@
+/* En-tête de rayon et commandes de carrousel — aucune animation décorative. */
+.rail-heading{display:flex;align-items:center;flex-wrap:wrap;gap:14px;margin-bottom:18px}
+.rail-heading h2{font-size:32px}
+.rail-note{font-size:13px;color:var(--ink-mute)}
+.rail-arrows{margin-left:auto;display:flex;gap:8px}
+.rail-arrow{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;border:2px solid var(--line-2);color:var(--ink-mute)}
+.rail-arrow:hover:not(:disabled){border-color:var(--ink);color:var(--ink)}
+.rail-next{background:var(--ink);border-color:var(--ink);color:var(--cream)}
+.rail-next:hover:not(:disabled){background:var(--ink-hover);color:var(--cream)}
+.rail-foot{display:none}
+.rail-dots{display:flex;align-items:center;gap:6px;margin-left:auto}
+.rail-dot{width:8px;height:8px;border-radius:50%;background:var(--line-2)}
+.rail-dot.selected{background:var(--ink)}
+@media(max-width:860px){
+.rail-heading{gap:10px;margin-bottom:14px}
+.rail-heading h2{font-size:22px}
+/* En mobile les points de pagination remplacent les flèches. */
+.rail-arrows{display:none}
+.rail-foot{display:flex;justify-content:flex-end;padding-top:12px}
+}

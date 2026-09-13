@@ -20,13 +20,7 @@
 .quick-order-summary {padding: 14px 18px; border-top: 2px solid var(--ink); font-size: 14px; overflow-wrap: anywhere;}
 .quick-order-summary p {margin: 5px 0;}
 .quick-order-summary button {text-decoration: underline; font-weight: 700; min-height: 44px;}
-.active-orders {display: grid; gap: 10px; max-width: 1180px; margin: 18px auto; padding: 0 20px;}
-.active-order-card {display: flex; align-items: center; gap: 16px; border: 2px solid var(--ink); background: var(--punch); border-radius: 18px; padding: 16px; overflow-wrap: anywhere;}
-.active-order-card > div {flex: 1; min-width: 0;}
-.active-order-card p {margin: 4px 0 0; font-size: 14px;}
-.active-order-card button {flex-shrink: 0;}
 .payment-followup {display: grid; gap: 10px; padding: 16px; border: 2px solid var(--ink); border-radius: 18px; margin: 18px 0;}
-@media (max-width: 480px) {.active-order-card {flex-wrap: wrap; gap: 10px;}.active-order-card > button {width: 100%;}}
 .pending-order{min-width:0;overflow-wrap:anywhere}
 .pending-order button{max-width:100%;white-space:normal;text-align:left}
 .pending-order small{display:block;margin-top:10px;line-height:1.5}

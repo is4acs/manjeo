@@ -1,22 +1,31 @@
+/* Sélecteur de langue — pastille dans l'en-tête encre, à gauche du compte.
+   Trois langues seulement : celles de lib/i18n.ts. */
 .language-selector{display:inline-flex;align-items:center;flex:none}
-.language-selector .language-trigger{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:5px 8px;border:2px solid var(--ink);border-radius:999px;background:var(--cream);color:var(--ink);font-family:var(--body);font-size:12px;font-weight:700;line-height:1.3;white-space:nowrap}
-.language-code{min-width:18px;text-align:center}
-.language-selector .language-trigger:hover:not(:disabled),.language-selector .language-trigger[data-state=open]{background:var(--punch)}
-.language-trigger:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+.language-selector .language-trigger{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:8px 14px;border:2px solid var(--line-on-dark);border-radius:999px;background:transparent;color:var(--cream);font-family:var(--body);font-size:14px;font-weight:700;line-height:1.3;white-space:nowrap}
+.language-code{min-width:20px;text-align:center}
+/* Le contour intérieur encre garde la pastille repérable au clavier sur fond jaune. */
+.language-selector .language-trigger:hover:not(:disabled),.language-selector .language-trigger[data-state=open]{background:var(--punch);color:var(--ink);border-color:transparent;box-shadow:inset 0 0 0 2px var(--ink)}
+.language-trigger:focus-visible{outline:3px solid var(--cream);outline-offset:2px}
 .language-trigger>svg{flex:none;transition:transform var(--ease)}
 .language-trigger[data-state=open]>svg{transform:rotate(180deg)}
-.language-flag{display:block;width:22px;height:22px;flex:none;overflow:hidden;border:1px solid var(--line-2);border-radius:50%;background:var(--cream-2)}
+/* Le drapeau porte l'information : un disque cerclé d'encre, jamais un rectangle posé à plat. */
+.language-flag{display:block;width:22px;height:22px;flex:none;overflow:hidden;border-radius:50%;box-shadow:0 0 0 2px var(--ink);background:var(--cream-2)}
 .language-flag svg{display:block;width:100%;height:100%}
-.language-menu{position:relative;z-index:90;width:260px;max-width:calc(100vw - 24px);max-height:calc(100dvh - 80px);overflow-y:auto;padding:6px;background:var(--cream-2);color:var(--ink);border:2px solid var(--ink);border-radius:20px;box-shadow:4px 5px 0 var(--ink);font-family:var(--body);outline:none}
-.language-option{position:relative;display:flex;align-items:center;gap:11px;min-height:48px;padding:8px 10px;border-radius:12px;font-size:14px;font-weight:600;line-height:1.35;cursor:pointer;outline:none;user-select:none}
-.language-option[data-highlighted]{background:var(--punch);box-shadow:inset 0 0 0 2px var(--ink)}
-.language-option[data-state=checked]{font-weight:700}
+.language-menu{position:relative;z-index:90;width:292px;max-width:calc(100vw - 24px);max-height:calc(100dvh - 80px);overflow-y:auto;padding:8px;background:var(--cream);color:var(--ink);border:2px solid var(--ink);border-radius:18px;box-shadow:var(--shadow-md);font-family:var(--body);outline:none}
+.language-heading{display:block;padding:10px 14px 6px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-mute)}
+.language-option{position:relative;display:flex;align-items:center;gap:12px;min-height:44px;padding:0 14px;border-radius:12px;font-size:15px;font-weight:600;line-height:1.35;cursor:pointer;outline:none;user-select:none}
+.language-option[data-highlighted]{background:var(--ink-wash)}
+.language-option[data-state=checked]{background:var(--punch);box-shadow:inset 0 0 0 2px var(--ink);font-weight:700}
 .language-selected{display:flex;align-items:center;margin-left:auto;flex:none}
-.site-header .language-trigger:focus-visible,.staff-header .language-trigger:focus-visible{outline-color:var(--cream)}
 .startup-header .header-inner{justify-content:space-between}
+/* Les en-têtes denses (espaces professionnels, tablettes) gardent une pastille compacte. */
+@media(max-width:1100px){
+ .language-selector .language-trigger{gap:6px;padding:5px 8px;font-size:12px}
+ .language-code{min-width:18px}
+}
 @media(max-width:380px){ .site-header .language-code{display:none} }
 @media(max-width:520px){
- .language-selector .language-trigger{gap:4px;padding:5px 6px}
+ .language-selector .language-trigger{gap:6px;padding:7px 10px}
  .language-trigger>svg{width:14px;height:14px}
  .language-flag{width:20px;height:20px}
  .startup-header .header-inner{flex-wrap:nowrap}

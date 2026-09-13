@@ -1,0 +1,7 @@
+/* Onglets bas, mobile seulement. Cibles de 44 px au minimum. */
+.mobile-tabs{display:none}
+@media(max-width:760px){
+.mobile-tabs{position:fixed;left:0;right:0;bottom:0;z-index:25;display:flex;justify-content:space-around;gap:4px;background:var(--cream-2);border-top:2px solid var(--line);padding:10px 12px calc(12px + env(safe-area-inset-bottom))}
+.mobile-tabs button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-width:64px;min-height:44px;font-size:11px;font-weight:600;color:var(--ink-mute)}
+.mobile-tabs button.selected{font-weight:700;color:var(--ink)}
+}

@@ -6,7 +6,7 @@ Démonstration de commande de repas en Guyane : React/TypeScript/Vite, API Pytho
 
 - Lire `README.md`, `docs/FOUR-ROLES-CONTRACT.md` et `docs/REPRENDRE-SUR-MACBOOK.md`.
 - Pour les paiements, lire `docs/PAIEMENTS.md` : Stripe est exclusivement de test et reste indisponible sans configuration serveur ; aucun encaissement réel.
-- `app/` contient les espaces client, restaurateur, livreur et admin ; `lib/` les types, le panier et le catalogue initial ; `server/` l’API, les migrations et les tests.
+- `app/` contient les espaces client, restaurateur, livreur et admin ; `app/home/` l’accueil client mené par les offres (composants présentationnels et leur CSS, l’état de commande restant dans `app/page.tsx`) ; `lib/` les types, le panier et le catalogue initial ; `server/` l’API, les migrations et les tests.
 - `api/index.py` et `vercel.json` définissent l’entrée et le routage Vercel. Le répartiteur Python s’appelle `dispatch_api` : ne pas le renommer `handle_request`, réservé au runtime Vercel.
 
 ## Installation et vérification

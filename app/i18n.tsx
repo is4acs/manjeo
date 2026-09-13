@@ -67,7 +67,8 @@ export function LanguageBar({onChange, disabled = false}: {onChange:(value:UILan
   return <div className="language-selector">
     <DropdownMenu.Root modal={false} open={open} onOpenChange={value => { if (!disabled) setOpen(value); }}>
       <DropdownMenu.Trigger asChild><button className="language-trigger" type="button" disabled={disabled} aria-label={`${selectorLabel} : ${selected.label}`}><LanguageFlag language={language}/><span className="language-code" aria-hidden="true">{selected.code.toUpperCase()}</span><ChevronDown size={16} aria-hidden="true"/></button></DropdownMenu.Trigger>
-      <DropdownMenu.Portal><DropdownMenu.Content className="language-menu" side="bottom" align="end" sideOffset={8} avoidCollisions={false} aria-label={selectorLabel}>
+      <DropdownMenu.Portal><DropdownMenu.Content className="language-menu" side="bottom" align="end" sideOffset={8} collisionPadding={12} aria-label={selectorLabel}>
+        <DropdownMenu.Label className="language-heading">{selectorLabel}</DropdownMenu.Label>
         <DropdownMenu.RadioGroup value={language} onValueChange={value => { const supported = normalizeLanguage(value); if (supported && !disabled) onChange(supported); }}>
           {languageOptions.map(option => <DropdownMenu.RadioItem className="language-option" key={option.code} value={option.code} lang={option.tag}><LanguageFlag language={option.code}/><span>{option.label}</span><DropdownMenu.ItemIndicator className="language-selected"><Check size={17} aria-hidden="true"/></DropdownMenu.ItemIndicator></DropdownMenu.RadioItem>)}
         </DropdownMenu.RadioGroup>

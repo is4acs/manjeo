@@ -27,7 +27,7 @@ for (const engine of browserTypes) {
       await api(restaurant, server.url, `/api/orders/${id}`, 'PATCH', {status:'accepted'});
       await api(courier, server.url, `/api/orders/${id}/claim`, 'POST', {});
       await customerPage.reload();
-      await customerPage.locator('.active-order-card').filter({hasText:'Ti Kaz Kréol'}).getByRole('button',{name:'Voir le suivi',exact:true}).click();
+      await customerPage.locator('.active-order-card').filter({hasText:'Ti Kaz Kréol'}).getByRole('button',{name:'Suivre la livraison',exact:true}).click();
       const chat = customerPage.locator('.order-chat');
       await chat.getByRole('button',{name:'Je suis en bas, devant l’entrée.',exact:true}).click();
       await chat.locator('.chat-message').filter({hasText:'Je suis en bas, devant l’entrée.'}).waitFor();

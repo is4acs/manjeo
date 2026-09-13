@@ -1,0 +1,8 @@
+/* Bandeau encre, trois colonnes — pastille jaune, icône encre. */
+.reassurance{background:var(--ink);color:var(--cream);display:grid;grid-template-columns:repeat(3,1fr);gap:28px;padding:28px 36px;margin:0 -36px}
+.reassurance-item{display:flex;align-items:center;gap:14px}
+.reassurance-item div{display:flex;flex-direction:column;gap:2px;min-width:0}
+.reassurance-item strong{font-family:var(--display);font-weight:400;font-size:15px;line-height:1.15;text-transform:uppercase}
+.reassurance-item span{font-size:13px;color:var(--ink-on-dark);text-wrap:pretty}
+.reassurance-badge{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:var(--punch);color:var(--ink);flex:none}
+@media(max-width:1100px){.reassurance{grid-template-columns:1fr;gap:18px;padding:24px 22px;margin:0 -22px}}

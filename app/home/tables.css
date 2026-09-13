@@ -1,0 +1,17 @@
+/* Rayon des tables : lignes espacées de 12 px, tri à droite du titre. */
+.tables-section{padding:34px 0 38px}
+.restaurant-list{display:flex;flex-direction:column;gap:12px}
+.sort-control{margin-left:auto;display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-width:0}
+.sort-label{font-size:13px;font-weight:700}
+.sort-control button{font-size:13px;font-weight:600;border:2px solid var(--line-2);color:var(--ink-soft);padding:9px 14px;border-radius:999px;min-height:44px;white-space:nowrap}
+.sort-control button:hover{border-color:var(--ink);color:var(--ink)}
+.sort-control button.selected{background:var(--ink);color:var(--cream);border-color:var(--ink);font-weight:700}
+.tables-note{font-size:13px;color:var(--ink-mute);margin-bottom:12px}
+.no-results{display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;padding:52px 20px;border:2px solid var(--line);border-radius:20px;background:var(--cream-2)}
+.no-results p{font-size:14px;color:var(--ink-soft)}
+.list-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:26px;flex-wrap:wrap}
+.list-foot span{font-size:13px;color:var(--ink-mute)}
+@media(max-width:860px){
+.tables-section{padding:26px 0 30px}
+.sort-control{margin-left:0;width:100%}
+}

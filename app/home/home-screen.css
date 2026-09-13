@@ -1,0 +1,6 @@
+/* Gabarit de l'accueil : les rayons se succèdent, les fonds pleins débordent la gouttière. */
+.home-screen{display:flex;flex-direction:column;min-width:0}
+@media(max-width:760px){
+/* La barre d'onglets est fixée : le dernier rayon garde sa place au-dessus. */
+.home-screen{padding-bottom:84px}
+}

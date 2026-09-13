@@ -99,6 +99,19 @@ Règles d’usage :
 Le serveur local déclare `application/manifest+json` pour `.webmanifest` (`server/app.py`) : sans ce
 type, `X-Content-Type-Options: nosniff` ferait rejeter le manifeste par le navigateur.
 
+## Découpe de l’accueil
+
+`app/home/` porte l’accueil client : `home-screen.tsx` compose la page et ne tient que ses propres
+réglages (catégorie, quatre filtres, tri, index des carrousels) ; `header.tsx`, `hero.tsx`,
+`order-banner.tsx`, `categories.tsx`, `filters.tsx`, `promo-rail.tsx` + `deal-card.tsx`,
+`promo-cards.tsx`, `tables.tsx` + `restaurant-row.tsx`, `offer-flag.tsx`, `reassurance.tsx` et
+`mobile-tabs.tsx` sont présentationnels, chacun avec sa feuille de style à côté. `promos.ts` regroupe
+les règles pures (offre active d’une table, prix d’appel remisé) et `rail.tsx` les commandes de
+carrousel partagées.
+
+`app/page.tsx` garde tout l’état de commande : panier, paiement, promotions vérifiées, reprise d’une
+confirmation incertaine. Les invariants du contrat ne traversent jamais `app/home/`.
+
 ## Écarts assumés par rapport au handoff
 
 - « Livraison offerte dès 25 € » est remplacé par le prix de livraison le plus bas du catalogue : la
@@ -109,3 +122,38 @@ type, `X-Content-Type-Options: nosniff` ferait rejeter le manifeste par le navig
   sans fonction dans l’application.
 - Le stepper descendu à zéro retire la ligne du panier, comme le demande le handoff ; le bouton
   corbeille a donc disparu.
+
+### Accueil mené par les offres (handoff « Manjeo Accueil Client », ancres 4a / 5a / 5b / 5c)
+
+- La maquette dessine neuf pastilles de catégorie, dont « Desserts ». Aucune table du catalogue n’est
+  une table de desserts : la rangée se construit sur les catégories réellement présentes, sinon le
+  filtre mènerait toujours au vide. Huit pastilles plus « Voir tout ».
+- « Healthy » devient « Bowls » au catalogue, le nom employé par la maquette et par la table
+  elle-même (« Bowls · Fraîcheur »).
+- Le rayon « Les bons plans du moment » est alimenté par `/api/promotions`, les codes réellement
+  ouverts, comme le demande le premier chantier. Le champ `promos` du catalogue alimente les
+  étiquettes d’offre et les prix barrés ; son drapeau `highlight` ordonne le rayon « En promotion ce
+  soir » au lieu de remonter dans les bons plans, les deux sources étant distinctes.
+- Les codes de démonstration gardent une fenêtre large (2026 → 2030) plutôt que la semaine de la
+  maquette : une promotion expirée disparaîtrait de la page et la démonstration doit rester
+  utilisable dans le temps. La règle d’expiration, elle, est bien appliquée.
+- **Le code `LIVRAISON` (« Livraison offerte dès 25 € ») remonte sur l’accueil avec sa condition.**
+  Il ne s’agit pas d’une promesse décorative : le serveur couvre réellement la livraison au-delà de
+  25 € (`discount_for`, `kind = delivery`). Aucune autre mention de livraison offerte n’est posée sur
+  la page. Pour que l’accueil ne parle jamais de gratuité, il faut désactiver ce code de démonstration
+  dans `server/promotions.py`, pas filtrer l’affichage.
+- La pilule d’adresse et le bouton panier restent dans l’en-tête au premier passage, que la maquette
+  `5a` retire : l’adresse doit rester atteignable une fois le héros défilé, et le panier se remplit
+  avant l’adresse dans cette application. Le champ de recherche, lui, n’apparaît qu’au visiteur
+  connu, comme la maquette.
+- « Créer un compte » n’est pas posé : la démonstration n’ouvre pas d’inscription, seulement des
+  comptes de démonstration.
+- Le bandeau de commande porte l’identifiant réel (`MJ-…`) et non le numéro à quatre chiffres de la
+  maquette. « Appeler Jordan » devient « Écrire à {livreur} » : le téléphone du livreur n’est exposé
+  que par la fiche de contact de la conversation, selon le contrat des quatre rôles.
+- La troisième colonne du bandeau de réassurance annonce le paiement de démonstration, pas un
+  « payé à la livraison » que la démonstration ne propose pas.
+- La bascule Livraison / À emporter change l’affichage de la liste (horaires de retrait au lieu des
+  frais) et l’annonce en toutes lettres : la démonstration termine toujours la commande en livraison.
+- Flèches de carrousel et pastilles de langue portées à 44 px de cible tactile, au-dessus des 40 px
+  dessinés, conformément à la règle d’accessibilité du même handoff.

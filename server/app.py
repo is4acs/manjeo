@@ -232,10 +232,34 @@ class Database:
     def begin_write(self, db):
         db.execute("BEGIN IMMEDIATE")
 
+    # Clés de vitrine du catalogue : elles décrivent la façade, jamais ce qu'un
+    # restaurateur modifie lui-même (marketplace.py n'autorise que name,
+    # description, minutes et les champs de retrait).
+    PRESENTATION_KEYS = ("category", "area", "promos")
+
+    def refresh_presentation(self, db, restaurant, row):
+        """Une base déjà peuplée reçoit les nouveautés de vitrine du catalogue.
+
+        Sans cela, un ajout au catalogue (quartier, offre) resterait invisible
+        sur une installation existante, que seule une réinitialisation rattrape.
+        """
+        try:
+            stored = json.loads(row["data"])
+        except (TypeError, ValueError):
+            return
+        updates = {key: restaurant[key] for key in self.PRESENTATION_KEYS
+                   if key in restaurant and stored.get(key) != restaurant[key]}
+        if not updates:
+            return
+        db.execute("UPDATE restaurants SET data = ? WHERE id = ?",
+                   (json.dumps({**stored, **updates}, ensure_ascii=False), restaurant["id"]))
+
     def seed(self, db):
         for position, source in enumerate(json.loads(self.catalog_path.read_text())):
             restaurant = {key: value for key, value in source.items() if key not in ("products", "acceptingOrders")}
-            if db.execute("SELECT id FROM restaurants WHERE id = ?", (restaurant["id"],)).fetchone():
+            existing = db.execute("SELECT data FROM restaurants WHERE id = ?", (restaurant["id"],)).fetchone()
+            if existing:
+                self.refresh_presentation(db, restaurant, existing)
                 continue
             db.execute("INSERT INTO restaurants(id, data, sort_order) VALUES (?, ?, ?) ON CONFLICT(id) DO NOTHING", (restaurant["id"], json.dumps(restaurant, ensure_ascii=False), position))
             for product_position, item in enumerate(source["products"]):

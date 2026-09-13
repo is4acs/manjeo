@@ -212,7 +212,7 @@ for (const engine of browserTypes) {
     const product=menu.products.find(product=>product.id===original.productId);
     product.price+=200; product.name='Nouvelle recette pour les commandes suivantes';
     await api(restaurant,url,'/api/restaurants/ti-kreol/menu','PATCH',menu);
-    await page.reload(); await page.locator('.active-order-card').getByRole('button',{name:'Voir le suivi',exact:true}).click();
+    await page.reload(); await page.locator('.active-order-card').getByRole('button',{name:'Suivre la livraison',exact:true}).click();
     const unchanged=(await api(client,url,'/api/orders')).orders.find(order=>order.id===id);
     assert.deepEqual(unchanged.items,receipt.items); assert.equal(unchanged.total,receipt.total);
     assert.equal(await page.locator('.order-ticket').getByText(product.name,{exact:false}).count(),0);

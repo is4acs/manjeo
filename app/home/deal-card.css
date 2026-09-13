@@ -1,0 +1,31 @@
+/* Les trois traitements du rayon « bons plans », dans l'ordre de rotation du handoff. */
+.deal-card{display:flex;flex-direction:column;gap:12px;min-height:214px;padding:24px;border-radius:20px;border:2px solid transparent}
+.deal-card h3{font-size:30px;line-height:1;letter-spacing:-.03em}
+.deal-card p{font-size:15px;line-height:1.45;text-wrap:pretty}
+.deal-period{align-self:flex-start;font-family:var(--display);font-size:11px;line-height:1.2;text-transform:uppercase;letter-spacing:.06em;padding:6px 12px;border-radius:999px}
+.deal-action{margin-top:auto;align-self:flex-start;font-family:var(--display);font-size:13px;text-transform:uppercase;min-height:44px;padding:12px 20px;border-radius:999px}
+
+.deal-punch{background:var(--punch)}
+.deal-punch .deal-period{background:var(--ink);color:var(--cream)}
+.deal-punch .deal-action{background:var(--ink);color:var(--cream)}
+.deal-punch .deal-action:hover{background:var(--ink-hover)}
+
+.deal-outline{background:var(--cream-2);border-color:var(--ink)}
+.deal-outline .deal-period{background:var(--punch);color:var(--ink)}
+.deal-outline p{color:var(--ink-soft)}
+.deal-outline .deal-action{background:var(--ink);color:var(--cream)}
+.deal-outline .deal-action:hover{background:var(--ink-hover)}
+
+.deal-ink{background:var(--ink);color:var(--cream)}
+.deal-ink .deal-period{background:var(--punch);color:var(--ink)}
+.deal-ink h3{color:var(--punch)}
+.deal-ink p{color:var(--ink-on-dark)}
+.deal-ink .deal-action{background:var(--punch);color:var(--ink)}
+.deal-ink .deal-action:hover{background:var(--punch-hover)}
+.deal-ink :focus-visible{outline-color:var(--cream)}
+
+@media(max-width:860px){
+.deal-card{border-radius:22px;padding:20px;min-height:0}
+.deal-card h3{font-size:28px;line-height:.98}
+.deal-card p{font-size:14px;line-height:1.4}
+}

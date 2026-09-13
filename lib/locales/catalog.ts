@@ -12,6 +12,10 @@ export const catalogTranslations: Record<string, [string, string]> = {
     "Bòl kolore ak legim fre",
     "Bowl colorido com legumes frescos"
   ],
+  "Bowls": [
+    "Bòl",
+    "Bowls"
+  ],
   "Bowls · Fraîcheur · Plein de couleurs": [
     "Bòl · Frechè · Anpil koulè",
     "Bowls · Frescor · Muitas cores"
@@ -75,10 +79,6 @@ export const catalogTranslations: Record<string, [string, string]> = {
   "Flan coco maison": [
     "Flan kokoye kay la",
     "Pudim de coco da casa"
-  ],
-  "Healthy": [
-    "Manje ekilibre",
-    "Saudável"
   ],
   "Jus de maracudja": [
     "Ji marakoudja",

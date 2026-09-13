@@ -1,0 +1,18 @@
+/* Ajouts de l'en-tête de l'accueil : bascule de service et champ de recherche.
+   Le squelette de la barre (marque, adresse, compte, panier) reste dans app/globals.css. */
+.service-toggle{display:flex;align-items:center;gap:4px;background:var(--service-track);border-radius:999px;padding:4px;flex:none}
+.service-toggle button{font-size:13px;font-weight:600;color:var(--cream);padding:8px 16px;border-radius:999px;min-height:36px;white-space:nowrap}
+.service-toggle button.selected{font-family:var(--display);font-weight:400;font-size:12px;text-transform:uppercase;background:var(--punch);color:var(--ink)}
+.service-toggle button:not(.selected):hover{color:var(--punch)}
+.site-header .search-box{flex:1;min-width:140px;display:flex;align-items:center;gap:10px;background:var(--cream-2);border:0;border-radius:999px;padding:0 18px;min-height:44px;color:var(--ink)}
+.site-header .search-box input{border:0;background:transparent;font-size:15px!important;padding:0;min-height:40px;width:100%;box-shadow:none}
+.site-header .search-box input::placeholder{color:var(--ink-mute)}
+.site-header .search-box input:focus-visible{outline:none}
+.site-header .search-box:focus-within{outline:3px solid var(--cream);outline-offset:2px}
+.site-header .search-box button{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;flex:none}
+/* Sous 1100 px l'en-tête tient sur plusieurs lignes : la recherche puis la bascule. */
+@media(max-width:1100px){
+.service-toggle{order:3}
+.site-header .search-box{order:2;flex:1 0 100%;min-height:46px}
+.service-toggle button{padding:9px 18px;min-height:38px}
+}
